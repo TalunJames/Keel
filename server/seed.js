@@ -21,8 +21,8 @@ if (!password || password === "change-me-on-first-login") {
 async function main() {
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO users (id, email, password_hash, name, team, role, client_id)
-     VALUES (?, ?, ?, ?, ?, 'admin', NULL)`
+    `INSERT INTO users (id, email, password_hash, name, team, role, client_id, system_admin)
+     VALUES (?, ?, ?, ?, ?, 'admin', NULL, 1)`
   ).run(
     id,
     email,
@@ -33,7 +33,7 @@ async function main() {
 
   db.prepare(
     "INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)"
-  ).run(email, "Initial admin account created via db:seed", "System");
+  ).run(email, "Initial system admin account created via db:seed", "System");
 
   console.log("Created admin user:", email);
   console.log("Sign in at the app URL with these credentials, then create clients and users in Admin Console.");

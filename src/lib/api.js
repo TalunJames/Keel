@@ -30,10 +30,23 @@ export async function api(path, options = {}) {
 }
 
 export const authApi = {
-  login: (email, password) =>
-    api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  login: (email, password, remember = false) =>
+    api("/auth/login", { method: "POST", body: JSON.stringify({ email, password, remember }) }),
   logout: () => api("/auth/logout", { method: "POST" }),
   me: () => api("/auth/me"),
+};
+
+export const accountApi = {
+  me: () => api("/account/me"),
+  update: (patch) => api("/account/me", { method: "PATCH", body: JSON.stringify(patch) }),
+  calendar: (start, days = 42) =>
+    api(`/account/calendar?start=${encodeURIComponent(start)}&days=${days}`),
+};
+
+export const loginAnnouncementApi = {
+  get: () => api("/login-announcement"),
+  set: (announcement) =>
+    api("/login-announcement", { method: "PUT", body: JSON.stringify(announcement) }),
 };
 
 export const clientsApi = {

@@ -2,12 +2,17 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
 const COOKIE = "keel_token";
+const SHORT_TTL_SECONDS = 8 * 60 * 60;            // 8h
+const LONG_TTL_SECONDS  = 30 * 24 * 60 * 60;      // 30d
 
-export function signToken(user) {
+export function signToken(user, { remember = false } = {}) {
+  const expiresIn = remember
+    ? LONG_TTL_SECONDS
+    : (Number(process.env.JWT_EXPIRES_IN_SECONDS) || SHORT_TTL_SECONDS);
   return jwt.sign(
-    { sub: user.id, role: user.role, clientId: user.client_id },
+    { sub: user.id, role: user.role, clientId: user.client_id, remember },
     process.env.JWT_SECRET || "dev-only-change-me",
-    { expiresIn: process.env.JWT_EXPIRES_IN || "8h" }
+    { expiresIn }
   );
 }
 
@@ -23,13 +28,13 @@ export function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-export function setAuthCookie(res, token) {
+export function setAuthCookie(res, token, { remember = false } = {}) {
   const secure = process.env.NODE_ENV === "production";
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure,
-    maxAge: 8 * 60 * 60 * 1000,
+    maxAge: (remember ? LONG_TTL_SECONDS : SHORT_TTL_SECONDS) * 1000,
     path: "/",
   });
 }
@@ -51,8 +56,11 @@ export function requireAuth(db) {
       if (!token) return res.status(401).json({ error: "Unauthorized" });
       const payload = verifyToken(token);
       const user = db.prepare(
-        "SELECT id, email, name, team, role, client_id AS clientId FROM users WHERE id = ?"
+        `SELECT id, email, name, team, role, client_id AS clientId,
+                system_admin AS systemAdmin, title, location, about, phone, photo
+         FROM users WHERE id = ?`
       ).get(payload.sub);
+      if (user) user.systemAdmin = !!user.systemAdmin;
       if (!user) return res.status(401).json({ error: "Unauthorized" });
       req.user = user;
       next();

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { DEFAULT_MODULES } from "./db.js";
+import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
 import {
   comparePassword,
   hashPassword,
@@ -44,20 +44,105 @@ export function registerRoutes(app, db) {
   const auth = requireAuth(db);
 
   app.post("/api/auth/login", async (req, res) => {
-    const { email, password } = req.body || {};
+    const { email, password, remember } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password required" });
     }
     const user = db.prepare(
-      "SELECT id, email, password_hash, name, team, role, client_id AS clientId FROM users WHERE email = ? COLLATE NOCASE"
+      `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
+              system_admin AS systemAdmin, title, location, about, phone, photo
+       FROM users WHERE email = ? COLLATE NOCASE`
     ).get(email.trim());
     if (!user || !(await comparePassword(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
     delete user.password_hash;
-    const token = signToken(user);
-    setAuthCookie(res, token);
+    user.systemAdmin = !!user.systemAdmin;
+    const token = signToken(user, { remember: !!remember });
+    setAuthCookie(res, token, { remember: !!remember });
     res.json({ user, token });
+  });
+
+  const requireSystemAdmin = (req, res, next) => {
+    if (!req.user?.systemAdmin) return res.status(403).json({ error: "Forbidden" });
+    next();
+  };
+
+  // ---------- Login announcement (public read; system_admin write) ----------
+  app.get("/api/login-announcement", (_req, res) => {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("login_announcement");
+    const ann = row ? JSON.parse(row.value) : DEFAULT_LOGIN_ANNOUNCEMENT;
+    res.json({ announcement: ann });
+  });
+
+  app.put("/api/login-announcement", auth, requireSystemAdmin, (req, res) => {
+    const { enabled, title, body, tone } = req.body || {};
+    const next = {
+      enabled: enabled !== false,
+      title: (title || "").toString().slice(0, 120),
+      body: (body || "").toString().slice(0, 600),
+      tone: ["info", "warning", "success"].includes(tone) ? tone : "info",
+    };
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    ).run("login_announcement", JSON.stringify(next));
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      "Updated login announcement",
+      "System"
+    );
+    res.json({ announcement: next });
+  });
+
+  // ---------- Account profile (self-service) ----------
+  app.get("/api/account/me", auth, (req, res) => {
+    const u = req.user;
+    const clientList = db.prepare(
+      `SELECT id, name, tag, initials, color, type
+       FROM clients WHERE active = 1 ORDER BY name`
+    ).all();
+    res.json({
+      user: u,
+      clients: u.role === "client"
+        ? clientList.filter((c) => c.id === u.clientId)
+        : clientList,
+    });
+  });
+
+  app.patch("/api/account/me", auth, (req, res) => {
+    const allowed = ["name", "team", "title", "location", "about", "phone", "photo"];
+    const sets = [];
+    const args = [];
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) {
+        sets.push(`${f} = ?`);
+        args.push(req.body[f]);
+      }
+    }
+    if (!sets.length) return res.status(400).json({ error: "No fields" });
+    args.push(req.user.id);
+    db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...args);
+    const user = db.prepare(
+      `SELECT id, email, name, team, role, client_id AS clientId,
+              system_admin AS systemAdmin, title, location, about, phone, photo
+       FROM users WHERE id = ?`
+    ).get(req.user.id);
+    user.systemAdmin = !!user.systemAdmin;
+    res.json({ user });
+  });
+
+  app.get("/api/account/calendar", auth, (req, res) => {
+    const start = new Date(req.query.start || Date.now());
+    const days = Math.max(1, Math.min(120, Number(req.query.days) || 42));
+    const end = new Date(start);
+    end.setDate(end.getDate() + days);
+    const scope = req.user.role === "client" ? req.user.clientId : null;
+    let sql = "SELECT id, title, starts_at AS startsAt, ends_at AS endsAt, client_id AS clientId, kind, location FROM calendar_events WHERE starts_at >= ? AND starts_at < ?";
+    const args = [start.toISOString(), end.toISOString()];
+    if (scope) { sql += " AND (client_id IS NULL OR client_id = ?)"; args.push(scope); }
+    sql += " ORDER BY starts_at ASC LIMIT 500";
+    res.json({ events: db.prepare(sql).all(...args) });
   });
 
   app.post("/api/auth/logout", (_req, res) => {
@@ -403,22 +488,28 @@ export function registerRoutes(app, db) {
   // ---------- Admin ----------
   app.get("/api/admin/users", auth, requireRole("admin"), (_req, res) => {
     const users = db.prepare(
-      "SELECT id, email, name, team, role, client_id AS clientId, created_at AS createdAt FROM users ORDER BY created_at DESC"
-    ).all();
+      `SELECT id, email, name, team, role, client_id AS clientId,
+              system_admin AS systemAdmin, title, location, created_at AS createdAt
+       FROM users ORDER BY created_at DESC`
+    ).all().map((u) => ({ ...u, systemAdmin: !!u.systemAdmin }));
     res.json({ users });
   });
 
   app.post("/api/admin/users", auth, requireRole("admin"), async (req, res) => {
-    const { email, password, name, team, role, clientId } = req.body || {};
+    const { email, password, name, team, role, clientId, systemAdmin } = req.body || {};
     if (!email || !password || !name || !role) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+    if (systemAdmin && !req.user.systemAdmin) {
+      return res.status(403).json({ error: "Only a system admin can grant system_admin" });
     }
     const id = randomUUID();
     try {
       db.prepare(
-        `INSERT INTO users (id, email, password_hash, name, team, role, client_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, email.trim(), await hashPassword(password), name, team || "", role, clientId || null);
+        `INSERT INTO users (id, email, password_hash, name, team, role, client_id, system_admin)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(id, email.trim(), await hashPassword(password), name, team || "", role, clientId || null,
+            (systemAdmin && role === "admin") ? 1 : 0);
     } catch (e) {
       if (e.code === "SQLITE_CONSTRAINT_UNIQUE") {
         return res.status(409).json({ error: "Email already exists" });
@@ -427,10 +518,28 @@ export function registerRoutes(app, db) {
     }
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
       req.user.email,
-      `Created user ${email} (${role})`,
+      `Created user ${email} (${role}${systemAdmin ? ", system admin" : ""})`,
       "Users"
     );
     res.status(201).json({ id });
+  });
+
+  app.patch("/api/admin/users/:id", auth, requireSystemAdmin, (req, res) => {
+    const target = db.prepare("SELECT id, role, email FROM users WHERE id = ?").get(req.params.id);
+    if (!target) return res.status(404).json({ error: "Not found" });
+    const { systemAdmin } = req.body || {};
+    if (systemAdmin !== undefined) {
+      if (systemAdmin && target.role !== "admin") {
+        return res.status(400).json({ error: "User must have admin role first" });
+      }
+      db.prepare("UPDATE users SET system_admin = ? WHERE id = ?").run(systemAdmin ? 1 : 0, target.id);
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email,
+        `${systemAdmin ? "Granted" : "Revoked"} system admin for ${target.email}`,
+        "Users"
+      );
+    }
+    res.json({ ok: true });
   });
 
   app.get("/api/admin/clients", auth, requireRole("admin"), (_req, res) => {

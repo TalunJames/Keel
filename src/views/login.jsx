@@ -1,19 +1,34 @@
-import React, { useState } from "react";
-import { Icon, Avatar, Eyebrow } from "../components/ui.jsx";
-import { authApi, ApiError } from "../lib/api.js";
+import React, { useEffect, useState } from "react";
+import { Icon, Eyebrow } from "../components/ui.jsx";
+import { authApi, loginAnnouncementApi, ApiError } from "../lib/api.js";
+
+const TONE_STYLES = {
+  info:    { bg: "rgba(168,194,221,0.12)", bd: "rgba(168,194,221,0.30)", ic: "var(--fs-navy-700)" },
+  warning: { bg: "rgba(244,215,122,0.18)", bd: "rgba(244,215,122,0.42)", ic: "var(--fs-gold-500)" },
+  success: { bg: "rgba(102,184,124,0.18)", bd: "rgba(102,184,124,0.36)", ic: "#7BC78A" },
+};
 
 export function LoginView({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(() => localStorage.getItem("keel_remember") === "1");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [announcement, setAnnouncement] = useState(null);
+
+  useEffect(() => {
+    loginAnnouncementApi.get()
+      .then((r) => setAnnouncement(r?.announcement || null))
+      .catch(() => setAnnouncement(null));
+  }, []);
 
   const submit = async (e) => {
     e?.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const { user } = await authApi.login(email.trim(), password);
+      const { user } = await authApi.login(email.trim(), password, remember);
+      localStorage.setItem("keel_remember", remember ? "1" : "0");
       onLogin(user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign in failed");
@@ -21,6 +36,8 @@ export function LoginView({ onLogin }) {
       setLoading(false);
     }
   };
+
+  const tone = TONE_STYLES[announcement?.tone] || TONE_STYLES.info;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", height: "100vh", width: "100vw", background: "var(--fs-paper)" }}>
@@ -63,9 +80,25 @@ export function LoginView({ onLogin }) {
       <div style={{ padding: "80px 72px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <form onSubmit={submit} style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
           <h2 style={{ fontFamily: "var(--fs-font-display)", fontSize: 30, fontWeight: 700, color: "var(--fs-navy)", margin: "0 0 8px" }}>Sign in to Keel</h2>
-          <p style={{ color: "var(--fs-fg-muted)", margin: "0 0 32px", fontSize: 14 }}>
+          <p style={{ color: "var(--fs-fg-muted)", margin: "0 0 24px", fontSize: 14 }}>
             Use your Fog Signal email or client portal credentials issued by your strategist.
           </p>
+
+          {announcement?.enabled && (announcement.title || announcement.body) && (
+            <div className="login-announce"
+              style={{
+                marginBottom: 20, padding: "12px 14px",
+                background: tone.bg, border: `1px solid ${tone.bd}`,
+                borderRadius: 6, display: "flex", gap: 10, alignItems: "flex-start",
+              }}>
+              <Icon name={announcement.tone === "warning" ? "alert" : "pin"} size={14} color={tone.ic} style={{ marginTop: 2, flexShrink: 0 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--fs-fg)" }}>
+                {announcement.title && <div style={{ fontWeight: 600, color: "var(--fs-navy)" }}>{announcement.title}</div>}
+                {announcement.body && <div style={{ color: "var(--fs-fg-muted)", marginTop: 2 }}>{announcement.body}</div>}
+              </div>
+            </div>
+          )}
+
           {error && (
             <div style={{ marginBottom: 16, padding: "10px 12px", background: "#fde8e4", border: "1px solid #e8b4ab", borderRadius: 4, fontSize: 13, color: "#7a2210" }}>
               {error}
@@ -81,8 +114,16 @@ export function LoginView({ onLogin }) {
             <input id="password" className="input" type="password" autoComplete="current-password" required
               placeholder="••••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
+          <label style={{
+            display: "flex", alignItems: "center", gap: 8, margin: "4px 0 14px",
+            fontSize: 13, color: "var(--fs-fg-muted)", cursor: "pointer", userSelect: "none",
+          }}>
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+              style={{ accentColor: "var(--fs-navy)" }} />
+            Remember me for 30 days
+          </label>
           <button type="submit" className="btn primary" disabled={loading}
-            style={{ width: "100%", padding: "12px 14px", justifyContent: "center", fontSize: 14, marginTop: 8 }}>
+            style={{ width: "100%", padding: "12px 14px", justifyContent: "center", fontSize: 14, marginTop: 4 }}>
             {loading ? "Signing in…" : <>Continue <Icon name="arrow-right" size={14} /></>}
           </button>
           <div style={{ marginTop: 32, padding: "14px 16px", background: "var(--fs-bone-50)", border: "1px solid var(--fs-border)", borderRadius: 4, fontSize: 12, color: "var(--fs-fg-muted)", display: "flex", gap: 10 }}>
