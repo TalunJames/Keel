@@ -557,8 +557,8 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
 
 /* =====================================================================
    Nautical chart background — drawn behind .content when .chart-bg is on
-   References an SVG file (water + sand land + contours + soundings + rose).
-   Sits under cards/tables at low opacity so content stays primary.
+   Uses the same SVG but desaturated and dialed way back so it reads as
+   a subtle gray texture rather than a noticeable blue/yellow chart.
    ===================================================================== */
 .content.chart-bg {
   background-color: var(--fs-bone-50);
@@ -575,11 +575,14 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  opacity: 0.55;
+  /* Grayscale strips blue/yellow; lower opacity makes the texture quiet. */
+  filter: grayscale(1) brightness(1.05) contrast(0.65);
+  opacity: 0.22;
 }
 [data-theme="dark"] .content.chart-bg::before {
   background-image: url("design-system/assets/chart-bg-dark.svg");
-  opacity: 0.72;
+  filter: grayscale(1) brightness(1.4) contrast(0.55);
+  opacity: 0.16;
 }
 .content.chart-bg::after { display: none; }
 .content.chart-bg > * { position: relative; z-index: 1; }
