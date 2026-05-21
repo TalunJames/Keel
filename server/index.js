@@ -27,7 +27,13 @@ app.use(cors({
     if (!origin) return cb(null, true);                 // same-origin / curl
     if (!allowedOrigins.length) return cb(null, true);  // dev fallback
     if (allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not in allowlist`));
+    // Origin not in allowlist: don't add CORS headers, but don't throw.
+    // Same-origin requests (browser knows they're same-origin) succeed because
+    // they don't need Access-Control-Allow-Origin. Real cross-origin requests
+    // from a disallowed host get blocked by the browser — the desired outcome.
+    // Throwing here was the wrong move: it 500s legitimate LAN/IP access where
+    // the origin happens to differ from the Cloudflare hostname in the allowlist.
+    cb(null, false);
   },
   credentials: true,
 }));
