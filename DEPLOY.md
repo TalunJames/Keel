@@ -81,12 +81,17 @@ Snapshot the `keel` dataset on whatever cadence you want — SQLite is in WAL mo
 
 1. In the Cloudflare Zero Trust dashboard: **Networks → Tunnels → Create a tunnel** → Cloudflared.
 2. Name it (e.g. `keel-truenas`). Copy the **tunnel token** — that's the long string after `--token` in the install command.
-3. Under **Public Hostnames**, add:
-   - **Subdomain:** `keel`
-   - **Domain:** your domain
-   - **Service:** `http://keel:3001`
-     (`keel` is the service name in the compose file; the tunnel container reaches it over the internal `keel-net` Docker network.)
-4. Cloudflare will issue a TLS cert automatically. Your URL will be `https://keel.yourdomain.com`.
+3. Under **Public Hostnames**, add **one row per public hostname** that should reach Keel. All rows point at the same upstream:
+   - **Subdomain:** `keel`  → **Domain:** your domain  → **Service:** `http://keel:3001`
+   - **Subdomain:** `portal` → **Domain:** your domain → **Service:** `http://keel:3001`
+
+   Both hostnames terminate at the same Express app inside the container. There's no need for a second service or container.
+4. Cloudflare issues TLS certs automatically. URLs will be e.g. `https://keel.fogsignalstrategies.com` and `https://portal.fogsignalstrategies.com`.
+5. **Allow both origins in CORS.** In the compose file (or TrueNAS env vars) set `CORS_ORIGIN` to a comma-separated list with no spaces:
+   ```
+   CORS_ORIGIN=https://keel.fogsignalstrategies.com,https://portal.fogsignalstrategies.com
+   ```
+   If you skip this, the second hostname will load HTML/CSS but every `/api/*` call from the browser will fail with a CORS error.
 
 Hold onto the tunnel token for step 5.
 

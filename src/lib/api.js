@@ -49,6 +49,10 @@ export const loginAnnouncementApi = {
     api("/login-announcement", { method: "PUT", body: JSON.stringify(announcement) }),
 };
 
+export const versionApi = {
+  get: () => api("/version"),
+};
+
 export const clientsApi = {
   list: () => api("/clients"),
 };

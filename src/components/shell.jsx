@@ -1,5 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Icon, Avatar } from "./ui.jsx";
+import { versionApi } from "../lib/api.js";
+
+function VersionStamp() {
+  const [v, setV] = useState(null);
+  useEffect(() => {
+    versionApi.get().then(setV).catch(() => setV(null));
+  }, []);
+  if (!v) return null;
+  const built = v.builtAt && v.builtAt !== "unknown"
+    ? new Date(v.builtAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : null;
+  const title = `build ${v.sha}\nbuilt ${v.builtAt}\nref ${v.ref}`;
+  return (
+    <div className="sb-version" title={title}>
+      <span>v {v.shaShort}</span>
+      {built && <span style={{ opacity: 0.6 }}> · {built}</span>}
+    </div>
+  );
+}
 
 const MODULE_ICONS = {
   home: "home",
@@ -131,6 +150,7 @@ export function Sidebar({
           onNavigate={onNavigate}
           onLogout={onLogout}
         />
+        <VersionStamp />
       </div>
     </aside>
   );
