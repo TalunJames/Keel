@@ -112,11 +112,12 @@ export function Sidebar({
       </button>
 
       <div className="sb-logo">
-        <div style={{
-          width: 40, height: 40, borderRadius: 4,
-          background: "var(--fs-gold)", color: "var(--fs-navy-900)",
-          display: "grid", placeItems: "center", fontWeight: 800, fontSize: 14,
-        }}>FS</div>
+        <img src="/truenaslogo.png" alt="Fog Signal Strategies"
+          style={{
+            width: 40, height: 40, borderRadius: 4,
+            background: "var(--fs-gold)",
+            objectFit: "contain", padding: 4, flexShrink: 0,
+          }} />
         {!collapsed && (
           <div>
             <div className="keel-wm">Keel</div>

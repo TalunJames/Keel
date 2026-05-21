@@ -53,11 +53,12 @@ export function LoginView({ onLogin }) {
           </g>
         </svg>
         <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 4, background: "var(--fs-gold)",
-            color: "var(--fs-navy-900)", display: "grid", placeItems: "center",
-            fontWeight: 800, fontSize: 18,
-          }}>FS</div>
+          <img src="/truenaslogo.png" alt="Fog Signal Strategies"
+            style={{
+              width: 56, height: 56, borderRadius: 4,
+              background: "var(--fs-gold)",
+              objectFit: "contain", padding: 6,
+            }} />
           <div>
             <div style={{ fontFamily: "var(--fs-font-display)", fontSize: 28, fontWeight: 700, lineHeight: 1 }}>Keel</div>
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: "rgba(255,255,255,0.55)", marginTop: 4 }}>Fog Signal Strategies</div>
@@ -126,10 +127,6 @@ export function LoginView({ onLogin }) {
             style={{ width: "100%", padding: "12px 14px", justifyContent: "center", fontSize: 14, marginTop: 4 }}>
             {loading ? "Signing in…" : <>Continue <Icon name="arrow-right" size={14} /></>}
           </button>
-          <div style={{ marginTop: 32, padding: "14px 16px", background: "var(--fs-bone-50)", border: "1px solid var(--fs-border)", borderRadius: 4, fontSize: 12, color: "var(--fs-fg-muted)", display: "flex", gap: 10 }}>
-            <Icon name="lock" size={14} color="var(--fs-navy)" style={{ marginTop: 2, flexShrink: 0 }} />
-            <div>First-time setup: run <code style={{ fontSize: 11 }}>npm run db:seed</code> after configuring <code style={{ fontSize: 11 }}>.env</code>.</div>
-          </div>
         </form>
       </div>
     </div>

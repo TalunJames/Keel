@@ -157,11 +157,28 @@ Notes:
 git commit -am "..."
 git push origin main
 # GitHub Actions builds + pushes ghcr.io/talunjames/keel:latest
-
-# On TrueNAS:
-# - If you pinned a SHA tag in compose, bump it to the new SHA from the Actions run.
-# - If you used :latest, click "Update" on the Custom App (or `docker compose pull && docker compose up -d`).
 ```
+
+The compose file sets `pull_policy: always` on both services, so on TrueNAS
+just restart the Custom App (or the whole NAS) — Docker re-checks GHCR before
+starting the container and pulls a fresh `:latest` if it changed.
+
+A few notes:
+
+- **Only `main` builds.** The workflow at `.github/workflows/docker.yml` runs
+  on `push` to `main` and on `v*` tags. Feature branches don't publish images —
+  merge to main (or open a PR and merge it) before expecting a fresh `:latest`.
+- **Confirm a build happened.** Check the **Actions** tab on GitHub — the
+  newest run should be green and have published a `sha-<short>` tag alongside
+  `latest`. If it didn't run, the branch wasn't `main`.
+- **If `pull_policy: always` is ignored** by your TrueNAS version (older
+  Cobia/Dragonfish), force it manually: SSH in and run
+  `docker compose -f /path/to/compose.yml pull && docker compose -f ... up -d`,
+  or in the UI, click **Update** on the app to force a re-pull.
+- **Pin a SHA for prod.** `:latest` is convenient but can roll back unexpected
+  changes if a bad build slips through. For production stability, switch the
+  image tag to a specific `sha-abc1234` from the Actions run, and bump it
+  deliberately when you want to update.
 
 For rollback: redeploy with the previous `sha-` tag. GHCR keeps all historical tags.
 
