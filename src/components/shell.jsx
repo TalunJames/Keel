@@ -103,16 +103,9 @@ export function Sidebar({
   return (
     <aside className="sb">
       <div className="sb-logo">
-        <img src="/logo-256.png" alt="Fog Signal Strategies"
-          style={{
-            width: 40, height: 40, borderRadius: 4,
-            background: "var(--fs-gold)",
-            objectFit: "contain", padding: 4, flexShrink: 0,
-          }} />
-        <div>
-          <div className="keel-wm">Keel</div>
-          <div className="keel-sub">Fog Signal · {roleLabel}</div>
-        </div>
+        <img src="/logo-wordmark-white.png" alt="Fog Signal Strategies"
+          style={{ width: "100%", maxWidth: 180, height: "auto", display: "block" }} />
+        <div className="keel-sub" style={{ marginTop: 6 }}>Keel · {roleLabel}</div>
       </div>
 
       <nav className="sb-nav">

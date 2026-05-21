@@ -52,17 +52,9 @@ export function LoginView({ onLogin }) {
             <circle cx="450" cy="450" r="120"/><circle cx="450" cy="450" r="220"/><circle cx="450" cy="450" r="340"/>
           </g>
         </svg>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
-          <img src="/logo-512.png" alt="Fog Signal Strategies"
-            style={{
-              width: 56, height: 56, borderRadius: 4,
-              background: "var(--fs-gold)",
-              objectFit: "contain", padding: 6,
-            }} />
-          <div>
-            <div style={{ fontFamily: "var(--fs-font-display)", fontSize: 28, fontWeight: 700, lineHeight: 1 }}>Keel</div>
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: "rgba(255,255,255,0.55)", marginTop: 4 }}>Fog Signal Strategies</div>
-          </div>
+        <div style={{ position: "relative" }}>
+          <img src="/logo-wordmark-white.png" alt="Fog Signal Strategies"
+            style={{ height: 56, width: "auto", display: "block" }} />
         </div>
         <div style={{ position: "relative", maxWidth: 480 }}>
           <Eyebrow>Sign in</Eyebrow>
