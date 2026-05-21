@@ -1,32 +1,56 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
-import { api } from "../lib/api.js";
+import { api, loginAnnouncementApi } from "../lib/api.js";
 import { useApi } from "../lib/useApi.js";
 import { Loading } from "../components/Loading.jsx";
 import { ALL_MODULES } from "../lib/modules.js";
 import { modulesApi } from "../lib/api.js";
 
-export function AdminView({ modules, onChangeModules, allRoles }) {
+export function AdminView({ user, modules, onChangeModules, allRoles }) {
+  const isSystemAdmin = !!user?.systemAdmin;
   const [tab, setTab] = useState("users");
   const { data: usersData, loading: usersLoading, reload: reloadUsers } = useApi("/admin/users");
   const { data: clientsData, loading: clientsLoading, reload: reloadClients } = useApi("/admin/clients");
   const { data: auditData, reload: reloadAudit } = useApi("/admin/audit");
 
-  const [userForm, setUserForm] = useState({ email: "", password: "", name: "", team: "", role: "staff", clientId: "" });
+  const [userForm, setUserForm] = useState({ email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false });
   const [clientForm, setClientForm] = useState({ id: "", name: "", tag: "", initials: "", account: "", type: "" });
   const [voterForm, setVoterForm] = useState({ clientId: "", source: "", recordCount: "" });
   const [announceForm, setAnnounceForm] = useState({ title: "", body: "", tag: "" });
+  const [loginAnn, setLoginAnn] = useState({ enabled: true, title: "", body: "", tone: "info" });
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (!isSystemAdmin) return;
+    loginAnnouncementApi.get()
+      .then((r) => r?.announcement && setLoginAnn(r.announcement))
+      .catch(() => {});
+  }, [isSystemAdmin]);
 
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 3000); };
 
   const createUser = async (e) => {
     e.preventDefault();
     await api("/admin/users", { method: "POST", body: JSON.stringify(userForm) });
-    setUserForm({ email: "", password: "", name: "", team: "", role: "staff", clientId: "" });
+    setUserForm({ email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false });
     reloadUsers();
     reloadAudit();
     flash("User created");
+  };
+
+  const toggleSystemAdmin = async (id, next) => {
+    await api("/admin/users/" + id, { method: "PATCH", body: JSON.stringify({ systemAdmin: next }) });
+    reloadUsers();
+    reloadAudit();
+    flash(next ? "System admin granted" : "System admin revoked");
+  };
+
+  const saveLoginAnnouncement = async (e) => {
+    e.preventDefault();
+    const { announcement } = await loginAnnouncementApi.set(loginAnn);
+    setLoginAnn(announcement);
+    reloadAudit();
+    flash("Login announcement updated");
   };
 
   const createClient = async (e) => {
@@ -77,9 +101,17 @@ export function AdminView({ modules, onChangeModules, allRoles }) {
       {msg && <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-navy)" }}>{msg}</div>}
 
       <div className="row" style={{ gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        {["users", "clients", "voter", "announce", "modules", "audit"].map((t) => (
-          <button key={t} type="button" className={"btn " + (tab === t ? "primary" : "secondary")} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+        {[
+          { id: "users", label: "Users" },
+          { id: "clients", label: "Clients" },
+          { id: "voter", label: "Voter" },
+          { id: "announce", label: "Announce" },
+          { id: "modules", label: "Modules" },
+          ...(isSystemAdmin ? [{ id: "login", label: "Login Screen" }] : []),
+          { id: "audit", label: "Audit" },
+        ].map((t) => (
+          <button key={t.id} type="button" className={"btn " + (tab === t.id ? "primary" : "secondary")} onClick={() => setTab(t.id)}>
+            {t.label}
           </button>
         ))}
       </div>
@@ -100,21 +132,80 @@ export function AdminView({ modules, onChangeModules, allRoles }) {
             {userForm.role === "client" && (
               <input className="input" placeholder="client id" value={userForm.clientId} onChange={(e) => setUserForm({ ...userForm, clientId: e.target.value })} />
             )}
+            {isSystemAdmin && userForm.role === "admin" && (
+              <label className="row" style={{ gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={userForm.systemAdmin}
+                  onChange={(e) => setUserForm({ ...userForm, systemAdmin: e.target.checked })} />
+                Grant system admin (can edit login screen)
+              </label>
+            )}
             <button type="submit" className="btn primary">Create user</button>
           </form>
           <div className="card">
             {usersLoading ? <Loading /> : (
               <table className="tbl">
-                <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th>{isSystemAdmin && <th>System admin</th>}</tr></thead>
                 <tbody>
                   {(usersData?.users || []).map((u) => (
-                    <tr key={u.id}><td>{u.name}</td><td className="mut">{u.email}</td><td>{u.role}</td></tr>
+                    <tr key={u.id}>
+                      <td>{u.name}</td>
+                      <td className="mut">{u.email}</td>
+                      <td>{u.systemAdmin ? "system admin" : u.role}</td>
+                      {isSystemAdmin && (
+                        <td>
+                          {u.role === "admin" ? (
+                            <label className="row" style={{ gap: 6, fontSize: 12 }}>
+                              <input type="checkbox" checked={!!u.systemAdmin}
+                                disabled={u.id === user?.id}
+                                onChange={(e) => toggleSystemAdmin(u.id, e.target.checked)} />
+                              {u.id === user?.id ? "you" : (u.systemAdmin ? "yes" : "no")}
+                            </label>
+                          ) : <span className="mut">—</span>}
+                        </td>
+                      )}
+                    </tr>
                   ))}
                 </tbody>
               </table>
             )}
           </div>
         </div>
+      )}
+
+      {tab === "login" && isSystemAdmin && (
+        <form className="card card-pad col" onSubmit={saveLoginAnnouncement} style={{ gap: 12, maxWidth: 620 }}>
+          <h3 style={{ margin: 0, color: "var(--fs-navy)" }}>Login screen announcement</h3>
+          <p className="mut" style={{ fontSize: 13, margin: 0 }}>
+            Shown to every user on the sign-in page. Only system admins can edit this.
+          </p>
+          <label className="row" style={{ gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={!!loginAnn.enabled}
+              onChange={(e) => setLoginAnn({ ...loginAnn, enabled: e.target.checked })} />
+            Show on login page
+          </label>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Title</label>
+            <input className="input" placeholder="Welcome to Keel" maxLength={120}
+              value={loginAnn.title} onChange={(e) => setLoginAnn({ ...loginAnn, title: e.target.value })} />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Body</label>
+            <textarea className="input" rows={3} maxLength={600}
+              value={loginAnn.body} onChange={(e) => setLoginAnn({ ...loginAnn, body: e.target.value })} />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Tone</label>
+            <select className="input" value={loginAnn.tone}
+              onChange={(e) => setLoginAnn({ ...loginAnn, tone: e.target.value })}>
+              <option value="info">Info (navy)</option>
+              <option value="warning">Warning (gold)</option>
+              <option value="success">Success (green)</option>
+            </select>
+          </div>
+          <button type="submit" className="btn primary" style={{ alignSelf: "flex-start" }}>
+            <Icon name="check" size={13} /> Save login announcement
+          </button>
+        </form>
       )}
 
       {tab === "clients" && (

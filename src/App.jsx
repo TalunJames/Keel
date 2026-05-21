@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { authApi, clientsApi, modulesApi, badgesApi } from "./lib/api.js";
+import { authApi, clientsApi, modulesApi, badgesApi, api, withClient } from "./lib/api.js";
 import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
@@ -17,6 +17,7 @@ import { StakeholdersView } from "./views/stakeholders.jsx";
 import { ResourcesView } from "./views/resources.jsx";
 import { OnboardingView } from "./views/onboarding.jsx";
 import { AdminView } from "./views/admin.jsx";
+import { AccountView } from "./views/account.jsx";
 
 const DEFAULT_MODULES_FALLBACK = {
   staff: { home: true, calendar: true, design: true, proposals: true, media: true, election: false, voter: true, polling: true, stakeholders: true, resources: true, onboarding: true },
@@ -42,6 +43,7 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [modules, setModules] = useState(DEFAULT_MODULES_FALLBACK.staff);
   const [badges, setBadges] = useState({});
+  const [announcements, setAnnouncements] = useState([]);
   const [theme, setTheme] = usePref("theme", "light");
   const [collapsed, setCollapsed] = usePref("collapsed", false);
   const [clientId, setClientId] = usePref("client", "all");
@@ -71,6 +73,9 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     badgesApi.get(clientId).then(setBadges).catch(() => setBadges({}));
+    api(withClient("/home", clientId))
+      .then((r) => setAnnouncements(r?.announcements || []))
+      .catch(() => setAnnouncements([]));
   }, [user, clientId]);
 
   const handleLogin = (u) => {
@@ -116,6 +121,7 @@ export default function App() {
     resources: "Resources",
     onboarding: "Onboarding",
     admin: "Admin Console",
+    account: "Account Settings",
   };
 
   const electionBadges = {};
@@ -135,18 +141,19 @@ export default function App() {
         onLogout={handleLogout}
         modules={visibleModules}
         badges={electionBadges}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === "light" ? "dark" : "light")}
       />
       <main className="main" data-screen-label={"Keel · " + (titles[section] || "Home")}>
         <TopBar
           section={titles[section] || "Home"}
           crumbs={"Keel" + (selectedClient?.id && selectedClient.id !== "all" ? " · " + selectedClient.name : "")}
           role={user.role}
-          theme={theme}
-          onToggleTheme={() => setTheme(theme === "light" ? "dark" : "light")}
           clients={clients}
           selectedClient={selectedClient}
           onSelectClient={setClientId}
           onNew={() => setSection(user.role === "client" ? "home" : "design")}
+          announcements={announcements}
         />
         <div className={"content" + (section === "election" ? " no-pad" : "") + (section !== "election" ? " chart-bg" : "")}>
           {section === "home" && <HomeView {...viewProps} />}
@@ -161,8 +168,9 @@ export default function App() {
           {section === "resources" && <ResourcesView {...viewProps} />}
           {section === "onboarding" && (user.role === "client" ? <ClientLockOut /> : <OnboardingView {...viewProps} />)}
           {section === "admin" && (user.role === "admin" ? (
-            <AdminView modules={modules} onChangeModules={setModules} allRoles={DEFAULT_MODULES_FALLBACK} />
+            <AdminView user={user} modules={modules} onChangeModules={setModules} allRoles={DEFAULT_MODULES_FALLBACK} />
           ) : <ClientLockOut />)}
+          {section === "account" && <AccountView user={user} onUserUpdate={setUser} />}
         </div>
       </main>
     </div>

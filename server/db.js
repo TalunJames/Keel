@@ -26,7 +26,19 @@ function migrate(db) {
       team TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL CHECK (role IN ('staff', 'admin', 'client')),
       client_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      system_admin INTEGER NOT NULL DEFAULT 0,
+      title TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      about TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      photo TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS clients (
@@ -208,8 +220,39 @@ function migrate(db) {
     );
   `);
 
+  ensureUserColumns(db);
   seedDefaultModules(db);
+  seedDefaultSettings(db);
 }
+
+function ensureUserColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  const add = (name, ddl) => {
+    if (!cols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`);
+  };
+  add("system_admin", "system_admin INTEGER NOT NULL DEFAULT 0");
+  add("title",        "title TEXT NOT NULL DEFAULT ''");
+  add("location",     "location TEXT NOT NULL DEFAULT ''");
+  add("about",        "about TEXT NOT NULL DEFAULT ''");
+  add("phone",        "phone TEXT NOT NULL DEFAULT ''");
+  add("photo",        "photo TEXT");
+}
+
+const DEFAULT_LOGIN_ANNOUNCEMENT = {
+  enabled: true,
+  title: "Welcome to Keel",
+  body: "A steady signal through noisy weeks.",
+  tone: "info",
+};
+
+function seedDefaultSettings(db) {
+  const ins = db.prepare(
+    "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)"
+  );
+  ins.run("login_announcement", JSON.stringify(DEFAULT_LOGIN_ANNOUNCEMENT));
+}
+
+export { DEFAULT_LOGIN_ANNOUNCEMENT };
 
 const DEFAULT_MODULES = {
   staff: { home: true, calendar: true, design: true, proposals: true, media: true, election: false, voter: true, polling: true, stakeholders: true, resources: true, onboarding: true },

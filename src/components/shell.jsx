@@ -15,8 +15,79 @@ const MODULE_ICONS = {
   onboarding: "flag",
 };
 
+function useClickOutside(ref, onClose) {
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [ref, onClose]);
+}
+
+function UserMenu({ user, role, collapsed, theme, onToggleTheme, onNavigate, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useClickOutside(wrapRef, () => setOpen(false));
+
+  const roleLabel = {
+    staff: "Staff",
+    admin: user?.systemAdmin ? "System Admin" : "Admin",
+    client: "Client",
+  }[role] || "User";
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="sb-user"
+        onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {user?.photo
+          ? <img src={user.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+          : <Avatar name={user.name} size={32} />}
+        {!collapsed && (
+          <>
+            <div className="meta">
+              <div className="name">{user.name}</div>
+              <div className="role">{roleLabel}{user.team ? " · " + user.team : ""}</div>
+            </div>
+            <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)" }}>
+              <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
+            </span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="user-pop" role="menu">
+          <div className="user-pop-head">
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fs-navy)" }}>{user.name}</div>
+            <div className="mut" style={{ fontSize: 11 }}>{user.email}</div>
+          </div>
+          <button type="button" className="user-pop-item" onClick={() => { setOpen(false); onNavigate("account"); }}>
+            <Icon name="settings" size={15} />
+            <span>Account settings</span>
+          </button>
+          <button type="button" className="user-pop-item" onClick={onToggleTheme}>
+            <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
+            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+            <span className="user-pop-meta">{theme === "dark" ? "Day" : "Night"}</span>
+          </button>
+          <div className="user-pop-sep" />
+          <button type="button" className="user-pop-item danger" onClick={() => { setOpen(false); onLogout(); }}>
+            <Icon name="logout" size={15} />
+            <span>Sign out</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
-  active, onNavigate, collapsed, onToggleCollapse, role, user, onLogout, modules, badges = {},
+  active, onNavigate, collapsed, onToggleCollapse, role, user, onLogout,
+  modules, badges = {}, theme, onToggleTheme,
 }) {
   const renderItem = (m) => (
     <a key={m.id} className={"sb-item " + (active === m.id ? "active" : "")} onClick={() => onNavigate(m.id)}>
@@ -28,7 +99,11 @@ export function Sidebar({
     </a>
   );
 
-  const roleLabel = { staff: "Staff", admin: "Admin", client: "Client" }[role];
+  const roleLabel = {
+    staff: "Staff",
+    admin: user?.systemAdmin ? "System Admin" : "Admin",
+    client: "Client",
+  }[role];
 
   return (
     <aside className="sb" style={{ position: "relative" }}>
@@ -65,20 +140,15 @@ export function Sidebar({
       </nav>
 
       <div className="sb-footer">
-        <button type="button" className="sb-user" onClick={onLogout} style={{ width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" }}>
-          <Avatar name={user.name} size={32} />
-          {!collapsed && (
-            <>
-              <div className="meta">
-                <div className="name">{user.name}</div>
-                <div className="role">{roleLabel} · {user.team}</div>
-              </div>
-              <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.4)" }}>
-                <Icon name="logout" size={15} />
-              </span>
-            </>
-          )}
-        </button>
+        <UserMenu
+          user={user}
+          role={role}
+          collapsed={collapsed}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          onNavigate={onNavigate}
+          onLogout={onLogout}
+        />
       </div>
     </aside>
   );
@@ -87,12 +157,7 @@ export function Sidebar({
 function ClientSwitcher({ clients, selected, onSelect }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-
-  useEffect(() => {
-    const close = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
+  useClickOutside(wrapRef, () => setOpen(false));
 
   if (!clients.length) return null;
 
@@ -139,7 +204,99 @@ function ClientSwitcher({ clients, selected, onSelect }) {
   );
 }
 
-export function TopBar({ section, crumbs, role, theme, onToggleTheme, clients, selectedClient, onSelectClient, onNew }) {
+function CollapsibleSearch() {
+  const [expanded, setExpanded] = useState(false);
+  const [q, setQ] = useState("");
+  const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useClickOutside(wrapRef, () => { if (!q) setExpanded(false); });
+
+  const expand = () => {
+    setExpanded(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const onKey = (e) => {
+    if (e.key === "Escape") { setQ(""); setExpanded(false); e.currentTarget.blur(); }
+  };
+
+  return (
+    <div ref={wrapRef} className={"search " + (expanded ? "expanded" : "collapsed")}>
+      {expanded ? (
+        <>
+          <Icon name="search" size={15} />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={onKey}
+            placeholder="Search Keel — people, races, files…"
+            aria-label="Search"
+          />
+          {q && (
+            <button type="button" className="search-clear" onClick={() => setQ("")} aria-label="Clear search">
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </>
+      ) : (
+        <button type="button" className="search-trigger" onClick={expand} aria-label="Open search">
+          <Icon name="search" size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AnnouncementsBell({ announcements = [], unreadCount }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useClickOutside(wrapRef, () => setOpen(false));
+  const count = unreadCount ?? announcements.length;
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button type="button" className="icon-btn" aria-label="Announcements" onClick={() => setOpen((o) => !o)}>
+        <Icon name="bell" size={16} />
+        {count > 0 && <span className="dot" />}
+      </button>
+      {open && (
+        <div className="ann-pop" role="dialog" aria-label="Announcements">
+          <div className="ann-pop-head">
+            <span>Announcements</span>
+            {count > 0 && <span className="ann-count">{count}</span>}
+          </div>
+          <div className="ann-pop-body">
+            {announcements.length === 0 ? (
+              <div className="ann-empty">
+                <Icon name="pin" size={16} color="var(--fs-fg-subtle)" />
+                <div>No announcements yet.</div>
+              </div>
+            ) : (
+              announcements.slice(0, 10).map((a) => (
+                <article key={a.id} className="ann-item">
+                  <div className="ann-item-head">
+                    <span className="tag navy">{a.tag || "Update"}</span>
+                    {a.time && <span className="mut" style={{ fontSize: 11 }}>{a.time}</span>}
+                  </div>
+                  <div className="ann-item-title">{a.title}</div>
+                  {a.body && <p className="ann-item-body">{a.body}</p>}
+                  {a.from && <div className="mut" style={{ fontSize: 11, marginTop: 6 }}>From {a.from}</div>}
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TopBar({
+  section, crumbs, role, clients, selectedClient, onSelectClient, onNew,
+  announcements,
+}) {
   return (
     <header className="topbar">
       <div>
@@ -150,24 +307,13 @@ export function TopBar({ section, crumbs, role, theme, onToggleTheme, clients, s
         <ClientSwitcher clients={clients} selected={selectedClient} onSelect={onSelectClient} />
       </div>
       <div className="grow" />
-      <div className="search">
-        <Icon name="search" size={15} />
-        <input placeholder="Search Keel — people, races, files…" aria-label="Search" />
-      </div>
+      <CollapsibleSearch />
       {role !== "client" && (
         <button type="button" className="btn primary" onClick={onNew}>
           <Icon name="plus" size={14} /> New Request
         </button>
       )}
-      <button type="button" className="theme-toggle" onClick={onToggleTheme}
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-        <span className="knob">
-          <Icon name={theme === "dark" ? "moon" : "sun"} size={12} />
-        </span>
-      </button>
-      <button type="button" className="icon-btn" aria-label="Notifications">
-        <Icon name="bell" size={16} /><span className="dot" />
-      </button>
+      <AnnouncementsBell announcements={announcements} />
     </header>
   );
 }
