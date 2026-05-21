@@ -7,6 +7,11 @@
 #
 # Before deploying:
 #   1. The image below points at ghcr.io/talunjames/keel:latest — change if your repo name differs.
+#      `pull_policy: always` makes docker re-check GHCR every time the container starts,
+#      so a TrueNAS app restart (or full reboot) picks up the newest :latest automatically.
+#      Caveat: a new image only exists after the GitHub Actions "Build and push container"
+#      workflow runs, which only fires on pushes to `main` or `v*` tags. Merge feature
+#      branches into main, then restart the app to pull.
 #   2. Create the host dirs and chown them to the TrueNAS apps user (568):
 #        mkdir -p /mnt/<pool>/apps/keel/{data,uploads}
 #        chown -R 568:568 /mnt/<pool>/apps/keel
@@ -17,6 +22,7 @@
 services:
   keel:
     image: ghcr.io/talunjames/keel:latest
+    pull_policy: always
     container_name: keel
     restart: unless-stopped
     user: "568:568"
@@ -44,6 +50,7 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
+    pull_policy: always
     container_name: keel-cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run
