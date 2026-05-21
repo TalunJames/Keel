@@ -1,0 +1,189 @@
+# Deploying Keel to TrueNAS Scale
+
+This guide takes you from the current repo state to a running Keel instance on TrueNAS Scale, fronted by Cloudflare Tunnel, with the container image built and stored on GitHub Container Registry (GHCR).
+
+Path summary:
+
+```
+GitHub repo  ──push──▶  GitHub Actions  ──build/push──▶  ghcr.io/talunjames/keel:latest
+                                                                     │
+                                                                     ▼
+                                       TrueNAS Scale (Custom App, docker compose)
+                                                                     │
+                                                                     ▼
+                                       Cloudflare Tunnel ──▶ https://keel.yourdomain.com
+```
+
+---
+
+## 1. One-time: push the repo to GitHub
+
+The local working directory isn't a git repo yet.
+
+```bash
+cd /path/to/Keel
+git init -b main
+git add .
+git commit -m "Initial commit"
+
+# Create a private repo on github.com first, then:
+git remote add origin git@github.com:TalunJames/Keel.git
+git push -u origin main
+```
+
+You can keep the repo private — GHCR will inherit private visibility for the image. You can flip the repo public later without rebuilding.
+
+The included `.github/workflows/docker.yml` builds the image on every push to `main` and on `v*` tags. No extra GitHub secrets needed — `GITHUB_TOKEN` is provided automatically and has `packages:write` because the workflow declares it.
+
+After the first successful run, your image will be at:
+
+```
+ghcr.io/talunjames/keel:latest        # rolling tag from main
+ghcr.io/talunjames/keel:v1.0.0        # if you push a tag
+ghcr.io/talunjames/keel:sha-abc1234   # immutable per-commit tag (recommended for prod)
+```
+
+---
+
+## 2. One-time: let TrueNAS pull from a private GHCR image
+
+If the package is private, TrueNAS needs credentials.
+
+1. On GitHub, create a **classic personal access token** (Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)) with the single scope `read:packages`. Save the token.
+2. SSH into TrueNAS Scale and run:
+   ```bash
+   docker login ghcr.io -u YOUR_GITHUB_USERNAME -p ghp_xxxxxxxxxxxxxxxxxxxx
+   ```
+3. Verify with `docker pull ghcr.io/talunjames/keel:latest`.
+
+Alternative: in the TrueNAS UI, **Apps → Discover Apps → Manage Container Images → Add → Registry Credentials**, then add a credential entry with `ghcr.io`, your GitHub username, and the PAT. The Custom App UI will then offer this credential when you reference the image.
+
+---
+
+## 3. One-time: dataset and permissions on TrueNAS
+
+```bash
+# As root on TrueNAS:
+mkdir -p /mnt/<pool>/apps/keel/data
+mkdir -p /mnt/<pool>/apps/keel/uploads
+chown -R 568:568 /mnt/<pool>/apps/keel
+```
+
+Replace `<pool>` with your pool name (e.g. `tank`). Update the `volumes:` paths in `docker-compose.yml` to match.
+
+UID 568 is the built-in `apps` user on TrueNAS Scale — the compose file runs Keel as that user so it can write to the bind mounts.
+
+Snapshot the `keel` dataset on whatever cadence you want — SQLite is in WAL mode and is snapshot-safe while the app is running.
+
+---
+
+## 4. One-time: Cloudflare Tunnel
+
+1. In the Cloudflare Zero Trust dashboard: **Networks → Tunnels → Create a tunnel** → Cloudflared.
+2. Name it (e.g. `keel-truenas`). Copy the **tunnel token** — that's the long string after `--token` in the install command.
+3. Under **Public Hostnames**, add:
+   - **Subdomain:** `keel`
+   - **Domain:** your domain
+   - **Service:** `http://keel:3001`
+     (`keel` is the service name in the compose file; the tunnel container reaches it over the internal `keel-net` Docker network.)
+4. Cloudflare will issue a TLS cert automatically. Your URL will be `https://keel.yourdomain.com`.
+
+Hold onto the tunnel token for step 5.
+
+---
+
+## 5. Deploy on TrueNAS
+
+**Apps → Discover Apps → Custom App** (some TrueNAS versions call this "Install Custom App" or "Launch Docker Image").
+
+In recent TrueNAS Scale (Electric Eel / Fangtooth), the Custom App form takes a `docker-compose.yml` directly. Paste the contents of `docker-compose.yml` from this repo, with these substitutions:
+
+- Replace `ghcr.io/talunjames/keel:latest` with your actual image (e.g. `ghcr.io/cartergh/keel:sha-abc1234` — pinning a SHA is safer than `latest`).
+- Replace `/mnt/tank/apps/keel/` with your actual dataset path.
+- Set `CORS_ORIGIN` to your public URL (`https://keel.yourdomain.com`).
+
+Then in the **Environment Variables** section, set the required secrets:
+
+| Variable          | Value                                                     |
+| ----------------- | --------------------------------------------------------- |
+| `JWT_SECRET`      | output of `openssl rand -hex 32`                          |
+| `ADMIN_PASSWORD`  | a strong password — used only for the first-boot seed     |
+| `ADMIN_EMAIL`     | (optional) override the default admin email               |
+| `TUNNEL_TOKEN`    | the Cloudflare tunnel token from step 4                   |
+
+Save and start the app.
+
+---
+
+## 6. First-boot verification
+
+```bash
+# On TrueNAS, watch logs:
+docker logs -f keel
+docker logs -f keel-cloudflared
+```
+
+What to look for:
+
+- `Keel API listening on http://localhost:3001` in the `keel` log.
+- `Created admin user: <email>` on the very first boot only. On subsequent boots: `Users already exist — skipping seed.`
+- `Registered tunnel connection` in `keel-cloudflared`.
+
+Open `https://keel.yourdomain.com` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+**Immediately after first login:** change the admin password from the Admin Console. The `ADMIN_PASSWORD` env var was only used to seed the account — rotating it in the env will not change the actual password (the seed is idempotent and skips on subsequent boots).
+
+---
+
+## 7. App icon on the TrueNAS Apps page
+
+The repo ships `public/truenaslogo.png`. Vite copies anything in `public/` verbatim into the build, so after the next image push it'll be served at:
+
+```
+https://keel.yourdomain.com/truenaslogo.png
+```
+
+In the TrueNAS Custom App form (Apps → your Keel app → Edit), paste that URL into the **Application Icon URL** field. Save — the Apps page tile will pick it up.
+
+Notes:
+- TrueNAS renders the icon by URL in your browser, so the tunnel needs to be reachable when you load the Apps page (it is, once Keel is running).
+- The current PNG is 1040×1024 / ~1.2 MB. Works fine but it's a heavy fetch for a tile-sized icon — consider downsizing to ~256×256 (e.g. `sips -Z 256 public/truenaslogo.png` on macOS) before the next push if you want a snappier Apps page.
+- To swap the icon later: drop a replacement into `public/`, push to `main`, and once the new image is deployed the tile updates on next refresh (you may need to bust the browser cache).
+
+## 8. Updates
+
+```bash
+# Push a code change:
+git commit -am "..."
+git push origin main
+# GitHub Actions builds + pushes ghcr.io/talunjames/keel:latest
+
+# On TrueNAS:
+# - If you pinned a SHA tag in compose, bump it to the new SHA from the Actions run.
+# - If you used :latest, click "Update" on the Custom App (or `docker compose pull && docker compose up -d`).
+```
+
+For rollback: redeploy with the previous `sha-` tag. GHCR keeps all historical tags.
+
+---
+
+## 9. Backups
+
+The only stateful paths are:
+
+- `/mnt/<pool>/apps/keel/data` — SQLite database + WAL files
+- `/mnt/<pool>/apps/keel/uploads` — user-uploaded files
+
+Snapshot the `apps/keel` dataset on a Periodic Snapshot Task. Replicate offsite if you care. SQLite WAL is safe to snapshot live.
+
+If you ever need to restore: stop the app, restore the dataset from snapshot, start the app.
+
+---
+
+## Known gotchas
+
+- **Don't change `JWT_SECRET` after going live without warning users** — it invalidates every active session (everyone gets logged out).
+- **`ADMIN_PASSWORD` is seed-only.** Changing it in the env after first boot does nothing. Change the password in-app instead.
+- **Cookies are `secure: true` in production** ([server/auth.js:27](server/auth.js)). That means logins only persist over HTTPS. Cloudflare Tunnel terminates TLS for you, so this works — but if you ever bypass the tunnel and hit the container over plain HTTP on the LAN, login won't stick.
+- **`better-sqlite3` is a native module.** The Dockerfile compiles it during the build stage (Debian slim base + `python3 make g++`). If you change Node major versions, rebuild the image.
+- **First boot is slow (~30s)** while the SQLite migrations run and the admin gets seeded. Healthcheck has a 15s `start-period` to account for this.

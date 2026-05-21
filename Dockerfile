@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1.7
+
+# ---------- Stage 1: build the Vite frontend ----------
+FROM node:20-bookworm-slim AS build
+WORKDIR /app
+
+# better-sqlite3 needs a toolchain to compile during `npm ci`
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# ---------- Stage 2: production node_modules only ----------
+FROM node:20-bookworm-slim AS prod-deps
+WORKDIR /app
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# ---------- Stage 3: runtime ----------
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3001 \
+    SERVE_STATIC=true \
+    DATABASE_PATH=/app/data/keel.db \
+    VOTER_DATA_DIR=/app/data/voter
+
+# tini gives us PID 1 signal handling so SIGTERM cleanly shuts down node
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build     /app/dist         ./dist
+COPY package.json ./
+COPY server ./server
+COPY docker-entrypoint.sh ./
+
+RUN chmod +x docker-entrypoint.sh \
+ && mkdir -p /app/data /app/data/voter /app/uploads
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/bin/tini", "--", "./docker-entrypoint.sh"]

@@ -1,0 +1,59 @@
+# TrueNAS Scale Custom App compose file for Keel.
+#
+# Two services:
+#   keel        — the app (API + built frontend, port 3001 inside the container)
+#   cloudflared — Cloudflare Tunnel, publishes Keel to the public internet over HTTPS
+#                 without opening any ports on the NAS.
+#
+# Before deploying:
+#   1. The image below points at ghcr.io/talunjames/keel:latest — change if your repo name differs.
+#   2. Create the host dirs and chown them to the TrueNAS apps user (568):
+#        mkdir -p /mnt/<pool>/apps/keel/{data,uploads}
+#        chown -R 568:568 /mnt/<pool>/apps/keel
+#      Adjust the bind-mount source paths below to match your pool.
+#   3. Fill in the env vars (JWT_SECRET, ADMIN_PASSWORD, TUNNEL_TOKEN) in TrueNAS's
+#      "Environment Variables" UI — do NOT commit real secrets to this file.
+
+services:
+  keel:
+    image: ghcr.io/talunjames/keel:latest
+    container_name: keel
+    restart: unless-stopped
+    user: "568:568"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      SERVE_STATIC: "true"
+      DATABASE_PATH: /app/data/keel.db
+      VOTER_DATA_DIR: /app/data/voter
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: 8h
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@fogsignal.co}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required for first boot}
+      ADMIN_NAME: ${ADMIN_NAME:-Keel Administrator}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://keel.example.com}
+    volumes:
+      - /mnt/tank/apps/keel/data:/app/data
+      - /mnt/tank/apps/keel/uploads:/app/uploads
+    networks:
+      - keel-net
+    # No ports exposed to the host — cloudflared reaches keel via the internal network.
+    # If you want LAN access too, uncomment:
+    # ports:
+    #   - "3001:3001"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: keel-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required}
+    depends_on:
+      - keel
+    networks:
+      - keel-net
+
+networks:
+  keel-net:
+    driver: bridge

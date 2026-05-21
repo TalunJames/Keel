@@ -1,0 +1,127 @@
+<?xml version="1.0"?>
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <pattern id="soundings-dark" x="0" y="0" width="64" height="64" patternUnits="userSpaceOnUse">
+      <circle cx="6" cy="14" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="22" cy="32" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="40" cy="10" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="54" cy="44" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="12" cy="52" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="36" cy="58" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+      <circle cx="50" cy="20" r="0.9" fill="#A8C2DD" opacity="0.45"></circle>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="1100" fill="#15293F"></rect>
+
+  <path d="M 1600 1100 L 1600 380&#xA;    C 1480 360, 1420 340, 1350 380&#xA;    C 1290 420, 1240 410, 1190 460&#xA;    C 1140 510, 1090 500, 1020 545&#xA;    C 970 575, 920 560, 860 600&#xA;    C 820 625, 810 650, 760 680&#xA;    C 700 715, 700 760, 740 800&#xA;    C 780 840, 790 880, 760 940&#xA;    C 730 1000, 770 1060, 880 1100 Z" fill="#3B3520"></path>
+
+  <path d="M 1600 380&#xA;    C 1480 360, 1420 340, 1350 380&#xA;    C 1290 420, 1240 410, 1190 460&#xA;    C 1140 510, 1090 500, 1020 545&#xA;    C 970 575, 920 560, 860 600&#xA;    C 820 625, 810 650, 760 680&#xA;    C 700 715, 700 760, 740 800&#xA;    C 780 840, 790 880, 760 940&#xA;    C 730 1000, 770 1060, 880 1100" fill="none" stroke="#F4D77A" stroke-width="1.6" opacity="0.5"></path>
+
+  <g fill="none" stroke="#F4D77A" stroke-width="0.7" opacity="0.32">
+    <path d="M 1100 1100 C 1180 1000, 1280 990, 1340 920 C 1390 870, 1450 850, 1520 820 C 1560 805, 1590 800, 1600 800"></path>
+    <path d="M 1280 1100 C 1320 1040, 1400 1010, 1470 970 C 1530 940, 1580 920, 1600 910"></path>
+    <path d="M 1440 1100 C 1490 1060, 1540 1020, 1590 990"></path>
+  </g>
+
+  <g fill="none" stroke="#7BA0CC" stroke-width="0.9" opacity="0.42">
+    <path d="M -20 800 C 200 720, 420 800, 660 720 C 850 660, 1000 720, 1190 660"></path>
+    <path d="M -20 620 C 240 540, 460 620, 700 540 C 900 480, 1020 560, 1200 520"></path>
+    <path d="M -20 440 C 280 360, 540 440, 800 360 C 1000 300, 1100 380, 1280 320"></path>
+    <path d="M -20 280 C 320 200, 620 280, 900 200 C 1100 140, 1180 220, 1340 160"></path>
+  </g>
+
+  <g>
+    <ellipse cx="280" cy="200" rx="42" ry="22" fill="#3B3520" opacity="0.6"></ellipse>
+    <ellipse cx="280" cy="200" rx="42" ry="22" fill="none" stroke="#F4D77A" stroke-width="0.7" opacity="0.5"></ellipse>
+    <ellipse cx="540" cy="380" rx="28" ry="14" fill="#3B3520" opacity="0.6"></ellipse>
+    <ellipse cx="540" cy="380" rx="28" ry="14" fill="none" stroke="#F4D77A" stroke-width="0.7" opacity="0.5"></ellipse>
+    <ellipse cx="940" cy="160" rx="36" ry="18" fill="#3B3520" opacity="0.6"></ellipse>
+    <ellipse cx="940" cy="160" rx="36" ry="18" fill="none" stroke="#F4D77A" stroke-width="0.7" opacity="0.5"></ellipse>
+  </g>
+
+  <rect x="0" y="0" width="1600" height="1100" fill="url(#soundings-dark)" opacity="0.7"></rect>
+
+  <g font-family="Baskerville, serif" font-style="italic" font-size="9.5" fill="#A8C2DD" opacity="0.55">
+    <text x="100" y="160">14</text>
+    <text x="380" y="240">22</text>
+    <text x="640" y="180">31</text>
+    <text x="220" y="380">18</text>
+    <text x="460" y="460">26</text>
+    <text x="780" y="380">35</text>
+    <text x="120" y="560">11</text>
+    <text x="360" y="640">19</text>
+    <text x="620" y="600">28</text>
+    <text x="860" y="540">33</text>
+    <text x="100" y="780">8</text>
+    <text x="320" y="820">14</text>
+    <text x="540" y="780">22</text>
+    <text x="980" y="320">42</text>
+    <text x="1240" y="240">48</text>
+    <text x="1340" y="120">52</text>
+    <text x="160" y="940">5</text>
+    <text x="420" y="980">9</text>
+    <text x="700" y="900">17</text>
+  </g>
+
+  <g stroke="#C8A4D2" stroke-width="1.1" stroke-dasharray="6 5" opacity="0.45" fill="none">
+    <path d="M -20 60 C 200 180, 540 200, 760 320 C 920 410, 1080 380, 1340 460"></path>
+  </g>
+
+  <g opacity="0.7">
+    <circle cx="690" cy="690" r="4" fill="#6FBE94"></circle>
+    <circle cx="690" cy="690" r="9" fill="none" stroke="#6FBE94" stroke-width="0.7"></circle>
+    <circle cx="900" cy="540" r="4" fill="#D8765C"></circle>
+    <circle cx="900" cy="540" r="9" fill="none" stroke="#D8765C" stroke-width="0.7"></circle>
+  </g>
+
+  <g transform="translate(1380 160)" opacity="0.55">
+    <circle r="60" fill="none" stroke="#A8C2DD" stroke-width="0.9"></circle>
+    <circle r="42" fill="none" stroke="#A8C2DD" stroke-width="0.7"></circle>
+    <circle r="20" fill="none" stroke="#A8C2DD" stroke-width="0.7"></circle>
+    <g stroke="#A8C2DD" stroke-width="0.6" fill="none">
+      <line x1="0" y1="-60" x2="0" y2="60"></line>
+      <line x1="-60" y1="0" x2="60" y2="0"></line>
+      <line x1="-42" y1="-42" x2="42" y2="42"></line>
+      <line x1="42" y1="-42" x2="-42" y2="42"></line>
+    </g>
+    <polygon points="0,-58 -5,0 0,-12 5,0" fill="#F4D77A"></polygon>
+    <polygon points="0,58 -5,0 0,12 5,0" fill="#A8C2DD" opacity="0.6"></polygon>
+    <g font-family="Baskerville, serif" font-style="italic" font-size="11" fill="#DCE8F6">
+      <text x="0" y="-66" text-anchor="middle">N</text>
+      <text x="68" y="4" text-anchor="start">E</text>
+      <text x="0" y="76" text-anchor="middle">S</text>
+      <text x="-68" y="4" text-anchor="end">W</text>
+    </g>
+  </g>
+
+  <g stroke="#A8C2DD" stroke-width="0.6" opacity="0.32">
+    <line x1="0" y1="20" x2="1600" y2="20"></line>
+    <line x1="20" y1="0" x2="20" y2="1100"></line>
+    <g>
+      <line x1="120" y1="14" x2="120" y2="26"></line>
+      <line x1="240" y1="14" x2="240" y2="26"></line>
+      <line x1="360" y1="14" x2="360" y2="26"></line>
+      <line x1="480" y1="14" x2="480" y2="26"></line>
+      <line x1="600" y1="14" x2="600" y2="26"></line>
+      <line x1="720" y1="14" x2="720" y2="26"></line>
+      <line x1="840" y1="14" x2="840" y2="26"></line>
+      <line x1="960" y1="14" x2="960" y2="26"></line>
+      <line x1="1080" y1="14" x2="1080" y2="26"></line>
+      <line x1="1200" y1="14" x2="1200" y2="26"></line>
+      <line x1="1320" y1="14" x2="1320" y2="26"></line>
+      <line x1="1440" y1="14" x2="1440" y2="26"></line>
+    </g>
+    <g>
+      <line x1="14" y1="120" x2="26" y2="120"></line>
+      <line x1="14" y1="240" x2="26" y2="240"></line>
+      <line x1="14" y1="360" x2="26" y2="360"></line>
+      <line x1="14" y1="480" x2="26" y2="480"></line>
+      <line x1="14" y1="600" x2="26" y2="600"></line>
+      <line x1="14" y1="720" x2="26" y2="720"></line>
+      <line x1="14" y1="840" x2="26" y2="840"></line>
+      <line x1="14" y1="960" x2="26" y2="960"></line>
+    </g>
+  </g>
+</svg>
