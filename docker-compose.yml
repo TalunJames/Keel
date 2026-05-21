@@ -37,7 +37,10 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@fogsignal.co}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required for first boot}
       ADMIN_NAME: ${ADMIN_NAME:-Keel Administrator}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://keel.example.com}
+      # Comma-separated allowlist. Add every public hostname that fronts Keel
+      # (e.g. cloudflared tunnels for portal.fogsignalstrategies.com and
+      # keel.fogsignalstrategies.com). No spaces around commas.
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://keel.example.com,https://portal.example.com}
     volumes:
       - /mnt/tank/apps/keel/data:/app/data
       - /mnt/tank/apps/keel/uploads:/app/uploads

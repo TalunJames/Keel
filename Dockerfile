@@ -30,11 +30,22 @@ RUN npm ci --omit=dev
 FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 
+# Build-time metadata, surfaced at runtime via KEEL_* env vars and /api/version.
+# The Actions workflow passes these as --build-arg; local builds get sensible defaults.
+ARG GIT_SHA=dev
+ARG GIT_SHA_SHORT=dev
+ARG BUILD_TIME=unknown
+ARG GIT_REF=local
+
 ENV NODE_ENV=production \
     PORT=3001 \
     SERVE_STATIC=true \
     DATABASE_PATH=/app/data/keel.db \
-    VOTER_DATA_DIR=/app/data/voter
+    VOTER_DATA_DIR=/app/data/voter \
+    KEEL_GIT_SHA=$GIT_SHA \
+    KEEL_GIT_SHA_SHORT=$GIT_SHA_SHORT \
+    KEEL_BUILD_TIME=$BUILD_TIME \
+    KEEL_GIT_REF=$GIT_REF
 
 # tini gives us PID 1 signal handling so SIGTERM cleanly shuts down node
 RUN apt-get update \
