@@ -45,7 +45,6 @@ export default function App() {
   const [badges, setBadges] = useState({});
   const [announcements, setAnnouncements] = useState([]);
   const [theme, setTheme] = usePref("theme", "light");
-  const [collapsed, setCollapsed] = usePref("collapsed", false);
   const [clientId, setClientId] = usePref("client", "all");
   const [section, setSection] = useState("home");
 
@@ -130,12 +129,10 @@ export default function App() {
   if (badges.media) electionBadges.media = badges.media;
 
   return (
-    <div className={"app" + (collapsed ? " collapsed" : "")}>
+    <div className="app">
       <Sidebar
         active={section}
         onNavigate={setSection}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(!collapsed)}
         role={user.role}
         user={user}
         onLogout={handleLogout}

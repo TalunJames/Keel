@@ -23,7 +23,7 @@ function useClickOutside(ref, onClose) {
   }, [ref, onClose]);
 }
 
-function UserMenu({ user, role, collapsed, theme, onToggleTheme, onNavigate, onLogout }) {
+function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useClickOutside(wrapRef, () => setOpen(false));
@@ -47,17 +47,13 @@ function UserMenu({ user, role, collapsed, theme, onToggleTheme, onNavigate, onL
         {user?.photo
           ? <img src={user.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
           : <Avatar name={user.name} size={32} />}
-        {!collapsed && (
-          <>
-            <div className="meta">
-              <div className="name">{user.name}</div>
-              <div className="role">{roleLabel}{user.team ? " · " + user.team : ""}</div>
-            </div>
-            <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)" }}>
-              <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
-            </span>
-          </>
-        )}
+        <div className="meta">
+          <div className="name">{user.name}</div>
+          <div className="role">{roleLabel}{user.team ? " · " + user.team : ""}</div>
+        </div>
+        <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)" }}>
+          <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
+        </span>
       </button>
       {open && (
         <div className="user-pop" role="menu">
@@ -86,8 +82,7 @@ function UserMenu({ user, role, collapsed, theme, onToggleTheme, onNavigate, onL
 }
 
 export function Sidebar({
-  active, onNavigate, collapsed, onToggleCollapse, role, user, onLogout,
-  modules, badges = {}, theme, onToggleTheme,
+  active, onNavigate, role, user, onLogout, modules, badges = {}, theme, onToggleTheme,
 }) {
   const renderItem = (m) => (
     <a key={m.id} className={"sb-item " + (active === m.id ? "active" : "")} onClick={() => onNavigate(m.id)}>
@@ -106,32 +101,19 @@ export function Sidebar({
   }[role];
 
   return (
-    <aside className="sb" style={{ position: "relative" }}>
-      <button type="button" className="sb-collapse" style={{ right: -11, top: 50 }} onClick={onToggleCollapse} aria-label="Collapse sidebar">
-        <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={13} />
-      </button>
-
+    <aside className="sb">
       <div className="sb-logo">
-        <img src="/truenaslogo.png" alt="Fog Signal Strategies"
-          style={{
-            width: 40, height: 40, borderRadius: 4,
-            background: "var(--fs-gold)",
-            objectFit: "contain", padding: 4, flexShrink: 0,
-          }} />
-        {!collapsed && (
-          <div>
-            <div className="keel-wm">Keel</div>
-            <div className="keel-sub">Fog Signal · {roleLabel}</div>
-          </div>
-        )}
+        <img src="/logo-wordmark-white.png" alt="Fog Signal Strategies"
+          style={{ width: "100%", maxWidth: 180, height: "auto", display: "block" }} />
+        <div className="keel-sub" style={{ marginTop: 6 }}>Keel · {roleLabel}</div>
       </div>
 
       <nav className="sb-nav">
-        {!collapsed && <div className="sb-section-label">Workspace</div>}
+        <div className="sb-section-label">Workspace</div>
         {modules.map(renderItem)}
         {role === "admin" && (
           <>
-            {!collapsed && <div className="sb-section-label">Administration</div>}
+            <div className="sb-section-label">Administration</div>
             <a className={"sb-item " + (active === "admin" ? "active" : "")} onClick={() => onNavigate("admin")}>
               <span className="ic"><Icon name="shield" size={18} /></span>
               <span>Admin Console</span>
@@ -144,7 +126,6 @@ export function Sidebar({
         <UserMenu
           user={user}
           role={role}
-          collapsed={collapsed}
           theme={theme}
           onToggleTheme={onToggleTheme}
           onNavigate={onNavigate}
