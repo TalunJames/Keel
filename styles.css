@@ -24,12 +24,13 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces — slightly warmer + more saturated than before */
-  --fs-paper:    #182438;     /* card / "white" surface — lifted from #131D29 */
-  --fs-bone-50:  #0F1A2B;     /* page bg — was #0B131C, lifted for less crush */
-  --fs-bone-100: #1F2E45;     /* alt surface */
-  --fs-bone-200: #243450;
-  --fs-bone:     #2E4163;
+  /* Surfaces — lifted again so content reads comfortably without going washed-out.
+     Page bg, cards, and alt surfaces all step up together to preserve hierarchy. */
+  --fs-paper:    #243349;     /* card / "white" surface — was #182438 */
+  --fs-bone-50:  #1A2740;     /* page bg — was #0F1A2B */
+  --fs-bone-100: #2A3A56;     /* alt surface — was #1F2E45 */
+  --fs-bone-200: #30405D;
+  --fs-bone:     #3A4D72;
 
   /* Text */
   --fs-ink:      #ECEAD8;     /* warmer parchment */
@@ -63,10 +64,10 @@
   --fs-gold-600: #F2CD52;
   --fs-gold-700: #F4D77A;
 
-  /* Borders — slight warm tint */
-  --fs-border:        rgba(232, 220, 184, 0.10);
-  --fs-border-strong: rgba(232, 220, 184, 0.24);
-  --fs-border-bone:   rgba(232, 220, 184, 0.10);
+  /* Borders — slight warm tint, lifted opacity to read on the lighter surfaces */
+  --fs-border:        rgba(232, 220, 184, 0.14);
+  --fs-border-strong: rgba(232, 220, 184, 0.30);
+  --fs-border-bone:   rgba(232, 220, 184, 0.14);
 
   --fs-link: var(--fs-gold-500);
   --fs-link-hover: var(--fs-gold-300);
@@ -103,12 +104,10 @@ a { color: inherit; }
 /* ---- App layout ---------------------------------------------------- */
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w, 248px) 1fr;
+  grid-template-columns: 248px 1fr;
   height: 100vh;
   width: 100vw;
-  transition: grid-template-columns 220ms var(--fs-ease-standard);
 }
-.app.collapsed { --sidebar-w: 64px; }
 
 /* ---- Sidebar ------------------------------------------------------- */
 .sb {
@@ -153,7 +152,6 @@ a { color: inherit; }
   color: rgba(255,255,255,0.42);
   padding: 18px 22px 8px;
 }
-.app.collapsed .sb-section-label { opacity: 0; height: 0; padding: 0; overflow: hidden; }
 .sb-nav { flex: 1; padding: 8px 8px 0; overflow-y: auto; }
 .sb-item {
   display: flex;
@@ -196,13 +194,6 @@ a { color: inherit; }
   border-radius: 999px;
   letter-spacing: 0.02em;
 }
-.app.collapsed .sb-item span:not(.badge):not(.ic) { display: none; }
-.app.collapsed .sb-item { justify-content: center; padding: 9px; }
-.app.collapsed .sb-item .badge {
-  position: absolute; top: 4px; right: 4px;
-  margin: 0; font-size: 0; width: 6px; height: 6px; padding: 0;
-}
-
 .sb-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
 .sb-user {
   display: flex; align-items: center; gap: 10px;
@@ -229,23 +220,6 @@ a { color: inherit; }
   color: rgba(255,255,255,0.55);
   margin-top: 2px;
 }
-.app.collapsed .sb-user .meta { display: none; }
-.app.collapsed .sb-user .chev { display: none; }
-.sb-collapse {
-  position: absolute;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: var(--fs-bone-50);
-  border: 1px solid var(--fs-border);
-  display: grid; place-items: center;
-  cursor: pointer;
-  color: var(--fs-navy);
-  z-index: 50;
-  box-shadow: var(--fs-shadow-sm);
-  transition: transform 160ms;
-}
-.sb-collapse:hover { transform: scale(1.08); }
-
 /* ---- Top bar ------------------------------------------------------- */
 .main {
   display: flex; flex-direction: column;
@@ -721,12 +695,6 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   z-index: 240;
   overflow: hidden;
   padding: 4px;
-}
-.app.collapsed .user-pop {
-  left: calc(100% + 8px);
-  right: auto;
-  bottom: 0;
-  width: 240px;
 }
 .user-pop-head {
   padding: 10px 12px 8px;

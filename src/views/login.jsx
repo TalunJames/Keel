@@ -53,7 +53,7 @@ export function LoginView({ onLogin }) {
           </g>
         </svg>
         <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
-          <img src="/truenaslogo.png" alt="Fog Signal Strategies"
+          <img src="/logo-512.png" alt="Fog Signal Strategies"
             style={{
               width: 56, height: 56, borderRadius: 4,
               background: "var(--fs-gold)",
