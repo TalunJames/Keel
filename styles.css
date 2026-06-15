@@ -866,3 +866,26 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   background: var(--fs-gold);
 }
 .cal-mini-cell:hover:not(.today) { background: var(--fs-bone-50); }
+
+/* ---- Election Night / Fathom ----------------------------------------- */
+.measurecard:hover { box-shadow: var(--fs-shadow-sm); border-color: var(--fs-border-strong) !important; transform: translateY(-1px); }
+.trow:hover { background: var(--fs-bone-50) !important; }
+.navbtn:hover { background: rgba(255,255,255,0.07) !important; color: #fff !important; }
+.linkbtn:hover { color: var(--fs-navy) !important; }
+.btn-primary:hover { background: var(--fs-navy-900) !important; }
+.btn-secondary:hover { background: var(--fs-navy) !important; color: #fff !important; }
+.btn-accent:hover { background: var(--fs-gold-600) !important; }
+.btn-ghost:hover { color: var(--fs-navy-900) !important; }
+.fathom-app button { font-family: var(--fs-font-sans); }
+.fathom-app select:focus,
+.fathom-app textarea:focus,
+.fathom-app input:focus { border-color: var(--fs-navy); box-shadow: 0 0 0 3px rgba(26,58,92,0.10); }
+@keyframes etpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes etwatch {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(240,178,62,0.25); }
+  50% { box-shadow: 0 0 0 2px rgba(240,178,62,0.55), 0 0 22px rgba(240,178,62,0.18); }
+}
+.boardtile:hover { border-color: rgba(255,255,255,0.3) !important; background: rgba(255,255,255,0.06) !important; }
+.enbtn:hover { background: rgba(255,255,255,0.13) !important; }
+.linkbtn-d:hover { color: #fff !important; }
+

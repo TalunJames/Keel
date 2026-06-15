@@ -54,6 +54,10 @@ const Icon = ({ name, size = 18, stroke = 1.75, style = {}, color = "currentColo
     case "grip":     return <svg style={s} viewBox="0 0 24 24" {...c}><circle cx="9" cy="6" r="1.4" fill="currentColor"/><circle cx="15" cy="6" r="1.4" fill="currentColor"/><circle cx="9" cy="12" r="1.4" fill="currentColor"/><circle cx="15" cy="12" r="1.4" fill="currentColor"/><circle cx="9" cy="18" r="1.4" fill="currentColor"/><circle cx="15" cy="18" r="1.4" fill="currentColor"/></svg>;
     case "layout":   return <svg style={s} viewBox="0 0 24 24" {...c}><rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 9h18M9 9v12"/></svg>;
     case "play":     return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M6 4v16l14-8L6 4z"/></svg>;
+    case "pause":    return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg>;
+    case "clock":    return <svg style={s} viewBox="0 0 24 24" {...c}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>;
+    case "eye":      return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>;
+    case "rotate-ccw": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>;
     case "key":      return <svg style={s} viewBox="0 0 24 24" {...c}><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L21 2"/><path d="M18 5l3 3"/><path d="M15 8l3 3"/></svg>;
     case "shield":   return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z"/></svg>;
     case "lighthouse": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M12 3l-1.5 3h3L12 3z"/><path d="M11 6h2v3h-2z"/><path d="M9 9h6l-1 12h-4L9 9z"/><path d="M5 12l4-1M19 12l-4-1M6 15l3 0M18 15l-3 0"/></svg>;
