@@ -1,0 +1,122 @@
+{
+  "elections": [
+    {
+      "id": "2024-general",
+      "label": "2024 General",
+      "date": "Nov 5, 2024",
+      "file": "prior-elections/2024-general.csv",
+      "metrics": [
+        {
+          "id": "harris",
+          "label": "Harris %",
+          "field": "harris_pct",
+          "scale": "diverging",
+          "mid": 50,
+          "stops": [
+            [
+              35,
+              "#A8341E"
+            ],
+            [
+              47,
+              "#C77B66"
+            ],
+            [
+              50,
+              "#E6E5DA"
+            ],
+            [
+              53,
+              "#6FA08A"
+            ],
+            [
+              65,
+              "#1A3A5C"
+            ]
+          ],
+          "opponentField": "trump_pct",
+          "opponentLabel": "Trump"
+        },
+        {
+          "id": "turnout",
+          "label": "Turnout",
+          "field": "turnout_pct",
+          "scale": "sequential",
+          "stops": [
+            [
+              40,
+              "#F0EDE4"
+            ],
+            [
+              55,
+              "#B8932A"
+            ],
+            [
+              70,
+              "#1A3A5C"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2022-midterm",
+      "label": "2022 Midterm",
+      "date": "Nov 8, 2022",
+      "file": "prior-elections/2022-midterm.csv",
+      "metrics": [
+        {
+          "id": "bennet",
+          "label": "Bennet %",
+          "field": "bennet_pct",
+          "scale": "diverging",
+          "mid": 50,
+          "stops": [
+            [
+              35,
+              "#A8341E"
+            ],
+            [
+              47,
+              "#C77B66"
+            ],
+            [
+              50,
+              "#E6E5DA"
+            ],
+            [
+              53,
+              "#6FA08A"
+            ],
+            [
+              65,
+              "#1A3A5C"
+            ]
+          ],
+          "opponentField": "opp_pct",
+          "opponentLabel": "GOP"
+        },
+        {
+          "id": "turnout",
+          "label": "Turnout",
+          "field": "turnout_pct",
+          "scale": "sequential",
+          "stops": [
+            [
+              40,
+              "#F0EDE4"
+            ],
+            [
+              55,
+              "#B8932A"
+            ],
+            [
+              70,
+              "#1A3A5C"
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
