@@ -1,6 +1,6 @@
 import React from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
-import { FathomApp } from "../election/FathomApp.jsx";
+import { RaceDetailApp } from "../election/RaceDetailApp.jsx";
 
 export function ElectionView({ role }) {
   if (role === "client") {
@@ -19,5 +19,5 @@ export function ElectionView({ role }) {
     );
   }
 
-  return <FathomApp />;
+  return <RaceDetailApp />;
 }
