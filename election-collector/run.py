@@ -10,6 +10,7 @@ Usage:
 
 Configuration is via EP_* environment variables (see collector/config.py).
 """
+import json
 import sys
 
 from collector import config, feed, db, poller
@@ -32,6 +33,17 @@ def cmd_discover():
     eids = feed.discover_eids()
     print(f"county index EIDs (newest first): {eids or '[none found — check the live ENR page URL]'}")
     print(f"configured EID: {config.EID}")
+
+
+def cmd_pick():
+    """JSON line for Keel auto-EID resolver."""
+    print(json.dumps(feed.pick_primary_eid()))
+
+
+def cmd_reset():
+    conn = db.init_db()
+    db.reset_results(conn)
+    print("results DB cleared")
 
 
 def cmd_show():
@@ -84,6 +96,7 @@ def cmd_test():
 
 COMMANDS = {
     "poll": cmd_poll, "once": cmd_once, "discover": cmd_discover,
+    "pick": cmd_pick, "reset": cmd_reset,
     "show": cmd_show, "test": cmd_test,
 }
 

@@ -17,6 +17,7 @@ const CONFIG_PATH = path.join(root, "data", "election", "collector-config.json")
 let pollProc = null;
 let wantRunning = false;
 let restartTimer = null;
+let autoEidTimer = null;
 let activeConfig = null;
 let lastLogLines = [];
 
@@ -27,6 +28,7 @@ const DEFAULTS = {
   watchdogMinutes: 20,
   pollsCloseUtc: "2026-07-01T01:00:00+00:00",
   autoStart: false,
+  primaryFeedReady: false,
 };
 
 function electionDataDir() {
@@ -96,6 +98,7 @@ export function updateCollectorConfig(patch) {
   if (patch.watchdogMinutes != null) next.watchdogMinutes = Math.max(0, Number(patch.watchdogMinutes) || 20);
   if (patch.pollsCloseUtc != null) next.pollsCloseUtc = String(patch.pollsCloseUtc);
   if (patch.autoStart != null) next.autoStart = !!patch.autoStart;
+  if (patch.primaryFeedReady != null) next.primaryFeedReady = !!patch.primaryFeedReady;
   const { dbPath, rawDir, ...toSave } = next;
   savePersistedConfig(toSave);
   activeConfig = next;
@@ -134,6 +137,83 @@ function pushLog(line) {
   if (lastLogLines.length > 80) lastLogLines = lastLogLines.slice(-80);
 }
 
+function wipeResultsDb(dbPath) {
+  if (!dbPath) return;
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try { fs.unlinkSync(`${dbPath}${suffix}`); } catch { /* ok */ }
+  }
+}
+
+function autoEidEnabled() {
+  return process.env.EP_AUTO_EID !== "0";
+}
+
+function autoEidWindowActive() {
+  const start = Date.parse(process.env.EP_AUTO_EID_START || "2026-06-29T06:00:00-06:00");
+  const end = Date.parse(process.env.EP_AUTO_EID_END || "2026-07-01T08:00:00-06:00");
+  const now = Date.now();
+  return now >= start && now <= end;
+}
+
+function pollsCloseReached(pollsCloseUtc) {
+  const close = Date.parse(pollsCloseUtc || DEFAULTS.pollsCloseUtc);
+  return Number.isFinite(close) && Date.now() >= close;
+}
+
+export function pickPrimaryEid() {
+  return runCollectorCommand("pick").then(({ output }) => {
+    const line = output.trim().split("\n").filter(Boolean).pop() || "{}";
+    return JSON.parse(line);
+  });
+}
+
+async function autoResolvePrimaryEid() {
+  if (!autoEidEnabled() || !autoEidWindowActive()) return null;
+  try {
+    const pick = await pickPrimaryEid();
+    if (!pick?.primaryReady || !pick?.eid) {
+      pushLog(`auto-EID: waiting — best ${pick?.eid || "?"} (score ${pick?.score ?? "?"})`);
+      return pick;
+    }
+    const cfg = getCollectorConfig();
+    if (cfg.primaryFeedReady && cfg.eid === pick.eid) return pick;
+
+    const enforcePollsClose = cfg.enforcePollsClose || pollsCloseReached(cfg.pollsCloseUtc);
+    const eidChanged = cfg.eid !== pick.eid;
+    if (eidChanged || !cfg.primaryFeedReady) {
+      wipeResultsDb(cfg.dbPath);
+    }
+    updateCollectorConfig({
+      eid: pick.eid,
+      enforcePollsClose,
+      primaryFeedReady: true,
+    });
+    pushLog(`auto-EID: primary feed on ${pick.eid} (score ${pick.score})`);
+    await runCollectorOnce({ eid: pick.eid, enforcePollsClose });
+
+    const nextCfg = getCollectorConfig();
+    if (nextCfg.autoStart || process.env.ELECTION_COLLECTOR_AUTO_START === "1") {
+      startCollector();
+    } else if (pollProc) {
+      stopCollector();
+      startCollector();
+    }
+    return pick;
+  } catch (e) {
+    pushLog(`auto-EID error: ${e.message}`);
+    return null;
+  }
+}
+
+function scheduleAutoEidResolver() {
+  if (!autoEidEnabled()) return;
+  const intervalMs = Math.max(60_000, Number(process.env.EP_AUTO_EID_INTERVAL_MS || 5 * 60 * 1000));
+  autoResolvePrimaryEid();
+  autoEidTimer = setInterval(() => {
+    autoResolvePrimaryEid();
+  }, intervalMs);
+}
+
 function readDbHeartbeat(dbPath) {
   if (!dbPath || !fs.existsSync(dbPath)) {
     return { available: false, contestCount: 0, heartbeat: null, recentIngest: [] };
@@ -162,6 +242,11 @@ export function getCollectorStatus() {
       pid: pollProc?.pid ?? null,
       wantRunning,
       log: lastLogLines.slice(-20),
+    },
+    autoEid: {
+      enabled: autoEidEnabled(),
+      windowActive: autoEidWindowActive(),
+      primaryFeedReady: !!config.primaryFeedReady,
     },
     config,
     db,
@@ -276,7 +361,15 @@ export function discoverCollectorEids(cfgPatch) {
       const nums = chunk.match(/\d{5,}/g);
       if (nums) eids.push(...nums);
     }
-    return { eids, output, configuredEid: getCollectorConfig().eid };
+    return pickPrimaryEid()
+      .then((pick) => ({
+        eids: [...new Set([...(pick.candidates || []).map((c) => c.eid), ...eids])],
+        output,
+        configuredEid: getCollectorConfig().eid,
+        recommended: pick.primaryReady ? pick.eid : null,
+        pick,
+      }))
+      .catch(() => ({ eids, output, configuredEid: getCollectorConfig().eid }));
   });
 }
 
@@ -290,6 +383,7 @@ export function initElectionCollector() {
   process.env.EP_DB_PATH = cfg.dbPath;
   process.env.EP_RAW_DIR = cfg.rawDir;
   activeConfig = cfg;
+  scheduleAutoEidResolver();
   if (cfg.autoStart) {
     console.log("[collector] auto-start enabled");
     startCollector();
@@ -299,5 +393,9 @@ export function initElectionCollector() {
 }
 
 export function shutdownElectionCollector() {
+  if (autoEidTimer) {
+    clearInterval(autoEidTimer);
+    autoEidTimer = null;
+  }
   stopCollector();
 }

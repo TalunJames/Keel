@@ -189,6 +189,23 @@ export function findContestForBallotRace(race, contests) {
   ) || null;
 }
 
+/** True when ENR/replay rows belong to the ballot race the user selected. */
+export function liveResultsMatchBallotRace(liveResults, selectedBallotRace, ballotConfig) {
+  if (!liveResults?.contest || !liveResults?.totals || !selectedBallotRace || !ballotConfig) {
+    return false;
+  }
+  if (liveResults.mode === "replay") return false;
+  const contestName = liveResults.contest.name || "";
+  const matched = findBallotRace(contestName, ballotConfig);
+  if (matched?.id === selectedBallotRace.id) return true;
+  if (selectedBallotRace.enrMatch?.length) {
+    return selectedBallotRace.enrMatch.every((m) =>
+      contestName.toLowerCase().includes(String(m).toLowerCase())
+    );
+  }
+  return false;
+}
+
 export function sortContestsForBallot(contests, ballotConfig) {
   if (!ballotConfig?.groups?.length) return contests;
   const order = [];

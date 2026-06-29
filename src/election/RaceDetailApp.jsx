@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { Delaunay } from "d3-delaunay";
 import { electionLiveApi } from "../lib/api.js";
+import { usePref } from "../lib/usePref.js";
 import { ElectionCollectorPanel } from "./ElectionCollectorPanel.jsx";
 import {
   formatLiveUpdated,
@@ -22,6 +23,7 @@ import {
   filterContestsByChamber,
   findContestForBallotRace,
   sortContestsForBallot,
+  liveResultsMatchBallotRace,
 } from "./race-detail-helpers.js";
 import "./race-detail.css";
 
@@ -107,6 +109,15 @@ import "./race-detail.css";
       }, []);
 
       return [settings, setSetting, setColor, resetSettings];
+    }
+
+    function useEscapeClose(open, onClose) {
+      useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [open, onClose]);
     }
 
     function computeReportingStats(stats) {
@@ -1171,7 +1182,8 @@ import "./race-detail.css";
             }
             popup.setLngLat(e.lngLat).setHTML(
               `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${p.name}</div>` +
-              `<div style="color:#5B5B58">${fmt}</div>` + sub
+              `<div style="color:#5B5B58">${fmt}</div>` + sub +
+              `<div style="color:#8B9AAB;font-size:10px;margin-top:6px">Click for area details</div>`
             ).addTo(map);
           });
           map.on("mouseleave", "areas-fill", () => {
@@ -1399,7 +1411,7 @@ import "./race-detail.css";
       );
     }
 
-    function LiveResultsCard({ client, stats, settings, embedded, live, liveResults, ballotConfig, accurateOnly, selectedBallotRace }) {
+    function LiveResultsCard({ client, stats, settings, embedded, live, liveResults, ballotConfig, accurateOnly, selectedBallotRace, liveMismatch }) {
       const preUnopposed = isRaceUnopposed(selectedBallotRace);
       if (!accurateOnly) {
         const tracked = ballotConfig?.trackedCandidates || [];
@@ -1410,6 +1422,16 @@ import "./race-detail.css";
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--fs-navy)", marginBottom: 8 }}>
               {selectedBallotRace ? formatRaceLabel(selectedBallotRace) : "Select a race above"}
             </div>
+            {liveMismatch && (
+              <div style={{
+                marginBottom: 14, padding: 12, borderRadius: "var(--fs-radius-md)",
+                background: "rgba(184,147,42,0.10)", border: "1px solid rgba(184,147,42,0.35)",
+                fontSize: 12, color: "var(--fs-navy)", lineHeight: 1.5,
+              }}>
+                ENR is reporting <b>{liveMismatch}</b>, which doesn’t match this race.
+                Choose the matching contest in the race picker, or connect tonight’s primary EID in the collector.
+              </div>
+            )}
             {preUnopposed && nominee && (
               <div style={{
                 marginBottom: 14, padding: 12, borderRadius: "var(--fs-radius-md)",
@@ -1866,7 +1888,7 @@ import "./race-detail.css";
                 </div>
               )}
             </div>
-            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 18, lineHeight: 1, color: "var(--fs-ink-400)" }}>×</button>
+            <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 18, lineHeight: 1, color: "var(--fs-ink-400)", cursor: "pointer" }}>×</button>
           </div>
           {headlinePct != null && headlinePct >= 0 && (
             <div style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 26, color: areaUnopposed ? "var(--fs-navy)" : (passing ? c.pass : c.fail), marginBottom: 8 }}>
@@ -2123,7 +2145,7 @@ import "./race-detail.css";
                     ? "Turnout"
                     : m.label;
                   return (
-                    <button key={key} className="layerbtn" onClick={() => setMetric(key)} style={{
+                    <button key={key} type="button" className="layerbtn" onClick={() => setMetric(key)} style={{
                       fontSize: 12, fontWeight: active ? 700 : 500, padding: "7px 12px",
                       borderRadius: "var(--fs-radius-md)",
                       border: `1px solid ${active ? "var(--fs-navy)" : "var(--fs-border)"}`,
@@ -2141,6 +2163,7 @@ import "./race-detail.css";
                       {priorData.elections.map(el => (
                         <button
                           key={el.id}
+                          type="button"
                           style={miniSeg(priorElectionId === el.id)}
                           onClick={() => {
                             setPriorElectionId(el.id);
@@ -2156,6 +2179,7 @@ import "./race-detail.css";
                         {election.metrics.map(md => (
                           <button
                             key={md.id}
+                            type="button"
                             style={miniSeg(priorMetricId === md.id)}
                             onClick={() => setPriorMetricId(md.id)}
                           >
@@ -2170,16 +2194,17 @@ import "./race-detail.css";
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
               <div style={{ display: "flex", background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)", borderRadius: "var(--fs-radius-md)", padding: 2 }}>
-                <button style={seg(level === "precinct")} onClick={() => setLevel("precinct")}>Precinct</button>
-                <button style={seg(level === "county")} onClick={() => setLevel("county")}>Area</button>
-                <button style={seg(level === "district")} onClick={() => setLevel("district")}>District</button>
-                <button style={seg(level === "zip")} onClick={() => setLevel("zip")}>ZIP</button>
+                <button type="button" style={seg(level === "precinct")} onClick={() => setLevel("precinct")}>Precinct</button>
+                <button type="button" style={seg(level === "county")} onClick={() => setLevel("county")}>Area</button>
+                <button type="button" style={seg(level === "district")} onClick={() => setLevel("district")}>District</button>
+                <button type="button" style={seg(level === "zip")} onClick={() => setLevel("zip")}>ZIP</button>
               </div>
               {level === "district" && (
                 <div style={{ display: "flex", background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)", borderRadius: "var(--fs-radius-md)", padding: 2 }}>
                   {Object.entries(DISTRICT_TYPES).map(([key, cfg]) => (
                     <button
                       key={key}
+                      type="button"
                       style={miniSeg(districtType === key)}
                       onClick={() => setDistrictType(key)}
                     >
@@ -2198,7 +2223,7 @@ import "./race-detail.css";
               const on = !!overlays[key];
               const color = cfg.color;
               return (
-                <button key={key} className="layerbtn" onClick={() => toggleOverlay(key)} style={{
+                <button key={key} type="button" className="layerbtn" onClick={() => toggleOverlay(key)} style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   fontSize: 11, fontWeight: on ? 700 : 500, padding: "5px 10px",
                   borderRadius: 999,
@@ -2228,6 +2253,7 @@ import "./race-detail.css";
                 ].map(opt => (
                   <button
                     key={opt.id}
+                    type="button"
                     style={tierSeg(schoolFilters.tier === opt.id)}
                     onClick={() => setSchoolFilters(f => ({ ...f, tier: opt.id }))}
                   >
@@ -2306,22 +2332,25 @@ import "./race-detail.css";
       });
     }
 
-    function InsightIconBar({ tabs, open, activeTab, onIconClick }) {
+    function InsightIconBar({ tabs, activeTab, onIconClick }) {
       return (
         <div style={{
           position: "absolute", top: 12, right: 12, zIndex: 8,
           display: "flex", alignItems: "center", gap: 6,
-          padding: 6,
+          padding: "6px 8px 6px 6px",
           background: "rgba(255,255,255,0.96)",
           border: "1px solid var(--fs-border)",
           borderRadius: "var(--fs-radius-md)",
           boxShadow: "var(--fs-shadow-md)",
         }}>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fs-ink-500)", paddingLeft: 4, paddingRight: 2 }}>
+            Insights
+          </span>
           {tabs.map(tab => (
             <button
               key={tab.id}
               type="button"
-              className={`panel-icon-btn${open && activeTab === tab.id ? " active" : ""}`}
+              className={`panel-icon-btn${activeTab === tab.id ? " active" : ""}`}
               aria-label={tab.label}
               title={tab.label}
               onClick={() => onIconClick(tab.id)}
@@ -2333,7 +2362,7 @@ import "./race-detail.css";
       );
     }
 
-    function InsightSidePanel({ onOpenChange, activeTab, onTabChange, tabs, selected, onClearSelection, client, stats, polls, threshold, onIconClick, priorCtx, settings, live, accurateOnly, liveResults, ballotConfig, selectedBallotRace, isUnopposed }) {
+    function InsightSidePanel({ onOpenChange, activeTab, onTabChange, tabs, selected, onClearSelection, client, stats, polls, threshold, onIconClick, priorCtx, settings, live, accurateOnly, liveResults, ballotConfig, selectedBallotRace, isUnopposed, liveMismatch }) {
       const activeLabel = tabs.find(t => t.id === activeTab)?.label || "Insights";
 
       return (
@@ -2409,6 +2438,7 @@ import "./race-detail.css";
                 ballotConfig={ballotConfig}
                 accurateOnly={accurateOnly}
                 selectedBallotRace={selectedBallotRace}
+                liveMismatch={liveMismatch}
               />
             )}
             {activeTab === "polling" && <TrendChart polls={polls} threshold={threshold} embedded />}
@@ -2466,6 +2496,7 @@ import "./race-detail.css";
     }
 
     function SettingsPanel({ open, onClose, settings, setSetting, setColor, resetSettings }) {
+      useEscapeClose(open, onClose);
       if (!open) return null;
       return (
         <>
@@ -2557,8 +2588,8 @@ import "./race-detail.css";
       const [overlays, setOverlays] = useState({});
       const [schoolFilters, setSchoolFilters] = useState({ tier: "all", showCharter: true });
       const [districtType, setDistrictType] = useState("council");
-      const [sidebarTab, setSidebarTab] = useState("live");
-      const [panelOpen, setPanelOpen] = useState(true);
+      const [sidebarTab, setSidebarTab] = usePref("election-sidebar-tab", "live");
+      const [panelOpen, setPanelOpen] = usePref("election-panel-open", true);
       const [priorData, setPriorData] = useState(null);
       const [priorElectionId, setPriorElectionId] = useState(null);
       const [priorMetricId, setPriorMetricId] = useState(null);
@@ -2567,8 +2598,8 @@ import "./race-detail.css";
       const [selectedContestKey, setSelectedContestKey] = useState(client.liveContestKey);
       const [pollingWaves, setPollingWaves] = useState([]);
       const [ballotConfig, setBallotConfig] = useState(null);
-      const [legislativeFilter, setLegislativeFilter] = useState("tracked");
-      const [selectedBallotRaceId, setSelectedBallotRaceId] = useState(null);
+      const [legislativeFilter, setLegislativeFilter] = usePref("election-leg-filter", "tracked");
+      const [selectedBallotRaceId, setSelectedBallotRaceId] = usePref("election-race-id", null);
       const [liveMode, setLiveMode] = useState(null);
       const liveSeenRef = useRef(false);
       const contestPatterns = ballotConfig?.enrPatterns || [];
@@ -2611,7 +2642,11 @@ import "./race-detail.css";
           .then((d) => {
             if (d) {
               setBallotConfig(d);
-              if (d.defaultRaceId) setSelectedBallotRaceId(d.defaultRaceId);
+              setSelectedBallotRaceId((prev) => {
+                const known = (d.groups || []).flatMap((g) => g.races || []).some((r) => r.id === prev);
+                if (prev && known) return prev;
+                return d.defaultRaceId || null;
+              });
             }
           })
           .catch(() => {});
@@ -2706,14 +2741,6 @@ import "./race-detail.css";
         return () => { cancelled = true; clearInterval(id); };
       }, [selectedContestKey, collectorTick]);
 
-      // First live results → switch map to Live Results layer
-      useEffect(() => {
-        if (liveResults?.contest && liveResults?.mode === "live" && !liveSeenRef.current) {
-          liveSeenRef.current = true;
-          setMetric("results");
-        }
-      }, [liveResults]);
-
       const priorCtx = useMemo(() => {
         if (!priorData || !priorElectionId) return null;
         const election = priorData.elections.find(e => e.id === priorElectionId) || priorData.elections[0];
@@ -2721,16 +2748,32 @@ import "./race-detail.css";
         return { electionId: election.id, election, metricDef, metricId: metricDef?.id };
       }, [priorData, priorElectionId, priorMetricId]);
 
+      const liveMatchesRace = liveResultsMatchBallotRace(liveResults, selectedBallotRace, ballotConfig);
+      const replayActive = !!(liveResults?.mode === "replay" && liveResults?.contest && liveResults?.totals);
+      const liveResultsForMap = liveMatchesRace || replayActive ? liveResults : null;
+      const accurateOnly = liveMatchesRace;
+      const liveMismatch = !liveMatchesRace && liveResults?.contest?.name && liveResults.mode !== "replay"
+        ? liveResults.contest.name
+        : null;
+
+      // First live results for the selected race → switch map to Live Results layer
+      useEffect(() => {
+        if (liveMatchesRace && liveResults?.contest && liveResults?.mode === "live" && !liveSeenRef.current) {
+          liveSeenRef.current = true;
+          setMetric("results");
+        }
+      }, [liveResults, liveMatchesRace]);
+
       // Race geography + results (live ENR when collector DB is wired)
       const race = useMemo(() => {
         if (!geo) return null;
         const r = makeRaceData(
           client, geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts,
-          liveResults, pollingWaves, selectedBallotRace,
+          liveResultsForMap, pollingWaves, selectedBallotRace,
         );
         const withPrior = priorData ? { ...r, priorData } : r;
-        return liveResults ? { ...withPrior, liveResults } : withPrior;
-      }, [geo, priorData, liveResults, pollingWaves, selectedBallotRace]);
+        return liveResultsForMap ? { ...withPrior, liveResults: liveResultsForMap } : withPrior;
+      }, [geo, priorData, liveResultsForMap, pollingWaves, selectedBallotRace]);
 
       const filteredView = useMemo(() => {
         if (!race) return { geojson: EMPTY_FC, yesPct: null, reportedCount: 0, totalCount: 0, ballots: 0, precinctProps: [] };
@@ -2741,11 +2784,10 @@ import "./race-detail.css";
       const geojson = filteredView.geojson;
       const dots = useMemo(() => race ? makeDots(geojson, metric, client.id) : EMPTY_FC, [geojson, metric, race]);
       const polls = pollingWaves;
-      const accurateOnly = !!(liveResults?.contest && liveResults?.totals);
       const isUnopposed = accurateOnly
         ? isContestUnopposed({ race: selectedBallotRace, totals: liveResults?.totals })
         : isRaceUnopposed(selectedBallotRace);
-      const displayThreshold = liveResults?.totals?.isMeasure
+      const displayThreshold = liveResultsForMap?.totals?.isMeasure
         ? (client.measureThreshold ?? 50)
         : 50;
       const awaitingPrimaryEid = liveMode === "live"
@@ -2778,7 +2820,7 @@ import "./race-detail.css";
           ballots: filteredView.ballots,
           precinctProps: filteredView.precinctProps,
         };
-        if (liveResults?.totals && (liveResults.totals.leaderPct != null || liveResults.totals.yesPct != null || liveResults.totals.turnoutPct != null)) {
+        if (liveMatchesRace && liveResults?.totals && (liveResults.totals.leaderPct != null || liveResults.totals.yesPct != null || liveResults.totals.turnoutPct != null)) {
           const j = liveResults.jurisdiction;
           const turnoutPct = liveResults.totals.turnoutPct
             ?? computeTurnoutPct(liveResults.contest?.ballotsCast, liveResults.contest?.registered);
@@ -2795,7 +2837,7 @@ import "./race-detail.css";
           };
         }
         return { ...base, isUnopposed };
-      }, [filteredView, liveResults, isUnopposed]);
+      }, [filteredView, liveResults, liveMatchesRace, isUnopposed]);
 
       const handleSelect = useCallback((props) => {
         setSelected(props);
@@ -2806,7 +2848,12 @@ import "./race-detail.css";
 
       useEffect(() => {
         if (!selected && sidebarTab === "selection") setSidebarTab("live");
-      }, [selected, sidebarTab]);
+      }, [selected, sidebarTab, setSidebarTab]);
+
+      useEscapeClose(settingsOpen, () => setSettingsOpen(false));
+      useEscapeClose(collectorOpen, () => setCollectorOpen(false));
+
+      const mapLoading = !geo && !loadError;
 
       return (
         <div className="race-detail-monitor" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -2911,6 +2958,12 @@ import "./race-detail.css";
                       isUnopposed={isUnopposed}
                     />
                     <Legend metric={metric} threshold={displayThreshold} priorCtx={metric === "priorElections" ? priorCtx : null} settings={settings} isUnopposed={isUnopposed && metric === "results"} />
+                    {mapLoading && (
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(248,247,241,0.92)", zIndex: 6, fontSize: 13, color: "var(--fs-fg-muted)", gap: 10 }}>
+                        <span className="pulse-dot" style={{ width: 8, height: 8, borderRadius: 999, background: "var(--fs-navy)" }} />
+                        Loading map data…
+                      </div>
+                    )}
                     {loadError && (
                       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(248,247,241,0.9)", zIndex: 6, fontSize: 13, color: "var(--fs-danger)" }}>
                         Failed to load jurisdiction boundary: {loadError}
@@ -2920,11 +2973,10 @@ import "./race-detail.css";
                   {!panelOpen && (
                     <InsightIconBar
                       tabs={sidebarTabs}
-                      open={panelOpen}
                       activeTab={sidebarTab}
                       onIconClick={(tabId) => {
-                        if (panelOpen && sidebarTab === tabId) setPanelOpen(false);
-                        else { setSidebarTab(tabId); setPanelOpen(true); }
+                        setSidebarTab(tabId);
+                        setPanelOpen(true);
                       }}
                     />
                   )}
@@ -2944,12 +2996,13 @@ import "./race-detail.css";
                     threshold={displayThreshold}
                     priorCtx={metric === "priorElections" ? priorCtx : null}
                     settings={settings}
-                    live={!!liveResults}
+                    live={!!liveResultsForMap}
                     accurateOnly={accurateOnly}
-                    liveResults={liveResults}
+                    liveResults={liveResultsForMap}
                     ballotConfig={ballotConfig}
                     selectedBallotRace={selectedBallotRace}
                     isUnopposed={isUnopposed}
+                    liveMismatch={liveMismatch}
                   />
                 )}
               </div>

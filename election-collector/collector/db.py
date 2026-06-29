@@ -161,3 +161,19 @@ def beat(conn, version, note=""):
         (version, now_iso(), note),
     )
     conn.commit()
+
+
+def reset_results(conn):
+    """Clear promoted results (used when switching EIDs or election cycles)."""
+    conn.execute("DELETE FROM precinct_results")
+    conn.execute("DELETE FROM choices")
+    conn.execute("DELETE FROM contests")
+    conn.execute(
+        """INSERT INTO heartbeat (id,last_version,last_update_at,note)
+           VALUES (1,'',?,?)
+           ON CONFLICT(id) DO UPDATE SET
+             last_version='', last_update_at=excluded.last_update_at,
+             note=excluded.note""",
+        (now_iso(), "reset for new EID"),
+    )
+    conn.commit()

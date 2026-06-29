@@ -86,6 +86,13 @@ export function ElectionCollectorPanel({ open, onClose, onCollectorChange }) {
     return () => clearInterval(id);
   }, [open, refresh]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const run = async (label, fn) => {
     setBusy(label);
     setError(null);
@@ -142,6 +149,14 @@ export function ElectionCollectorPanel({ open, onClose, onCollectorChange }) {
               <div style={{ fontSize: 11, color: "var(--fs-fg-muted)", marginTop: 6, lineHeight: 1.45 }}>
                 Version <b>{hb.last_version}</b> · {hb.last_update_at}
                 <br />{hb.note} · {contests} contests in DB
+              </div>
+            )}
+            {status?.autoEid?.enabled && (
+              <div style={{ fontSize: 11, color: "var(--fs-fg-muted)", marginTop: 8, lineHeight: 1.45 }}>
+                Auto-EID {status.autoEid.windowActive ? "watching" : "scheduled"} ·{" "}
+                {status.autoEid.primaryFeedReady
+                  ? "primary feed connected"
+                  : "waiting for Governor contests in ENR"}
               </div>
             )}
             {!hb && (
@@ -231,7 +246,8 @@ export function ElectionCollectorPanel({ open, onClose, onCollectorChange }) {
 
           <div style={{ fontSize: 10, color: "var(--fs-ink-400)", marginTop: 14, lineHeight: 1.5 }}>
             DB: {status?.config?.dbPath || "data/election/results.db"}
-            <br />On election night: Discover → set live EID → Start polling.
+            <br />Auto-EID polls Clarity every 5 min on election weekend and switches when Governor races appear.
+            <br />Enable Auto-start on boot to poll continuously once the primary feed is live.
           </div>
         </div>
       </aside>
