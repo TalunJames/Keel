@@ -156,6 +156,32 @@ export function Sidebar({
   );
 }
 
+function ClientAvatar({ client, size = 28 }) {
+  if (!client) return null;
+  const isAll = client.id === "all";
+
+  if (client.logo && !isAll) {
+    return (
+      <span className="client-avatar client-avatar-logo" style={{ width: size, height: size }}>
+        <img src={client.logo} alt="" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={"client-avatar" + (isAll ? " all" : "")}
+      style={{
+        width: size,
+        height: size,
+        background: isAll ? undefined : client.color,
+      }}
+    >
+      {client.initials}
+    </span>
+  );
+}
+
 function ClientSwitcher({ clients, selected, onSelect }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -167,7 +193,7 @@ function ClientSwitcher({ clients, selected, onSelect }) {
     const single = selected || clients[0];
     return (
       <div className="client-pill" style={{ cursor: "default" }}>
-        <span className="swatch" style={{ background: single.color }}>{single.initials}</span>
+        <ClientAvatar client={single} size={22} />
         <span>{single.name.split(/[—·]/)[0].trim()}</span>
       </div>
     );
@@ -178,7 +204,7 @@ function ClientSwitcher({ clients, selected, onSelect }) {
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button type="button" className={"client-pill " + (isAll ? "all" : "")} onClick={() => setOpen((o) => !o)}>
-        <span className="swatch" style={isAll ? {} : { background: selected.color }}>{selected.initials}</span>
+        <ClientAvatar client={selected} size={22} />
         <span>{isAll ? "All Clients" : selected.name.split(/[—·]/)[0].trim()}</span>
         <Icon name={open ? "chevron-up" : "chevron-down"} size={13} />
       </button>
@@ -188,11 +214,7 @@ function ClientSwitcher({ clients, selected, onSelect }) {
           {clients.map((c) => (
             <button key={c.id} type="button" className={"row-item " + (selected?.id === c.id ? "active" : "")}
               onClick={() => { onSelect(c.id); setOpen(false); }}>
-              <span style={{
-                width: 28, height: 28, borderRadius: "50%",
-                background: c.color, color: c.id === "all" ? "var(--fs-navy-900)" : "var(--ks-on-ink)",
-                display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700,
-              }}>{c.initials}</span>
+              <ClientAvatar client={c} size={28} />
               <div style={{ flex: 1 }}>
                 <div className="nm">{c.name}</div>
                 {c.type && <div className="sub">{c.type}</div>}
@@ -251,6 +273,76 @@ function CollapsibleSearch() {
   );
 }
 
+const NEW_ACTIONS = {
+  design: { label: "Design request", icon: "pen", desc: "Submit a creative brief" },
+  proposals: { label: "Proposal", icon: "compass", desc: "Start a new scope doc" },
+  calendar: { label: "Calendar event", icon: "calendar", desc: "Schedule a meeting or deadline" },
+  client: { label: "New client", icon: "users", desc: "Onboard a client account", adminOnly: true },
+};
+
+function NewMenu({ role, onAction }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const closeTimer = useRef(null);
+  const isPartner = role === "admin";
+
+  useClickOutside(wrapRef, () => setOpen(false));
+
+  const show = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+
+  const hide = () => {
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  const pick = (action) => {
+    setOpen(false);
+    onAction?.(action);
+  };
+
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+
+  const items = Object.entries(NEW_ACTIONS).filter(([, a]) => !a.adminOnly || isPartner);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="new-menu-wrap"
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      <button
+        type="button"
+        className="btn primary new-menu-btn"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Icon name="plus" size={14} />
+        <span className="new-menu-label">New</span>
+        <span className="new-menu-chev"><Icon name={open ? "chevron-up" : "chevron-down"} size={12} /></span>
+      </button>
+      {open && (
+        <div className="new-pop" role="menu" onMouseEnter={show} onMouseLeave={hide}>
+          <div className="head">Create</div>
+          {items.map(([id, a]) => (
+            <button key={id} type="button" className="new-pop-item" role="menuitem" onClick={() => pick(id)}>
+              <span className="new-pop-icon"><Icon name={a.icon} size={15} /></span>
+              <span className="new-pop-text">
+                <span className="new-pop-label">{a.label}</span>
+                <span className="new-pop-desc">{a.desc}</span>
+              </span>
+              <Icon name="chevron-right" size={13} color="var(--fs-fg-subtle)" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnnouncementsBell({ announcements = [], unreadCount }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -296,7 +388,7 @@ function AnnouncementsBell({ announcements = [], unreadCount }) {
 }
 
 export function TopBar({
-  section, crumbs, role, clients, selectedClient, onSelectClient, onNew,
+  section, crumbs, role, clients, selectedClient, onSelectClient, onNewAction,
   announcements,
 }) {
   return (
@@ -311,9 +403,7 @@ export function TopBar({
       <div className="grow" />
       <CollapsibleSearch />
       {role !== "client" && (
-        <button type="button" className="btn primary" onClick={onNew}>
-          <Icon name="plus" size={14} /> New Request
-        </button>
+        <NewMenu role={role} onAction={onNewAction} />
       )}
       <AnnouncementsBell announcements={announcements} />
     </header>

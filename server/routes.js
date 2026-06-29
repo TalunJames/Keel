@@ -44,6 +44,7 @@ function clientScope(user, clientId) {
 
 function rowToClient(row) {
   if (!row) return null;
+  const extra = row.payload_json ? JSON.parse(row.payload_json) : {};
   return {
     id: row.id,
     name: row.name,
@@ -53,7 +54,17 @@ function rowToClient(row) {
     type: row.type,
     color: row.color,
     audience: row.audience || "",
+    ...extra,
+    logo: row.logo || extra.logo || null,
   };
+}
+
+function slugifyClientId(tag) {
+  return String(tag || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
 }
 
 export function registerRoutes(app, db) {
@@ -755,25 +766,45 @@ export function registerRoutes(app, db) {
     res.json({ clients });
   });
 
+  app.get("/api/team", auth, requireRole("staff", "admin"), (_req, res) => {
+    const members = db.prepare(
+      `SELECT id, name, email, team, title, role FROM users
+       WHERE role IN ('staff', 'admin')
+       ORDER BY name`
+    ).all();
+    res.json({ members });
+  });
+
   app.post("/api/admin/clients", auth, requireRole("admin"), (req, res) => {
-    const { id, name, tag, initials, account, type, color, audience } = req.body || {};
-    if (!id || !name || !tag || !initials) {
-      return res.status(400).json({ error: "id, name, tag, initials required" });
+    const {
+      id: rawId, name, tag, initials, account, type, color, audience, logo, payload,
+    } = req.body || {};
+    if (!name || !tag || !initials) {
+      return res.status(400).json({ error: "name, tag, initials required" });
     }
+    const id = rawId || slugifyClientId(tag);
+    if (!id) return res.status(400).json({ error: "Could not derive client id from tag" });
+    const exists = db.prepare("SELECT id FROM clients WHERE id = ?").get(id);
+    if (exists) return res.status(409).json({ error: "A client with this id already exists" });
+
+    const payloadJson = payload ? JSON.stringify(payload) : null;
     db.prepare(
-      `INSERT INTO clients (id, name, tag, initials, account, type, color, audience)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, name, tag, initials, account || "", type || "", color || "var(--fs-navy)", audience || "");
+      `INSERT INTO clients (id, name, tag, initials, account, type, color, audience, logo, payload_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, name, tag, initials, account || "", type || "", color || "var(--fs-navy)",
+      audience || "", logo || null, payloadJson,
+    );
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
       req.user.email,
       `Created client ${name}`,
       "Clients"
     );
-    res.status(201).json({ ok: true });
+    res.status(201).json({ ok: true, id });
   });
 
   app.patch("/api/admin/clients/:id", auth, requireRole("admin"), (req, res) => {
-    const fields = ["name", "tag", "initials", "account", "type", "color", "audience", "active"];
+    const fields = ["name", "tag", "initials", "account", "type", "color", "audience", "active", "logo"];
     const sets = [];
     const args = [];
     for (const f of fields) {

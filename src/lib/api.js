@@ -107,6 +107,11 @@ export const versionApi = {
 
 export const clientsApi = {
   list: () => api("/clients"),
+  create: (body) => api("/admin/clients", { method: "POST", body: JSON.stringify(body) }),
+};
+
+export const teamApi = {
+  list: () => api("/team"),
 };
 
 export const modulesApi = {
