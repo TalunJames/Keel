@@ -29,7 +29,7 @@ export function markSetupComplete(db) {
   ).run(SETUP_COMPLETE_KEY);
 }
 
-/** Bootstrap account by env email, or the sole admin on upgraded installs. */
+/** Bootstrap account by env email, or any admin before setup has completed. */
 export function findBootstrapUser(db) {
   const email = getBootstrapEmail();
   const byEmail = db.prepare(
@@ -38,6 +38,15 @@ export function findBootstrapUser(db) {
      FROM users WHERE email = ? COLLATE NOCASE`
   ).get(email);
   if (byEmail) return byEmail;
+
+  if (!isSetupComplete(db)) {
+    const firstAdmin = db.prepare(
+      `SELECT id, email, name, password_hash AS passwordHash, role, system_admin AS systemAdmin,
+              team, client_id AS clientId, title, location, about, phone, photo
+       FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1`
+    ).get();
+    if (firstAdmin) return firstAdmin;
+  }
 
   const admins = db.prepare(
     `SELECT id, email, name, password_hash AS passwordHash, role, system_admin AS systemAdmin,

@@ -29,12 +29,7 @@ export function LoginView({ onLogin }) {
     try {
       const { user } = await authApi.login(email.trim(), password, remember);
       localStorage.setItem("keel_remember", remember ? "1" : "0");
-      try {
-        const { user: verified } = await authApi.me();
-        onLogin(verified);
-      } catch {
-        onLogin(user);
-      }
+      onLogin(user);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         setError(err.message + " Refresh the page to open the setup screen.");

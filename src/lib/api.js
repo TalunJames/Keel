@@ -1,4 +1,6 @@
 const BASE = "/api";
+const TOKEN_SESSION = "keel_token";
+const TOKEN_LOCAL = "keel_token_persist";
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -7,12 +9,41 @@ export class ApiError extends Error {
   }
 }
 
+export function getStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_LOCAL) || sessionStorage.getItem(TOKEN_SESSION) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAuthToken(token, { remember = false } = {}) {
+  try {
+    if (!token) {
+      sessionStorage.removeItem(TOKEN_SESSION);
+      localStorage.removeItem(TOKEN_LOCAL);
+      return;
+    }
+    sessionStorage.setItem(TOKEN_SESSION, token);
+    if (remember) localStorage.setItem(TOKEN_LOCAL, token);
+    else localStorage.removeItem(TOKEN_LOCAL);
+  } catch {
+    /* private browsing */
+  }
+}
+
+export function clearAuthToken() {
+  setAuthToken(null);
+}
+
 export async function api(path, options = {}) {
+  const token = getStoredToken();
   const res = await fetch(BASE + path, {
     ...options,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: "Bearer " + token } : {}),
       ...(options.headers || {}),
     },
   });
@@ -30,15 +61,31 @@ export async function api(path, options = {}) {
 }
 
 export const authApi = {
-  login: (email, password, remember = false) =>
-    api("/auth/login", { method: "POST", body: JSON.stringify({ email, password, remember }) }),
-  logout: () => api("/auth/logout", { method: "POST" }),
+  login: async (email, password, remember = false) => {
+    const data = await api("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password, remember }),
+    });
+    if (data?.token) setAuthToken(data.token, { remember });
+    return data;
+  },
+  logout: async () => {
+    try {
+      await api("/auth/logout", { method: "POST" });
+    } finally {
+      clearAuthToken();
+    }
+  },
   me: () => api("/auth/me"),
 };
 
 export const setupApi = {
   status: () => api("/setup/status"),
-  complete: (body) => api("/setup/complete", { method: "POST", body: JSON.stringify(body) }),
+  complete: async (body) => {
+    const data = await api("/setup/complete", { method: "POST", body: JSON.stringify(body) });
+    if (data?.token) setAuthToken(data.token, { remember: true });
+    return data;
+  },
 };
 
 export const accountApi = {
