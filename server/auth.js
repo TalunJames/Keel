@@ -10,7 +10,7 @@ export function signToken(user, { remember = false } = {}) {
     ? LONG_TTL_SECONDS
     : (Number(process.env.JWT_EXPIRES_IN_SECONDS) || SHORT_TTL_SECONDS);
   return jwt.sign(
-    { sub: user.id, role: user.role, clientId: user.client_id, remember },
+    { sub: user.id, role: user.role, clientId: user.client_id || user.clientId, remember },
     process.env.JWT_SECRET || "dev-only-change-me",
     { expiresIn }
   );
@@ -28,14 +28,17 @@ export function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-function resolveCookieSecure() {
+function resolveCookieSecure(req) {
   if (process.env.COOKIE_SECURE === "0") return false;
   if (process.env.COOKIE_SECURE === "1") return true;
+  if (req?.secure) return true;
+  const proto = req?.headers?.["x-forwarded-proto"];
+  if (proto && String(proto).split(",")[0].trim() === "https") return true;
   return process.env.NODE_ENV === "production";
 }
 
-export function setAuthCookie(res, token, { remember = false } = {}) {
-  const secure = resolveCookieSecure();
+export function setAuthCookie(res, token, { remember = false, req } = {}) {
+  const secure = resolveCookieSecure(req);
   const opts = {
     httpOnly: true,
     sameSite: "lax",
@@ -46,12 +49,12 @@ export function setAuthCookie(res, token, { remember = false } = {}) {
   res.cookie(COOKIE, token, opts);
 }
 
-export function clearAuthCookie(res) {
+export function clearAuthCookie(res, req) {
   res.clearCookie(COOKIE, {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
-    secure: resolveCookieSecure(),
+    secure: resolveCookieSecure(req),
   });
 }
 

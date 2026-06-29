@@ -108,7 +108,7 @@ export function registerRoutes(app, db) {
       photo: row.photo ?? null,
     };
     const token = signToken(user, { remember: true });
-    setAuthCookie(res, token, { remember: true });
+    setAuthCookie(res, token, { remember: true, req });
     res.json({ user, token });
   });
 
@@ -145,7 +145,7 @@ export function registerRoutes(app, db) {
     delete user.password_hash;
     user.systemAdmin = !!user.systemAdmin;
     const token = signToken(user, { remember: !!remember });
-    setAuthCookie(res, token, { remember: !!remember });
+    setAuthCookie(res, token, { remember: !!remember, req });
     res.json({ user, token });
   });
 
@@ -231,8 +231,8 @@ export function registerRoutes(app, db) {
     res.json({ events: db.prepare(sql).all(...args) });
   });
 
-  app.post("/api/auth/logout", (_req, res) => {
-    clearAuthCookie(res);
+  app.post("/api/auth/logout", (req, res) => {
+    clearAuthCookie(res, req);
     res.json({ ok: true });
   });
 

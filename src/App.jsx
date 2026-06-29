@@ -87,13 +87,8 @@ export default function App() {
       .catch(() => setAnnouncements([]));
   }, [user, clientId]);
 
-  const handleLogin = async (u) => {
-    try {
-      const { user: verified } = await authApi.me();
-      setUser(verified);
-    } catch {
-      setUser(u);
-    }
+  const handleLogin = (u) => {
+    setUser(u);
     setSetup({ needsSetup: false });
     setSection("home");
   };
