@@ -42,7 +42,7 @@ Serves the Vite build from `dist/` and the API on `PORT` (default 3001). Put TLS
 
 1. **Users** — Admin Console → Users (staff, client accounts).
 2. **Clients** — Admin Console → Clients (retainer accounts).
-3. **Voter file** — After TargetSmart (or vendor) ingest on the server, register metadata under Admin → Voter (record count, source, client id).
+3. **Voter file** — Ingest a TargetSmart CSV: `npm run voter:ingest -- --client <id> --file /path/to/voters.csv`, then `npm run voter:geocode -- --client <id>`.
 4. **Announcements** — Admin → Announce for firm-wide posts.
 
 ## Integrations (wire when ready)
@@ -54,7 +54,7 @@ Endpoints exist; data is empty until you ingest:
 - **Media** — Muck Rack → `/api/media/mentions`
 - **Polling** — `polls` table + `/api/polling/polls`; ingest from `portal/polling/clients/<id>/` via `npm run poll:ingest -- --client <id>`
 - **Election** — Bundled El Paso ENR collector (`election-collector/`) + Race Detail Monitor; manage from the UI or `/api/election/collector/*`; results in `data/election/results.db`
-- **Voter warehouse** — Implement row fetch in `server/routes.js` `POST /api/voter/query` against Parquet/DuckDB in `VOTER_DATA_DIR`
+- **Voter warehouse** — Per-client SQLite index in `VOTER_DATA_DIR`; ingest via `npm run voter:ingest`, geocode via `npm run voter:geocode`, query/map/export in the Voter Data module
 
 ## Environment
 

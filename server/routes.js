@@ -26,6 +26,19 @@ import {
   clearAuthCookie,
   signToken,
 } from "./auth.js";
+import {
+  queryVoters,
+  queryVoterMap,
+  getVoterMeta,
+  hasWarehouse,
+  ingestVoterFile,
+  geocodeClientVoters,
+  registerVoterFileInDb,
+  countVoterExport,
+  iterateVoterExport,
+  voterExportCsvHeader,
+  voterExportCsvRow,
+} from "./voter/warehouse.js";
 import { registerDesignRoutes } from "./design-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
 
@@ -338,7 +351,7 @@ export function registerRoutes(app, db) {
   app.get("/api/badges", auth, (req, res) => {
     const scope = clientScope(req.user, req.query.clientId);
     const ph = ACTIVE_STATUSES.map(() => "?").join(", ");
-    const designWhere = scope ? " AND client_id = ?" : "";
+    const designWhere = scope ? ` AND client_id = ?` : "";
     const designArgs = [...ACTIVE_STATUSES, ...(scope ? [scope] : [])];
     const openDesign = db.prepare(
       `SELECT COUNT(*) AS n FROM design_requests WHERE status IN (${ph})${designWhere}`
@@ -642,6 +655,18 @@ export function registerRoutes(app, db) {
     res.json({ file: file || null });
   });
 
+  app.get("/api/voter/meta", auth, requireRole("staff", "admin"), (req, res) => {
+    const scope = clientScope(req.user, req.query.clientId);
+    if (!scope || scope === "all") {
+      return res.json({ meta: null, message: "Select a client to load voter metadata." });
+    }
+    const meta = getVoterMeta(scope);
+    if (!meta) {
+      return res.json({ meta: null, message: "No ingested voter warehouse for this client." });
+    }
+    res.json({ meta });
+  });
+
   app.post("/api/voter/query", auth, requireRole("staff", "admin"), (req, res) => {
     const { clientId, filters, query, page = 1, pageSize = 50 } = req.body || {};
     const scope = clientScope(req.user, clientId);
@@ -654,16 +679,43 @@ export function registerRoutes(app, db) {
     if (!file) {
       return res.json({ total: 0, rows: [], stats: { avgScore: 0, partyMix: { D: 0, R: 0, I: 0 } }, page, pageSize });
     }
-    // Production: run warehouse query. Until ingest is wired, return empty page with estimated count from stored metadata only when no shard is loaded.
-    const total = 0;
+    if (!hasWarehouse(scope)) {
+      return res.json({
+        total: 0,
+        recordCount: file.record_count,
+        rows: [],
+        stats: { avgScore: 0, partyMix: { D: 0, R: 0, I: 0 } },
+        page,
+        pageSize,
+        message: "Voter file is registered but row data is not loaded. Run npm run voter:ingest for this client.",
+      });
+    }
+    const result = queryVoters(scope, { filters, query, page, pageSize });
+    res.json({ ...result, recordCount: file.record_count });
+  });
+
+  app.post("/api/voter/map", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, filters, query, bbox, zoom, limit } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    if (!scope) {
+      return res.status(400).json({ error: "Select a specific client for voter map queries." });
+    }
+    if (!hasWarehouse(scope)) {
+      return res.json({
+        type: "FeatureCollection",
+        features: [],
+        mode: "points",
+        geocodedTotal: 0,
+        matchingInView: 0,
+        message: "Run npm run voter:ingest and voter:geocode for this client.",
+      });
+    }
+    const result = queryVoterMap(scope, { filters, query, bbox, zoom, limit });
+    const meta = getVoterMeta(scope);
     res.json({
-      total,
-      recordCount: file.record_count,
-      rows: [],
-      stats: { avgScore: 0, partyMix: { D: 0, R: 0, I: 0 } },
-      page,
-      pageSize,
-      message: "Voter file is registered but row data is not loaded. Complete TargetSmart ingest to enable queries.",
+      type: "FeatureCollection",
+      ...result,
+      map: meta?.map || null,
     });
   });
 
@@ -706,20 +758,51 @@ export function registerRoutes(app, db) {
   });
 
   app.post("/api/voter/export", auth, requireRole("staff", "admin"), (req, res) => {
-    const { name, filters, query, clientId, count } = req.body || {};
-    res.json({
-      jobId: randomUUID(),
-      status: "queued",
-      manifest: {
-        type: "keel_voter_universe",
-        version: 1,
-        name: name || "export",
-        recordCount: count || 0,
-        filters: filters || {},
-        query: query || "",
-        clientId: clientScope(req.user, clientId),
-      },
-    });
+    const { name, filters, query, clientId, bbox, scope = "filters" } = req.body || {};
+    const client = clientScope(req.user, clientId);
+    if (!client) {
+      return res.status(400).json({ error: "Select a specific client for export." });
+    }
+    if (!hasWarehouse(client)) {
+      return res.status(400).json({ error: "No ingested voter warehouse for this client." });
+    }
+
+    const exportBbox = scope === "map" && Array.isArray(bbox) && bbox.length === 4 ? bbox : undefined;
+    const total = countVoterExport(client, { filters: filters || {}, query: query || "", bbox: exportBbox });
+    if (total === 0) {
+      return res.status(400).json({ error: "No voters match the current filters." });
+    }
+
+    const slug = String(name || "keel-universe").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "keel-universe";
+    const filename = `${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("X-Export-Count", String(total));
+    res.write("\uFEFF" + voterExportCsvHeader() + "\n");
+
+    for (const row of iterateVoterExport(client, {
+      filters: filters || {},
+      query: query || "",
+      bbox: exportBbox,
+    })) {
+      res.write(voterExportCsvRow(row) + "\n");
+    }
+    res.end();
+  });
+
+  app.post("/api/voter/export/count", auth, requireRole("staff", "admin"), (req, res) => {
+    const { filters, query, clientId, bbox, scope = "filters" } = req.body || {};
+    const client = clientScope(req.user, clientId);
+    if (!client) {
+      return res.status(400).json({ error: "Select a specific client." });
+    }
+    if (!hasWarehouse(client)) {
+      return res.json({ total: 0 });
+    }
+    const exportBbox = scope === "map" && Array.isArray(bbox) && bbox.length === 4 ? bbox : undefined;
+    const total = countVoterExport(client, { filters: filters || {}, query: query || "", bbox: exportBbox });
+    res.json({ total });
   });
 
   // ---------- Admin ----------
@@ -996,6 +1079,39 @@ export function registerRoutes(app, db) {
       "Data"
     );
     res.status(201).json({ ok: true });
+  });
+
+  app.post("/api/admin/voter-files/ingest", auth, requireRole("admin"), async (req, res) => {
+    const { clientId, filePath, source, link } = req.body || {};
+    if (!clientId || !filePath) return res.status(400).json({ error: "clientId and filePath required" });
+    try {
+      const manifest = await ingestVoterFile({ clientId, sourcePath: filePath, source, link: !!link });
+      registerVoterFileInDb(db, { clientId, manifest });
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email,
+        `Ingested voter file for ${clientId}: ${manifest.source} (${manifest.recordCount} records)`,
+        "Data"
+      );
+      res.status(201).json({ ok: true, manifest });
+    } catch (e) {
+      res.status(400).json({ error: e.message || "Ingest failed" });
+    }
+  });
+
+  app.post("/api/admin/voter-files/geocode", auth, requireRole("admin"), async (req, res) => {
+    const { clientId } = req.body || {};
+    if (!clientId) return res.status(400).json({ error: "clientId required" });
+    try {
+      const result = await geocodeClientVoters(clientId);
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email,
+        `Geocoded voter file for ${clientId}: ${result.geocodedCount} voters`,
+        "Data"
+      );
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(400).json({ error: e.message || "Geocode failed" });
+    }
   });
 
   app.get("/api/admin/audit", auth, requireRole("admin"), (_req, res) => {

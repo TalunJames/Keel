@@ -60,6 +60,35 @@ export async function api(path, options = {}) {
   return data;
 }
 
+/** Download a CSV or other binary/text export from the API. */
+export async function downloadExport(path, body, filename) {
+  const token = getStoredToken();
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: "Bearer " + token } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { /* csv error body */ }
+    throw new ApiError(data?.error || res.statusText || "Export failed", res.status);
+  }
+  const blob = await res.blob();
+  const count = res.headers.get("X-Export-Count");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { count: count ? Number(count) : null };
+}
+
 export const authApi = {
   login: async (email, password, remember = false) => {
     const data = await api("/auth/login", {
