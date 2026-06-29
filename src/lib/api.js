@@ -36,6 +36,11 @@ export const authApi = {
   me: () => api("/auth/me"),
 };
 
+export const setupApi = {
+  status: () => api("/setup/status"),
+  complete: (body) => api("/setup/complete", { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const accountApi = {
   me: () => api("/account/me"),
   update: (patch) => api("/account/me", { method: "PATCH", body: JSON.stringify(patch) }),

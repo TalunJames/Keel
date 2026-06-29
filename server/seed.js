@@ -1,45 +1,22 @@
 import "dotenv/config";
-import { randomUUID } from "crypto";
 import { openDb } from "./db.js";
-import { hashPassword } from "./auth.js";
+import { getSetupStatus } from "./bootstrap.js";
 
 const db = openDb();
-const count = db.prepare("SELECT COUNT(*) AS n FROM users").get().n;
+const status = getSetupStatus(db);
 
-if (count > 0) {
-  console.log("Users already exist — skipping seed.");
+if (status.needsSetup) {
+  console.log("Bootstrap admin is awaiting first-boot setup at:", status.email);
+  console.log("Open the app URL — you will be prompted to create a password.");
   process.exit(0);
 }
 
-const email = process.env.ADMIN_EMAIL || "admin@fogsignal.co";
-const password = process.env.ADMIN_PASSWORD;
-if (!password || password === "change-me-on-first-login") {
-  console.error("Set ADMIN_PASSWORD in .env before running db:seed");
-  process.exit(1);
+const count = db.prepare("SELECT COUNT(*) AS n FROM users").get().n;
+if (count > 0) {
+  console.log("Users already exist — nothing to seed.");
+  process.exit(0);
 }
 
-async function main() {
-  const id = randomUUID();
-  db.prepare(
-    `INSERT INTO users (id, email, password_hash, name, team, role, client_id, system_admin)
-     VALUES (?, ?, ?, ?, ?, 'admin', NULL, 1)`
-  ).run(
-    id,
-    email,
-    await hashPassword(password),
-    process.env.ADMIN_NAME || "Keel Administrator",
-    "Operations"
-  );
-
-  db.prepare(
-    "INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)"
-  ).run(email, "Initial system admin account created via db:seed", "System");
-
-  console.log("Created admin user:", email);
-  console.log("Sign in at the app URL with these credentials, then create clients and users in Admin Console.");
-}
-
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+console.log("No users and no pending bootstrap account.");
+console.log("Restart the API — bootstrap admin is created automatically on an empty database.");
+console.log("Set BOOTSTRAP_ADMIN_EMAIL in .env to change the default administrator email.");
