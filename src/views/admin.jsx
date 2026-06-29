@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
 import { api, loginAnnouncementApi } from "../lib/api.js";
 import { useApi } from "../lib/useApi.js";
-import { Loading } from "../components/Loading.jsx";
 import { AdminUsersTab } from "./admin-users.jsx";
 import { AdminModulesTab } from "./admin-modules.jsx";
+import { AdminClientsTab } from "./admin-clients.jsx";
 
 export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const isSystemAdmin = !!user?.systemAdmin;
@@ -13,7 +13,6 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const { data: clientsData, loading: clientsLoading, reload: reloadClients } = useApi("/admin/clients");
   const { data: auditData, reload: reloadAudit } = useApi("/admin/audit");
 
-  const [clientForm, setClientForm] = useState({ id: "", name: "", tag: "", initials: "", account: "", type: "" });
   const [voterForm, setVoterForm] = useState({ clientId: "", source: "", recordCount: "" });
   const [announceForm, setAnnounceForm] = useState({ title: "", body: "", tag: "" });
   const [loginAnn, setLoginAnn] = useState({ enabled: false, title: "", body: "", tone: "info" });
@@ -34,15 +33,6 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
     setLoginAnn(announcement);
     reloadAudit();
     flash("Login announcement updated");
-  };
-
-  const createClient = async (e) => {
-    e.preventDefault();
-    await api("/admin/clients", { method: "POST", body: JSON.stringify(clientForm) });
-    setClientForm({ id: "", name: "", tag: "", initials: "", account: "", type: "" });
-    reloadClients();
-    reloadAudit();
-    flash("Client created");
   };
 
   const registerVoterFile = async (e) => {
@@ -152,30 +142,12 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
       )}
 
       {tab === "clients" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-          <form className="card card-pad col" onSubmit={createClient} style={{ gap: 10 }}>
-            <h3 style={{ margin: 0, color: "var(--fs-navy)" }}>Add client</h3>
-            <input className="input" placeholder="id (slug)" required value={clientForm.id} onChange={(e) => setClientForm({ ...clientForm, id: e.target.value })} />
-            <input className="input" placeholder="Display name" required value={clientForm.name} onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })} />
-            <input className="input" placeholder="Tag" required value={clientForm.tag} onChange={(e) => setClientForm({ ...clientForm, tag: e.target.value })} />
-            <input className="input" placeholder="Initials" required value={clientForm.initials} onChange={(e) => setClientForm({ ...clientForm, initials: e.target.value })} />
-            <input className="input" placeholder="Account label" value={clientForm.account} onChange={(e) => setClientForm({ ...clientForm, account: e.target.value })} />
-            <input className="input" placeholder="Type" value={clientForm.type} onChange={(e) => setClientForm({ ...clientForm, type: e.target.value })} />
-            <button type="submit" className="btn primary">Create client</button>
-          </form>
-          <div className="card">
-            {clientsLoading ? <Loading /> : (
-              <table className="tbl">
-                <thead><tr><th>Client</th><th>Tag</th></tr></thead>
-                <tbody>
-                  {(clientsData?.clients || []).map((c) => (
-                    <tr key={c.id}><td>{c.name}</td><td className="mut">{c.tag}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
+        <AdminClientsTab
+          clients={clientsData?.clients || []}
+          loading={clientsLoading}
+          onReload={() => { reloadClients(); reloadAudit(); }}
+          onFlash={flash}
+        />
       )}
 
       {tab === "voter" && (

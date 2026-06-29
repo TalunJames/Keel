@@ -55,6 +55,7 @@ function rowToClient(row) {
     type: row.type,
     color: row.color,
     audience: row.audience || "",
+    active: row.active !== 0,
     ...extra,
     logo: row.logo || extra.logo || null,
   };
