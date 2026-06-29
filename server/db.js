@@ -60,6 +60,16 @@ function migrate(db) {
       modules_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_client_modules (
+      user_id TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      modules_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, client_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS announcements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pin INTEGER NOT NULL DEFAULT 0,

@@ -137,7 +137,7 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
 
   const roleLabel = {
     staff: "Staff",
-    admin: user.systemAdmin ? "System Admin" : "Admin",
+    admin: user.systemAdmin ? "System Admin" : "Admin / Partner",
     client: "Client",
   }[user.role];
 

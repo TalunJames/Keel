@@ -11,6 +11,7 @@ import {
   enabledModuleLabels,
 } from "../lib/client-type-presets.js";
 import { extractColorsFromDataUrl, colorToHex } from "../lib/logo-colors.js";
+import { ModuleToggle } from "../components/module-toggle.jsx";
 
 const BRAND_COLORS = [
   "var(--fs-navy)", "var(--fs-navy-600)", "var(--fs-gold-700)",
@@ -336,26 +337,6 @@ function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
         </div>
       )}
     </div>
-  );
-}
-
-function ModuleToggle({ mod, on, onChange }) {
-  const active = on || mod.mandatory;
-  return (
-    <label className={"module-toggle" + (active ? " on" : "") + (mod.mandatory ? " locked" : "")}>
-      <span className="module-toggle-icon">
-        <Icon name={mod.icon} size={18} />
-      </span>
-      <span className="module-toggle-label">{mod.label}</span>
-      <input
-        type="checkbox"
-        checked={active}
-        disabled={mod.mandatory}
-        onChange={(e) => onChange(e.target.checked)}
-        className="module-toggle-input"
-      />
-      <span className="module-toggle-switch" aria-hidden="true" />
-    </label>
   );
 }
 

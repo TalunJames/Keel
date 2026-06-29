@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
+import { computeEffectiveModules } from "./access.js";
 import { getSetupStatus, isBootstrapPending, markSetupComplete, findBootstrapUser } from "./bootstrap.js";
 import {
   getElectionLiveStatus,
@@ -265,10 +266,56 @@ export function registerRoutes(app, db) {
     res.json({ clients });
   });
 
+  function roleModuleDefaults(role) {
+    const row = db.prepare("SELECT modules_json FROM user_modules WHERE role = ?").get(role);
+    return row ? JSON.parse(row.modules_json) : DEFAULT_MODULES[role];
+  }
+
+  function userOverridesForClient(userId, clientId) {
+    if (!clientId || clientId === "all") return null;
+    const row = db.prepare(
+      "SELECT modules_json FROM user_client_modules WHERE user_id = ? AND client_id = ?"
+    ).get(userId, clientId);
+    return row ? JSON.parse(row.modules_json) : null;
+  }
+
+  function allUserOverrides(userId) {
+    const rows = db.prepare(
+      "SELECT client_id, modules_json FROM user_client_modules WHERE user_id = ?"
+    ).all(userId);
+    const out = {};
+    for (const r of rows) out[r.client_id] = JSON.parse(r.modules_json);
+    return out;
+  }
+
+  function effectiveModulesFor(user, clientId) {
+    const roleModules = roleModuleDefaults(user.role);
+    let client = null;
+    if (clientId && clientId !== "all") {
+      const row = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId);
+      client = rowToClient(row);
+    }
+    const overrides = userOverridesForClient(user.id, clientId);
+    return computeEffectiveModules({
+      role: user.role,
+      roleModules,
+      client,
+      userOverrides: overrides,
+    });
+  }
+
   app.get("/api/modules", auth, (req, res) => {
-    const row = db.prepare("SELECT modules_json FROM user_modules WHERE role = ?").get(req.user.role);
-    const modules = row ? JSON.parse(row.modules_json) : DEFAULT_MODULES[req.user.role];
-    res.json({ modules });
+    const clientId = req.query.clientId || "all";
+    const roleModules = roleModuleDefaults(req.user.role);
+    res.json({
+      modules: roleModules,
+      effective: effectiveModulesFor(req.user, clientId),
+      overrides: allUserOverrides(req.user.id),
+    });
+  });
+
+  app.get("/api/access/overrides", auth, (req, res) => {
+    res.json({ overrides: allUserOverrides(req.user.id) });
   });
 
   app.put("/api/modules/:role", auth, requireRole("admin"), (req, res) => {
@@ -813,9 +860,85 @@ export function registerRoutes(app, db) {
         args.push(req.body[f]);
       }
     }
+
+    if (req.body.payload !== undefined) {
+      const existing = db.prepare("SELECT payload_json FROM clients WHERE id = ?").get(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      const prev = existing.payload_json ? JSON.parse(existing.payload_json) : {};
+      const merged = { ...prev, ...req.body.payload };
+      sets.push("payload_json = ?");
+      args.push(JSON.stringify(merged));
+    }
+
     if (!sets.length) return res.status(400).json({ error: "No fields" });
     args.push(req.params.id);
-    db.prepare(`UPDATE clients SET ${sets.join(", ")} WHERE id = ?`).run(...args);
+    const result = db.prepare(`UPDATE clients SET ${sets.join(", ")} WHERE id = ?`).run(...args);
+    if (!result.changes) return res.status(404).json({ error: "Not found" });
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Updated client ${req.params.id}`,
+      "Clients"
+    );
+    res.json({ ok: true });
+  });
+
+  app.get("/api/admin/users/:userId/access", auth, requireRole("admin"), (req, res) => {
+    const { userId } = req.params;
+    const { clientId } = req.query;
+    const target = db.prepare("SELECT id, name, email, role FROM users WHERE id = ?").get(userId);
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (!clientId) {
+      return res.json({ overrides: allUserOverrides(userId) });
+    }
+    const clientRow = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId);
+    if (!clientRow) return res.status(404).json({ error: "Client not found" });
+    const client = rowToClient(clientRow);
+    const roleModules = roleModuleDefaults(target.role);
+    const overrides = userOverridesForClient(userId, clientId);
+    const base = computeEffectiveModules({
+      role: target.role,
+      roleModules,
+      client,
+      userOverrides: null,
+    });
+    const effective = computeEffectiveModules({
+      role: target.role,
+      roleModules,
+      client,
+      userOverrides: overrides,
+    });
+    res.json({ base, effective, overrides: overrides || {} });
+  });
+
+  app.put("/api/admin/users/:userId/access", auth, requireRole("admin"), (req, res) => {
+    const { userId } = req.params;
+    const { clientId, modules } = req.body || {};
+    if (!clientId || !modules || typeof modules !== "object") {
+      return res.status(400).json({ error: "clientId and modules required" });
+    }
+    const target = db.prepare("SELECT id, email, role FROM users WHERE id = ?").get(userId);
+    if (!target) return res.status(404).json({ error: "User not found" });
+    const clientExists = db.prepare("SELECT id FROM clients WHERE id = ?").get(clientId);
+    if (!clientExists) return res.status(404).json({ error: "Client not found" });
+
+    const sparse = modules;
+    const keys = Object.keys(sparse);
+    if (!keys.length) {
+      db.prepare("DELETE FROM user_client_modules WHERE user_id = ? AND client_id = ?").run(userId, clientId);
+    } else {
+      db.prepare(
+        `INSERT INTO user_client_modules (user_id, client_id, modules_json, updated_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(user_id, client_id) DO UPDATE SET
+           modules_json = excluded.modules_json,
+           updated_at = excluded.updated_at`
+      ).run(userId, clientId, JSON.stringify(sparse));
+    }
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Set module overrides for ${target.email} on ${clientId}`,
+      "Access"
+    );
     res.json({ ok: true });
   });
 
