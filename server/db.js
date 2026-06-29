@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ensureBootstrapAdmin } from "./bootstrap.js";
+import { syncPortalPolls } from "./polling/ingest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -239,6 +240,7 @@ function migrate(db) {
   seedDefaultSettings(db);
   seedDesignData(db);
   ensureBootstrapAdmin(db);
+  syncPortalPolls(db, root);
 }
 
 function ensureUserColumns(db) {

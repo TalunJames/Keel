@@ -34,6 +34,7 @@ import {
   ingestVoterFile,
   geocodeClientVoters,
   registerVoterFileInDb,
+  resolveVoterFile,
   countVoterExport,
   iterateVoterExport,
   voterExportCsvHeader,
@@ -649,9 +650,7 @@ export function registerRoutes(app, db) {
     if (!scope || scope === "all") {
       return res.json({ file: null, message: "Select a client to load their voter file." });
     }
-    const file = db.prepare(
-      "SELECT id, client_id, source, record_count, refreshed_at FROM voter_files WHERE client_id = ? AND active = 1 ORDER BY refreshed_at DESC LIMIT 1"
-    ).get(scope);
+    const file = resolveVoterFile(db, scope);
     res.json({ file: file || null });
   });
 
@@ -673,16 +672,14 @@ export function registerRoutes(app, db) {
     if (!scope) {
       return res.status(400).json({ error: "Select a specific client for voter queries." });
     }
-    const file = db.prepare(
-      "SELECT record_count FROM voter_files WHERE client_id = ? AND active = 1 LIMIT 1"
-    ).get(scope);
-    if (!file) {
+    const file = resolveVoterFile(db, scope);
+    if (!file && !hasWarehouse(scope)) {
       return res.json({ total: 0, rows: [], stats: { avgScore: 0, partyMix: { D: 0, R: 0, I: 0 } }, page, pageSize });
     }
     if (!hasWarehouse(scope)) {
       return res.json({
         total: 0,
-        recordCount: file.record_count,
+        recordCount: file?.record_count || 0,
         rows: [],
         stats: { avgScore: 0, partyMix: { D: 0, R: 0, I: 0 } },
         page,
@@ -691,7 +688,7 @@ export function registerRoutes(app, db) {
       });
     }
     const result = queryVoters(scope, { filters, query, page, pageSize });
-    res.json({ ...result, recordCount: file.record_count });
+    res.json({ ...result, recordCount: file?.record_count ?? result.total });
   });
 
   app.post("/api/voter/map", auth, requireRole("staff", "admin"), (req, res) => {

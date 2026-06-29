@@ -159,7 +159,15 @@ export function PollingView({ role, clientId, client }) {
       />
 
       {polls.length === 0 ? (
-        <EmptyState title="No polls" description="Field polls appear here after your team publishes them for this client." icon="trend-up" />
+        <EmptyState
+          title="No polls for this client"
+          description={
+            clientId === "all"
+              ? "Poll data loads from portal configs on server startup. Run npm run poll:ingest -- --client d11-colorado-springs if this workspace was deployed before polling was added."
+              : `No released polls for ${client?.name || "this client"}. Switch to School District 11 · Colorado Springs in the client picker, or run poll:ingest for this account.`
+          }
+          icon="trend-up"
+        />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) 1fr", gap: 24, alignItems: "flex-start" }}>
           <aside className="card">
