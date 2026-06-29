@@ -31,14 +31,22 @@ const PDF_SOURCES = [
 
 const VOTER_FILES = [
   {
+    file: "voters.csv",
+    source: "TargetSmart voter universe",
+    ingest: true,
+    link: false,
+  },
+  {
     file: "all_voters_master.csv",
     source: "D11 survey universe · Wave 1 master (TargetSmart)",
     link: true,
+    supplement: true,
   },
   {
     file: "poll_responses_individual_voter_2026-04-17_04_35.csv",
     source: "D11 poll dispositions · Wave 1 respondents",
     link: true,
+    supplement: true,
   },
 ];
 
@@ -58,15 +66,37 @@ function copyAssets() {
   }
 }
 
-function runVoterRegister({ file, source, link }) {
+function runVoterIngest({ file, source, link }) {
+  const filePath = path.join(DRIVE_ROOT, file);
+  if (!fs.existsSync(filePath)) {
+    const localPath = path.join(root, "data", "voter", CLIENT_ID, file);
+    if (!fs.existsSync(localPath)) {
+      console.warn(`  Skipping missing voter file: ${filePath}`);
+      return;
+    }
+    execSync(
+      `node scripts/voter-ingest.js --client ${CLIENT_ID} --file "${localPath}" --source "${source}"`,
+      { cwd: root, stdio: "inherit" },
+    );
+    return;
+  }
+  const linkFlag = link ? " --link" : "";
+  execSync(
+    `node scripts/voter-ingest.js --client ${CLIENT_ID} --file "${filePath}" --source "${source}"${linkFlag}`,
+    { cwd: root, stdio: "inherit" },
+  );
+}
+
+function runVoterRegister({ file, source, link, supplement }) {
   const filePath = path.join(DRIVE_ROOT, file);
   if (!fs.existsSync(filePath)) {
     console.warn(`  Skipping missing voter file: ${filePath}`);
     return;
   }
   const linkFlag = link ? " --link" : "";
+  const supplementFlag = supplement ? " --supplement" : "";
   execSync(
-    `node scripts/voter-register.js --client ${CLIENT_ID} --file "${filePath}" --source "${source}"${linkFlag}`,
+    `node scripts/voter-register.js --client ${CLIENT_ID} --file "${filePath}" --source "${source}"${linkFlag}${supplementFlag}`,
     { cwd: root, stdio: "inherit" },
   );
 }
@@ -109,9 +139,10 @@ function main() {
     console.log("  Copied feasibility presentation");
   }
 
-  console.log("\n3. Registering voter files…");
+  console.log("\n3. Ingesting voter files…");
   for (const vf of VOTER_FILES) {
-    runVoterRegister(vf);
+    if (vf.ingest) runVoterIngest(vf);
+    else runVoterRegister(vf);
   }
 
   console.log("\nDone. Select client “School District 11 · Colorado Springs” in Keel to view polling.");

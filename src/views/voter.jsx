@@ -34,9 +34,21 @@ export function VoterView({ role, clientId, client }) {
       setCuts([]);
       return;
     }
-    api(withClient("/voter/file", clientId)).then((r) => setFile(r.file));
-    api(withClient("/voter/meta", clientId)).then((r) => setMeta(r.meta));
-    api(withClient("/voter/cuts", clientId)).then((r) => setCuts(r.cuts || []));
+    Promise.all([
+      api(withClient("/voter/file", clientId)),
+      api(withClient("/voter/meta", clientId)),
+      api(withClient("/voter/cuts", clientId)),
+    ])
+      .then(([fileRes, metaRes, cutsRes]) => {
+        setFile(fileRes.file);
+        setMeta(metaRes.meta);
+        setCuts(cutsRes.cuts || []);
+      })
+      .catch((e) => {
+        setFile(null);
+        setMeta(null);
+        flash(e.message || "Could not load voter file");
+      });
   }, [clientId]);
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
@@ -109,6 +121,8 @@ export function VoterView({ role, clientId, client }) {
   };
 
   const needsClient = !clientId || clientId === "all";
+  const hasVoterFile = !!file || meta?.loaded;
+  const warehouseReady = meta?.loaded !== false && (!!meta?.loaded || !!file?.warehouse);
   const sharedFilterProps = {
     filters,
     setFilters,
@@ -133,24 +147,26 @@ export function VoterView({ role, clientId, client }) {
         eyebrow="Voter & Polling Data"
         title="Voter File Explorer"
         sub={file
-          ? `Active file: ${file.source} · ${file.record_count?.toLocaleString()} records · refreshed ${file.refreshed_at}`
-          : "Select a client with an ingested voter file to query records."}
+          ? `Active file: ${file.source} · ${file.record_count?.toLocaleString()} records · refreshed ${file.refreshed_at?.slice?.(0, 10) || file.refreshed_at || "—"}`
+          : meta?.loaded
+            ? `Warehouse loaded · ${meta.recordCount?.toLocaleString()} records`
+            : "Select a client with an ingested voter file to query records."}
         actions={
           <>
             <button type="button" className="btn secondary" disabled={needsClient} onClick={() => setModal("saved")}>
               <Icon name="filter" size={13} /> Saved cuts
             </button>
-            <button type="button" className="btn secondary" disabled={needsClient || !file} onClick={openExport}>
+            <button type="button" className="btn secondary" disabled={needsClient || !hasVoterFile} onClick={openExport}>
               <Icon name="download" size={13} /> Export CSV
             </button>
-            <button type="button" className="btn primary" disabled={needsClient || !file} onClick={() => setModal("cut")}>
+            <button type="button" className="btn primary" disabled={needsClient || !hasVoterFile} onClick={() => setModal("cut")}>
               <Icon name="plus" size={14} /> Cut universe
             </button>
           </>
         }
       />
 
-      {!needsClient && file && (
+      {!needsClient && hasVoterFile && (
         <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-fg-muted)" }}>
           <span style={{ color: "var(--fs-navy)", fontWeight: 600 }}>Active filters</span>
           {" · "}{filtersSummary(filters)}
@@ -179,17 +195,24 @@ export function VoterView({ role, clientId, client }) {
       {needsClient && (
         <EmptyState title="Select a client" description="Choose a specific client (not All Clients) to load their voter file." icon="users" />
       )}
-      {!needsClient && !file && (tab === "file" || tab === "map") && (
+      {!needsClient && !hasVoterFile && (tab === "file" || tab === "map") && (
         <EmptyState
           title="No voter file on record"
-          description="Ingest a TargetSmart CSV via Admin Console → Voter, or run npm run voter:ingest."
+          description="Ingest a TargetSmart CSV with npm run voter:ingest -- --client <id> --file <csv>, then npm run voter:geocode -- --client <id>."
           icon="users"
         />
       )}
-      {!needsClient && file && tab === "file" && (
+      {!needsClient && hasVoterFile && !warehouseReady && (tab === "file" || tab === "map") && (
+        <EmptyState
+          title="Voter file registered, not ingested"
+          description="The file is on record but rows aren't loaded yet. Run npm run voter:ingest for this client, then voter:geocode for the map."
+          icon="users"
+        />
+      )}
+      {!needsClient && warehouseReady && tab === "file" && (
         <VoterFileQuery clientId={clientId} file={file} {...sharedFilterProps} />
       )}
-      {!needsClient && file && tab === "map" && (
+      {!needsClient && warehouseReady && tab === "map" && (
         <VoterMap clientId={clientId} meta={meta} {...sharedFilterProps} onBboxChange={setMapBbox} />
       )}
       {tab === "crosstabs" && <EmptyState title="Polling crosstabs" description="Link poll crosstabs from the Polling module when field data is published." icon="trend-up" />}
@@ -265,11 +288,12 @@ function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, 
       body: JSON.stringify({ clientId, filters, query, page, pageSize: PAGE_SIZE }),
     })
       .then(setResult)
+      .catch(() => setResult({ total: 0, rows: [], message: "Could not load voters. Check that the warehouse is ingested for this client." }))
       .finally(() => setLoading(false));
   }, [clientId, filters, query, page]);
 
   const total = result?.total ?? 0;
-  const recordCount = result?.recordCount ?? file.record_count;
+  const recordCount = result?.recordCount ?? file?.record_count ?? meta?.recordCount ?? 0;
   const rows = result?.rows || [];
   const totalPages = Math.max(1, Math.ceil((total || recordCount) / PAGE_SIZE));
   const message = result?.message;

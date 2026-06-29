@@ -23,16 +23,18 @@ function usage() {
 Options:
   --source <label>   Display label (default: CSV filename)
   --link             Symlink instead of copying into data/voter/
+  --supplement       Register without becoming the active query file (poll dispositions, etc.)
   --help             Show this help
 `);
 }
 
 function parseArgs(argv) {
-  const out = { client: null, file: null, source: null, link: false, help: false };
+  const out = { client: null, file: null, source: null, link: false, supplement: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") out.help = true;
     else if (arg === "--link") out.link = true;
+    else if (arg === "--supplement") out.supplement = true;
     else if (arg === "--client") out.client = argv[++i];
     else if (arg === "--file") out.file = argv[++i];
     else if (arg === "--source") out.source = argv[++i];
@@ -88,19 +90,21 @@ async function main() {
   });
 
   const db = openDb();
-  db.prepare("UPDATE voter_files SET active = 0 WHERE client_id = ?").run(args.client);
+  if (!args.supplement) {
+    db.prepare("UPDATE voter_files SET active = 0 WHERE client_id = ?").run(args.client);
+  }
   db.prepare(
     `INSERT INTO voter_files (client_id, source, record_count, refreshed_at, storage_path, active)
-     VALUES (?, ?, ?, ?, ?, 1)`
-  ).run(args.client, source, recordCount, new Date().toISOString(), storagePath);
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(args.client, source, recordCount, new Date().toISOString(), storagePath, args.supplement ? 0 : 1);
   db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
     "voter-register",
-    `Registered voter file for ${args.client}: ${source} (${recordCount.toLocaleString()} records)`,
+    `${args.supplement ? "Supplement" : "Registered"} voter file for ${args.client}: ${source} (${recordCount.toLocaleString()} records)`,
     "Data",
   );
   db.close();
 
-  console.log(`Registered ${recordCount.toLocaleString()} records for ${args.client}`);
+  console.log(`${args.supplement ? "Supplement" : "Registered"} ${recordCount.toLocaleString()} records for ${args.client}`);
   console.log(`  Source: ${source}`);
   console.log(`  Storage: ${storagePath}`);
 }
