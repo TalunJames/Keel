@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Icon, Eyebrow, Tag } from "../components/ui.jsx";
+import { Icon, Tag } from "../components/ui.jsx";
 import { clientsApi, teamApi } from "../lib/api.js";
 import {
   STANDARD_TYPE_PRESETS,
@@ -19,11 +19,47 @@ const BRAND_COLORS = [
 ];
 
 const STAFF_ROLES = [
-  { key: "lead", label: "Lead strategist", help: "Primary point of contact and senior counsel." },
-  { key: "account", label: "Account lead", help: "Owns delivery, billing, and weekly cadence." },
-  { key: "designer", label: "Lead designer", help: "Owns creative briefs, proofs, and assets." },
-  { key: "data", label: "Data & analytics lead", help: "Owns voter file, polling, and modeling." },
+  { key: "lead", label: "Lead strategist" },
+  { key: "account", label: "Account lead" },
+  { key: "designer", label: "Lead designer" },
+  { key: "data", label: "Data & analytics" },
+  { key: "other", label: "Team member" },
 ];
+
+function personRoles(team, name) {
+  const roles = STAFF_ROLES.filter((r) => r.key !== "other" && team[r.key] === name).map((r) => r.key);
+  if (team.others.includes(name)) roles.push("other");
+  return roles;
+}
+
+function isPersonAssigned(team, name) {
+  return personRoles(team, name).length > 0;
+}
+
+function setPersonAssigned(team, name, assigned) {
+  if (!assigned) {
+    return {
+      lead: team.lead === name ? "" : team.lead,
+      account: team.account === name ? "" : team.account,
+      designer: team.designer === name ? "" : team.designer,
+      data: team.data === name ? "" : team.data,
+      others: team.others.filter((x) => x !== name),
+    };
+  }
+  if (isPersonAssigned(team, name)) return team;
+  return { ...team, others: [...team.others, name] };
+}
+
+function togglePersonRole(team, name, roleKey) {
+  if (roleKey === "other") {
+    const has = team.others.includes(name);
+    return { ...team, others: has ? team.others.filter((x) => x !== name) : [...team.others, name] };
+  }
+  if (team[roleKey] === name) {
+    return { ...team, [roleKey]: "" };
+  }
+  return { ...team, [roleKey]: name };
+}
 
 const STEPS = [
   { id: "type", label: "Service line" },
@@ -83,8 +119,6 @@ export function NewClientWizard({ onCancel, onCreated }) {
   const canNext = (() => {
     if (step === 0) return !!draft.type;
     if (step === 1) return draft.name.trim().length > 1;
-    if (step === 2) return !!draft.team.lead;
-    if (step === 3) return draft.contacts.some((c) => c.email.trim());
     return true;
   })();
 
@@ -121,11 +155,6 @@ export function NewClientWizard({ onCancel, onCreated }) {
     upd({ logo: null, detectedColors: [], colorSource: "preset" });
   };
 
-  const toggleOther = (name) => {
-    const has = draft.team.others.includes(name);
-    updTeam({ others: has ? draft.team.others.filter((x) => x !== name) : [...draft.team.others, name] });
-  };
-
   const createClient = async () => {
     setSaving(true);
     setError("");
@@ -150,8 +179,7 @@ export function NewClientWizard({ onCancel, onCreated }) {
     <div>
       <div className="row between" style={{ alignItems: "flex-start", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <Eyebrow>New client onboarding</Eyebrow>
-          <h2 style={{ fontFamily: "var(--fs-font-display)", fontSize: 30, fontWeight: 700, color: "var(--fs-navy)", margin: "10px 0 4px", letterSpacing: "-0.01em" }}>
+          <h2 style={{ fontFamily: "var(--fs-font-display)", fontSize: 30, fontWeight: 700, color: "var(--fs-navy)", margin: "0 0 4px", letterSpacing: "-0.01em" }}>
             Set up a new client
           </h2>
           <p className="mut" style={{ fontSize: 14, margin: 0, maxWidth: 580 }}>
@@ -193,7 +221,7 @@ export function NewClientWizard({ onCancel, onCreated }) {
           />
         )}
         {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} onClearLogo={clearLogo} />}
-        {step === 2 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} toggleOther={toggleOther} />}
+        {step === 2 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} />}
         {step === 3 && <StepContacts draft={draft} upd={upd} />}
         {step === 4 && <StepReview draft={draft} />}
       </div>
@@ -228,57 +256,60 @@ function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
 
   return (
     <div>
-      <Eyebrow>Step 1 · Service line</Eyebrow>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>What kind of engagement is this?</h3>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>What kind of engagement is this?</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         Your selection sets which Keel tabs are enabled for staff and the client portal.
       </p>
 
-      <div className="type-card-grid">
-        {STANDARD_TYPE_PRESETS.map((p) => {
-          const selected = draft.type === p.id;
-          return (
+      <div className="type-card-picker">
+        <div className="type-card-grid">
+          {STANDARD_TYPE_PRESETS.map((p) => {
+            const selected = draft.type === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={"type-card" + (selected ? " selected" : "")}
+                onClick={() => selectType(p.id)}
+              >
+                <span className="type-card-icon">
+                  <Icon name={p.icon} size={28} />
+                </span>
+                <span className="type-card-body">
+                  <span className="type-card-label">{p.label}</span>
+                  <span className="type-card-desc">{p.desc}</span>
+                </span>
+                {selected && (
+                  <span className="type-card-check" aria-hidden="true">
+                    <Icon name="check" size={13} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {custom && (
             <button
-              key={p.id}
               type="button"
-              className={"type-card" + (selected ? " selected" : "")}
-              onClick={() => selectType(p.id)}
+              className={"type-card type-card-custom" + (customSelected ? " selected" : "")}
+              onClick={() => selectType(custom.id)}
             >
               <span className="type-card-icon">
-                <Icon name={p.icon} size={32} />
+                <Icon name={custom.icon} size={24} />
               </span>
-              <span className="type-card-label">{p.label}</span>
-              <span className="type-card-desc">{p.desc}</span>
-              {selected && (
-                <span className="type-card-check">
-                  <Icon name="check" size={14} />
+              <span className="type-card-body">
+                <span className="type-card-label">{custom.label}</span>
+                <span className="type-card-desc">{custom.desc}</span>
+              </span>
+              {customSelected && (
+                <span className="type-card-check" aria-hidden="true">
+                  <Icon name="check" size={13} />
                 </span>
               )}
             </button>
-          );
-        })}
-      </div>
-
-      {custom && (
-        <button
-          type="button"
-          className={"type-card type-card-custom" + (customSelected ? " selected" : "")}
-          onClick={() => selectType(custom.id)}
-        >
-          <span className="type-card-icon">
-            <Icon name={custom.icon} size={28} />
-          </span>
-          <span className="type-card-custom-text">
-            <span className="type-card-label">{custom.label}</span>
-            <span className="type-card-desc">{custom.desc}</span>
-          </span>
-          {customSelected && (
-            <span className="type-card-check">
-              <Icon name="check" size={14} />
-            </span>
           )}
-        </button>
-      )}
+        </div>
+      </div>
 
       {!isCustom && preset && (
         <div className="type-modules-preview">
@@ -345,8 +376,7 @@ function StepIdentity({ draft, upd, onLogoPick, onClearLogo }) {
 
   return (
     <div>
-      <Eyebrow>Step 2 · Identity & brand</Eyebrow>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Who is this client?</h3>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>Who is this client?</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         {draft.type} · This name appears in the client switcher, on proposals, and across Keel.
       </p>
@@ -485,50 +515,59 @@ function StepIdentity({ draft, upd, onLogoPick, onClearLogo }) {
   );
 }
 
-function StepTeam({ draft, updTeam, staff, toggleOther }) {
-  const names = staff.map((s) => s.name);
-
+function StepTeam({ draft, updTeam, staff }) {
   return (
     <div>
-      <Eyebrow>Step 3 · Client staff</Eyebrow>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Assign your team</h3>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>Assign your team</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
-        Choose who owns this account. Assigned staff see the client in their workspace switcher.
+        Select staff on this account and toggle their role. Assigned staff see the client in their workspace switcher.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-        {STAFF_ROLES.map((r) => (
-          <div key={r.key} className="field">
-            <label>{r.label}</label>
-            <select className="input" value={draft.team[r.key]} onChange={(e) => updTeam({ [r.key]: e.target.value })}>
-              <option value="">Select…</option>
-              {names.map((n) => <option key={n}>{n}</option>)}
-            </select>
-            <div className="help">{r.help}</div>
-          </div>
-        ))}
-      </div>
+      {staff.length > 0 ? (
+        <div className="staff-assign-list">
+          {staff.map((member) => {
+            const name = member.name;
+            const assigned = isPersonAssigned(draft.team, name);
+            const roles = personRoles(draft.team, name);
 
-      {names.length > 0 && (
-        <div className="field">
-          <label>Additional team members</label>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {names.map((n) => {
-              const on = draft.team.others.includes(n);
-              if (STAFF_ROLES.some((r) => draft.team[r.key] === n)) return null;
-              return (
-                <button key={n} type="button" onClick={() => toggleOther(n)} className={"btn " + (on ? "primary" : "secondary")} style={{ padding: "5px 10px", fontSize: 12 }}>
-                  {on && <Icon name="check" size={11} />} {n}
-                </button>
-              );
-            })}
-          </div>
+            return (
+              <div key={name} className={"staff-assign-row" + (assigned ? " assigned" : "")}>
+                <label className="staff-assign-name">
+                  <input
+                    type="checkbox"
+                    checked={assigned}
+                    onChange={(e) => updTeam(setPersonAssigned(draft.team, name, e.target.checked))}
+                  />
+                  <span>
+                    <span className="staff-assign-name-text">{name}</span>
+                    {member.title && <span className="mut staff-assign-title">{member.title}</span>}
+                  </span>
+                </label>
+                {assigned && (
+                  <div className="staff-role-toggles">
+                    {STAFF_ROLES.map((r) => {
+                      const on = roles.includes(r.key);
+                      return (
+                        <button
+                          key={r.key}
+                          type="button"
+                          className={"btn sm " + (on ? "primary" : "secondary")}
+                          onClick={() => updTeam(togglePersonRole(draft.team, name, r.key))}
+                        >
+                          {on && <Icon name="check" size={11} />}
+                          {r.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
-
-      {names.length === 0 && (
+      ) : (
         <div className="mut" style={{ fontSize: 13, padding: 16, background: "var(--fs-bone-50)", borderRadius: 4 }}>
-          No staff members found. You can still continue — assign team members later from Admin Console.
+          No staff members found. You can skip this step and assign team members later from Admin Console.
         </div>
       )}
     </div>
@@ -540,15 +579,23 @@ function StepContacts({ draft, upd }) {
   const addC = () => upd({ contacts: [...draft.contacts, { name: "", email: "", role: "Staff contact", views: "Full client view" }] });
   const rmC = (i) => upd({ contacts: draft.contacts.filter((_, j) => j !== i) });
 
+  const hasContacts = draft.contacts.some((c) => c.email.trim());
+
   return (
     <div>
-      <Eyebrow>Step 4 · Portal contacts</Eyebrow>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Who gets client portal access?</h3>
-      <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
-        Each contact can be invited to the client portal scoped to this account.
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>Who gets client portal access?</h3>
+      <p className="mut" style={{ fontSize: 13, margin: "0 0 16px" }}>
+        Each contact can be invited to the client portal scoped to this account. You can skip this step and add contacts later in Admin settings.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {!hasContacts && (
+        <div className="wizard-skip-note">
+          <Icon name="comment" size={14} />
+          <span>No contacts added yet — click Continue to skip and set them up later.</span>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
         {draft.contacts.map((c, i) => (
           <div key={i} className="contact-row">
             <input className="input" placeholder="Name" value={c.name} onChange={(e) => updC(i, { name: e.target.value })} />
@@ -579,8 +626,7 @@ function StepReview({ draft }) {
 
   return (
     <div>
-      <Eyebrow>Step 5 · Review & create</Eyebrow>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Ready to go live</h3>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>Ready to go live</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         Confirm the details below. You can edit everything later from Admin Console.
       </p>
@@ -628,14 +674,18 @@ function StepReview({ draft }) {
         </ReviewBlock>
 
         <ReviewBlock title="Portal invites" style={{ gridColumn: "1 / -1" }}>
-          {draft.contacts.filter((c) => c.email).map((c, i) => (
-            <div key={i} style={{ fontSize: 13, color: "var(--fs-navy)", marginBottom: 4 }}>
-              <strong>{c.name || "(no name)"}</strong>
-              {" · "}
-              <span style={{ fontFamily: "var(--fs-font-mono)" }}>{c.email}</span>
-              {c.role && <Tag tone="outline" style={{ marginLeft: 8 }}>{c.role}</Tag>}
-            </div>
-          ))}
+          {draft.contacts.filter((c) => c.email).length > 0 ? (
+            draft.contacts.filter((c) => c.email).map((c, i) => (
+              <div key={i} style={{ fontSize: 13, color: "var(--fs-navy)", marginBottom: 4 }}>
+                <strong>{c.name || "(no name)"}</strong>
+                {" · "}
+                <span style={{ fontFamily: "var(--fs-font-mono)" }}>{c.email}</span>
+                {c.role && <Tag tone="outline" style={{ marginLeft: 8 }}>{c.role}</Tag>}
+              </div>
+            ))
+          ) : (
+            <p className="mut" style={{ fontSize: 13, margin: 0 }}>None — add portal contacts later in Admin settings.</p>
+          )}
         </ReviewBlock>
       </div>
     </div>
