@@ -144,7 +144,6 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
   return (
     <div>
       <PageHead
-        eyebrow="Account"
         title="Account Settings"
         sub="Your profile, work location, calendar, and client access."
         actions={

@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { Icon, Avatar } from "./ui.jsx";
 import { versionApi } from "../lib/api.js";
 
-function VersionStamp() {
+function VersionStamp({ show }) {
   const [v, setV] = useState(null);
   useEffect(() => {
+    if (!show) return;
     versionApi.get().then(setV).catch(() => setV(null));
-  }, []);
-  if (!v) return null;
+  }, [show]);
+  if (!show || !v) return null;
   const built = v.builtAt && v.builtAt !== "unknown"
     ? new Date(v.builtAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : null;
@@ -42,16 +43,10 @@ function useClickOutside(ref, onClose) {
   }, [ref, onClose]);
 }
 
-function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout }) {
+function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout, collapsed, roleLabel }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useClickOutside(wrapRef, () => setOpen(false));
-
-  const roleLabel = {
-    staff: "Staff",
-    admin: user?.systemAdmin ? "System Admin" : "Admin",
-    client: "Client",
-  }[role] || "User";
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
@@ -59,20 +54,25 @@ function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout }) {
         type="button"
         className="sb-user"
         onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" }}
+        style={{ width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: collapsed ? "center" : "left" }}
         aria-haspopup="menu"
         aria-expanded={open}
+        title={collapsed ? user.name : undefined}
       >
         {user?.photo
           ? <img src={user.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
           : <Avatar name={user.name} size={32} />}
-        <div className="meta">
-          <div className="name">{user.name}</div>
-          <div className="role">{roleLabel}{user.team ? " · " + user.team : ""}</div>
-        </div>
-        <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)" }}>
-          <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
-        </span>
+        {!collapsed && (
+          <>
+            <div className="meta">
+              <div className="name">{user.name}</div>
+              <div className="role">{roleLabel}{user.team ? " · " + user.team : ""}</div>
+            </div>
+            <span className="chev" style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)" }}>
+              <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
+            </span>
+          </>
+        )}
       </button>
       {open && (
         <div className="user-pop" role="menu">
@@ -102,12 +102,18 @@ function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout }) {
 
 export function Sidebar({
   active, onNavigate, role, user, onLogout, modules, badges = {}, theme, onToggleTheme,
+  collapsed, onToggleCollapse,
 }) {
   const renderItem = (m) => (
-    <a key={m.id} className={"sb-item " + (active === m.id ? "active" : "")} onClick={() => onNavigate(m.id)}>
+    <a
+      key={m.id}
+      className={"sb-item " + (active === m.id ? "active" : "")}
+      onClick={() => onNavigate(m.id)}
+      title={collapsed ? m.label : undefined}
+    >
       <span className="ic"><Icon name={MODULE_ICONS[m.id] || "circle"} size={18} /></span>
-      <span>{m.label}</span>
-      {badges[m.id] != null && badges[m.id] !== 0 && (
+      {!collapsed && <span>{m.label}</span>}
+      {!collapsed && badges[m.id] != null && badges[m.id] !== 0 && (
         <span className="badge">{badges[m.id]}</span>
       )}
     </a>
@@ -120,22 +126,37 @@ export function Sidebar({
   }[role];
 
   return (
-    <aside className="sb">
+    <aside className={"sb" + (collapsed ? " collapsed" : "")}>
+      <button
+        type="button"
+        className="sb-collapse"
+        onClick={onToggleCollapse}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={13} />
+      </button>
+
       <div className="sb-logo">
-        <img src="/logo-wordmark-white.png" alt="Fog Signal Strategies"
-          style={{ width: "100%", maxWidth: 180, height: "auto", display: "block" }} />
-        <div className="keel-sub" style={{ marginTop: 6 }}>Keel · {roleLabel}</div>
+        <img
+          src="/logo-wordmark-white.png"
+          alt="Fog Signal Strategies"
+          style={{ width: "100%", maxWidth: collapsed ? 36 : 180, height: "auto", display: "block" }}
+        />
       </div>
 
       <nav className="sb-nav">
-        <div className="sb-section-label">Workspace</div>
+        {!collapsed && <div className="sb-section-label">Workspace</div>}
         {modules.map(renderItem)}
         {role === "admin" && (
           <>
-            <div className="sb-section-label">Administration</div>
-            <a className={"sb-item " + (active === "admin" ? "active" : "")} onClick={() => onNavigate("admin")}>
+            {!collapsed && <div className="sb-section-label">Administration</div>}
+            <a
+              className={"sb-item " + (active === "admin" ? "active" : "")}
+              onClick={() => onNavigate("admin")}
+              title={collapsed ? "Admin Console" : undefined}
+            >
               <span className="ic"><Icon name="shield" size={18} /></span>
-              <span>Admin Console</span>
+              {!collapsed && <span>Admin Console</span>}
             </a>
           </>
         )}
@@ -149,8 +170,10 @@ export function Sidebar({
           onToggleTheme={onToggleTheme}
           onNavigate={onNavigate}
           onLogout={onLogout}
+          collapsed={collapsed}
+          roleLabel={roleLabel}
         />
-        <VersionStamp />
+        <VersionStamp show={role === "admin"} />
       </div>
     </aside>
   );
@@ -388,13 +411,12 @@ function AnnouncementsBell({ announcements = [], unreadCount }) {
 }
 
 export function TopBar({
-  section, crumbs, role, clients, selectedClient, onSelectClient, onNewAction,
+  section, role, clients, selectedClient, onSelectClient, onNewAction,
   announcements,
 }) {
   return (
     <header className="topbar">
       <div>
-        {crumbs && <div className="crumbs">{crumbs}</div>}
         <h1 className="page-title">{section}</h1>
       </div>
       <div style={{ marginLeft: 12 }}>

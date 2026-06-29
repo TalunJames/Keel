@@ -4,7 +4,6 @@ export function CalendarView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Schedule"
       title="Calendar"
       sub="Events synced from your firm's calendar integration."
       endpoint="/calendar/events"

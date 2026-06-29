@@ -47,7 +47,6 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
   return (
     <div>
       <PageHead
-        eyebrow="Design Requests"
         title={isClient ? "Your Active Proofs" : "Design Queue"}
         sub={isClient
           ? "Active and recently approved creative for your campaign. Click any item to review and comment."

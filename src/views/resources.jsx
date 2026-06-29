@@ -4,7 +4,6 @@ export function ResourcesView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Library"
       title="Resources"
       sub="Memos, playbooks, and shared Drive assets."
       endpoint="/resources"

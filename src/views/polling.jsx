@@ -151,7 +151,6 @@ export function PollingView({ role, clientId, client }) {
   return (
     <div>
       <PageHead
-        eyebrow={role === "client" ? "Released to you" : "Research"}
         title="Polling"
         sub={role === "client"
           ? "Topline and issue numbers your Fog Signal team has released. Crosstabs and message tests are held until your next strategy review."

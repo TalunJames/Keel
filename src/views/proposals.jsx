@@ -4,7 +4,6 @@ export function ProposalsView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Business development"
       title="Proposals"
       sub="Active and archived proposals by client."
       endpoint="/proposals"

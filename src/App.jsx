@@ -31,7 +31,7 @@ const DEFAULT_MODULES_FALLBACK = {
 function ClientLockOut() {
   return (
     <div>
-      <PageHead eyebrow="Restricted" title="Held for staff" sub="This area isn't part of your client portal." />
+      <PageHead title="Held for staff" sub="This area isn't part of your client portal." />
       <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 16, maxWidth: 480 }}>
         <Icon name="lock" size={20} color="var(--fs-navy)" />
         <div className="mut" style={{ fontSize: 13 }}>Contact your senior strategist if you need access.</div>
@@ -43,7 +43,7 @@ function ClientLockOut() {
 function ModuleLockOut({ clientName }) {
   return (
     <div>
-      <PageHead eyebrow="Restricted" title="Not enabled for this client" sub={clientName ? `${clientName} doesn't include this workspace tab.` : "This tab isn't enabled for the selected client."} />
+      <PageHead title="Not enabled for this client" sub={clientName ? `${clientName} doesn't include this workspace tab.` : "This tab isn't enabled for the selected client."} />
       <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 16, maxWidth: 480 }}>
         <Icon name="lock" size={20} color="var(--fs-navy)" />
         <div className="mut" style={{ fontSize: 13 }}>Switch clients or ask an admin if you need access here.</div>
@@ -63,6 +63,7 @@ export default function App() {
   const [announcements, setAnnouncements] = useState([]);
   const [theme, setTheme] = usePref("theme", "light");
   const [clientId, setClientId] = usePref("client", "all");
+  const [sidebarCollapsed, setSidebarCollapsed] = usePref("sidebarCollapsed", false);
   const [section, setSection] = useState("home");
   const [designInitialTab, setDesignInitialTab] = useState(null);
 
@@ -231,7 +232,7 @@ export default function App() {
   if (badges.media) electionBadges.media = badges.media;
 
   return (
-    <div className="app">
+    <div className={"app" + (sidebarCollapsed ? " collapsed" : "")}>
       <Sidebar
         active={section}
         onNavigate={setSection}
@@ -242,12 +243,13 @@ export default function App() {
         badges={electionBadges}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "light" ? "dark" : "light")}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      <main className={"main" + (section === "election" ? " election-immersive" : "")} data-screen-label={"Keel · " + (titles[section] || "Home")}>
+      <main className={"main" + (section === "election" ? " election-immersive" : "")} data-screen-label={titles[section] || "Home"}>
         {section !== "election" && (
           <TopBar
             section={titles[section] || "Home"}
-            crumbs={"Keel" + (selectedClient?.id && selectedClient.id !== "all" ? " · " + selectedClient.name : "")}
             role={user.role}
             clients={clients}
             selectedClient={selectedClient}
