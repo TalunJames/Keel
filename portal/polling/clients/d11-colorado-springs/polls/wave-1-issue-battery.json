@@ -1,0 +1,31 @@
+{
+  "id": "cssd11-wave1-issue-battery",
+  "title": "Baseline Bond Survey — Issue Importance (Q1)",
+  "client_id": "d11-colorado-springs",
+  "n": 852,
+  "moe": "±3.3%",
+  "date_range": "Mar 24–Apr 17, 2026",
+  "unlocked": true,
+  "tone": "School safety and education quality lead the issue battery",
+  "payload": {
+    "type": "issue_battery",
+    "releaseTier": "issue",
+    "question": "How important are each of the following issues to you?",
+    "issues": [
+      { "issue": "Making sure schools are safe and secure for students", "extremelyImportant": 67.1, "topTwoBox": 91.0, "notAtAll": 1.5, "read": "Universal priority — leads all issues" },
+      { "issue": "Improving the quality of education in local public schools", "extremelyImportant": 64.5, "topTwoBox": 90.5, "notAtAll": 2.9, "read": "Strong across demographics" },
+      { "issue": "Maintaining local streets and roads", "extremelyImportant": 46.4, "topTwoBox": 88.9, "notAtAll": 1.1, "read": "High salience despite non-school frame" },
+      { "issue": "Improving the overall performance of D11", "extremelyImportant": 46.3, "topTwoBox": 80.9, "notAtAll": 3.6, "read": "Core district performance frame" },
+      { "issue": "Reducing crime and gang activity", "extremelyImportant": 51.8, "topTwoBox": 78.2, "notAtAll": 4.7, "read": "Strong with older voters" },
+      { "issue": "Repairing and upgrading aging school facilities", "extremelyImportant": 34.6, "topTwoBox": 73.6, "notAtAll": 3.2, "read": "Bond-relevant — room to elevate" },
+      { "issue": "Managing growth and new development", "extremelyImportant": 36.1, "topTwoBox": 71.9, "notAtAll": 5.4, "read": "Moderate priority" },
+      { "issue": "Addressing homelessness", "extremelyImportant": 38.3, "topTwoBox": 71.7, "notAtAll": 4.0, "read": "Moderate priority" },
+      { "issue": "Attracting businesses and good-paying jobs", "extremelyImportant": 29.0, "topTwoBox": 70.0, "notAtAll": 5.5, "read": "Economic frame available" },
+      { "issue": "Improving local parks and recreation", "extremelyImportant": 25.4, "topTwoBox": 62.0, "notAtAll": 4.0, "read": "Lower tier" },
+      { "issue": "Preventing local tax increases", "extremelyImportant": 31.1, "topTwoBox": 50.2, "notAtAll": 18.1, "read": "Anti-tax frame — watch in oppose messaging" }
+    ],
+    "assets": {
+      "pdf": "/client-assets/d11-colorado-springs/SD11_Full_Crosstab_Report.pdf"
+    }
+  }
+}

@@ -72,10 +72,14 @@ export function requireAuth(db) {
       const payload = verifyToken(token);
       const user = db.prepare(
         `SELECT id, email, name, team, role, client_id AS clientId,
-                system_admin AS systemAdmin, title, location, about, phone, photo
+                system_admin AS systemAdmin, is_designer AS isDesigner,
+                title, location, about, phone, photo
          FROM users WHERE id = ?`
       ).get(payload.sub);
-      if (user) user.systemAdmin = !!user.systemAdmin;
+      if (user) {
+        user.systemAdmin = !!user.systemAdmin;
+        user.isDesigner = !!user.isDesigner;
+      }
       if (!user) return res.status(401).json({ error: "Unauthorized" });
       req.user = user;
       next();

@@ -9,13 +9,18 @@ const ROLE_OPTIONS = [
   { value: "client", label: "Client" },
 ];
 
-const EMPTY_FORM = { email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false };
+const EMPTY_FORM = { email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false, isDesigner: false };
 
 function roleTag(u) {
   if (u.systemAdmin) return <Tag tone="gold">System admin</Tag>;
   const tones = { admin: "gold", client: "outline", staff: "navy" };
   const labels = { admin: "Admin / Partner", client: "Client", staff: "Staff" };
-  return <Tag tone={tones[u.role] || "navy"}>{labels[u.role] || u.role}</Tag>;
+  return (
+    <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+      <Tag tone={tones[u.role] || "navy"}>{labels[u.role] || u.role}</Tag>
+      {u.isDesigner && <Tag tone="gold">Designer</Tag>}
+    </span>
+  );
 }
 
 function formatDate(iso) {
@@ -107,6 +112,13 @@ function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, 
           {editingSelf && <span className="mut">— cannot revoke your own</span>}
         </label>
       )}
+      {form.role !== "client" && (
+        <label className="row" style={{ gap: 8, fontSize: 13, marginBottom: 18 }}>
+          <input type="checkbox" checked={!!form.isDesigner}
+            onChange={(e) => setForm({ ...form, isDesigner: e.target.checked })} />
+          Designer — shows Designer Desk and design queue tools
+        </label>
+      )}
       {error && (
         <div style={{ fontSize: 13, color: "var(--fs-danger)", marginBottom: 12 }}>{error}</div>
       )}
@@ -151,6 +163,7 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       role: u.role,
       clientId: u.clientId || "",
       systemAdmin: !!u.systemAdmin,
+      isDesigner: !!u.isDesigner,
     });
     setEditing(u);
   };
@@ -191,6 +204,7 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
     };
     if (editForm.password) patch.password = editForm.password;
     if (isSystemAdmin && editForm.role === "admin") patch.systemAdmin = editForm.systemAdmin;
+    if (editForm.role !== "client") patch.isDesigner = !!editForm.isDesigner;
     try {
       await api("/admin/users/" + editing.id, { method: "PATCH", body: JSON.stringify(patch) });
       closeModals();

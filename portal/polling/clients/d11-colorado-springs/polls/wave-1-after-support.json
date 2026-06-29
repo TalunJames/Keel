@@ -1,0 +1,22 @@
+{
+  "id": "cssd11-wave1-after-support",
+  "title": "Baseline Bond Survey — After Support Arguments (Q7)",
+  "client_id": "d11-colorado-springs",
+  "n": 852,
+  "moe": "±3.3%",
+  "date_range": "Mar 24–Apr 17, 2026",
+  "unlocked": false,
+  "tone": "Support holds at 58.5% after pro arguments alone",
+  "payload": {
+    "type": "ballot_test",
+    "releaseTier": "adtest",
+    "question": "After hearing support arguments, would you vote for or against the bond?",
+    "topline": { "support": 58.5, "oppose": 31.5, "undecided": 9.8 },
+    "bars": [
+      { "label": "Vote for the bond", "value": 58.5, "color": "var(--fs-success)" },
+      { "label": "Vote against the bond", "value": 31.5, "color": "var(--fs-danger)" },
+      { "label": "Not sure", "value": 9.8, "color": "var(--fs-ink-300)" }
+    ],
+    "assets": {}
+  }
+}

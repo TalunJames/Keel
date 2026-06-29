@@ -1,0 +1,41 @@
+{
+  "id": "cssd11-wave1-initial-ballot",
+  "title": "Baseline Bond Survey — Initial Ballot (Q3)",
+  "client_id": "d11-colorado-springs",
+  "n": 852,
+  "moe": "±3.3%",
+  "date_range": "Mar 24–Apr 17, 2026",
+  "unlocked": true,
+  "tone": "58.5% would vote for the $750M bond at initial ballot",
+  "payload": {
+    "type": "ballot_test",
+    "releaseTier": "topline",
+    "question": "If the election were held today, would you vote yes or no on the $750 million bond measure?",
+    "topline": { "support": 58.5, "oppose": 31.3, "undecided": 10.2 },
+    "bars": [
+      { "label": "Vote for the bond", "value": 58.5, "color": "var(--fs-success)" },
+      { "label": "Vote against the bond", "value": 31.3, "color": "var(--fs-danger)" },
+      { "label": "Not sure", "value": 10.2, "color": "var(--fs-ink-300)" }
+    ],
+    "demographics": [
+      { "label": "Overall", "support": 58.5, "oppose": 31.3, "undecided": 10.2, "overall": true },
+      { "label": "Male", "support": 57.3, "oppose": 33.5, "undecided": 9.2 },
+      { "label": "Female", "support": 59.6, "oppose": 30.3, "undecided": 10.2 },
+      { "label": "Female under 55", "support": 58.1, "oppose": 30.3, "undecided": 11.6 },
+      { "label": "Female 55+", "support": 60.7, "oppose": 30.1, "undecided": 9.2 },
+      { "label": "Male under 55", "support": 57.7, "oppose": 35.0, "undecided": 7.4 },
+      { "label": "Male 55+", "support": 57.0, "oppose": 32.3, "undecided": 10.8 },
+      { "label": "Age 17–35", "support": 59.0, "oppose": 34.5, "undecided": 6.5 },
+      { "label": "Age 36–55", "support": 57.7, "oppose": 31.7, "undecided": 10.6 },
+      { "label": "Age 56–75", "support": 56.0, "oppose": 31.8, "undecided": 12.2 },
+      { "label": "Age 76+", "support": 66.4, "oppose": 25.2, "undecided": 8.4 },
+      { "label": "White", "support": 57.3, "oppose": 32.3, "undecided": 10.5 },
+      { "label": "Hispanic", "support": 61.5, "oppose": 27.0, "undecided": 11.5 },
+      { "label": "Non-White", "support": 61.2, "oppose": 29.2, "undecided": 9.6 }
+    ],
+    "assets": {
+      "pdf": "/client-assets/d11-colorado-springs/Topline_FSS_CSSD11_2a.pdf",
+      "crosstabPdf": "/client-assets/d11-colorado-springs/SD11_Q3_Initial_Ballot_Crosstab.pdf"
+    }
+  }
+}

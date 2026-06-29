@@ -140,6 +140,21 @@ export const badgesApi = {
   get: (clientId) => api("/badges?clientId=" + encodeURIComponent(clientId || "all")),
 };
 
+export const designApi = {
+  list: (clientId) => api(withClient("/design/requests", clientId)),
+  get: (id) => api(`/design/requests/${id}`),
+  create: (body) => api("/design/requests", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) => api(`/design/requests/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  claim: (id) => api(`/design/requests/${id}/claim`, { method: "POST" }),
+  stats: (clientId) => api(withClient("/design/stats", clientId)),
+  deskStats: () => api("/design/desk-stats"),
+  myQueue: () => api("/design/my-queue"),
+  pool: (clientId) => api(withClient("/design/pool", clientId)),
+  designers: () => api("/design/designers"),
+  addProof: (id, body) => api(`/design/requests/${id}/proofs`, { method: "POST", body: JSON.stringify(body) }),
+  addComment: (id, body) => api(`/design/requests/${id}/comments`, { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const electionLiveApi = {
   status: () => api("/election/live/status"),
   contests: (patterns) => {

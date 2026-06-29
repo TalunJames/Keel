@@ -1,0 +1,25 @@
+{
+  "id": "cssd11-wave1-bond-use",
+  "title": "Baseline Bond Survey — Bond Use Priorities (Q5)",
+  "client_id": "d11-colorado-springs",
+  "n": 852,
+  "moe": "±3.3%",
+  "date_range": "Mar 24–Apr 17, 2026",
+  "unlocked": false,
+  "tone": "Safety, HVAC, and classroom modernization lead bond use priorities",
+  "payload": {
+    "type": "issue_battery",
+    "releaseTier": "banner",
+    "question": "How much do you favor or oppose using bond funds for each of the following?",
+    "issues": [
+      { "issue": "Improving student safety and campus security systems", "topTwoBox": 82.4, "read": "Top priority — lead in mail and digital" },
+      { "issue": "Repairing roofs, plumbing, HVAC, and electrical systems", "topTwoBox": 79.1, "read": "Strong deferred-maintenance frame" },
+      { "issue": "Modernizing STEM classrooms and technology", "topTwoBox": 76.8, "read": "Strong with parents under 55" },
+      { "issue": "Upgrading health/safety codes and ADA access", "topTwoBox": 75.2, "read": "Compliance frame resonates" },
+      { "issue": "Replacing portable classrooms with permanent buildings", "topTwoBox": 71.6, "read": "Visual proof point available" }
+    ],
+    "assets": {
+      "crosstabPdf": "/client-assets/d11-colorado-springs/SD11_Full_Crosstab_Report.pdf"
+    }
+  }
+}

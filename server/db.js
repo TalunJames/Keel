@@ -233,8 +233,11 @@ function migrate(db) {
 
   ensureUserColumns(db);
   ensureClientColumns(db);
+  ensureDesignColumns(db);
+  ensureDesignTables(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
+  seedDesignData(db);
   ensureBootstrapAdmin(db);
 }
 
@@ -249,6 +252,150 @@ function ensureUserColumns(db) {
   add("about",        "about TEXT NOT NULL DEFAULT ''");
   add("phone",        "phone TEXT NOT NULL DEFAULT ''");
   add("photo",        "photo TEXT");
+  add("is_designer",  "is_designer INTEGER NOT NULL DEFAULT 0");
+}
+
+function ensureDesignColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(design_requests)").all().map((c) => c.name);
+  const add = (name, ddl) => {
+    if (!cols.includes(name)) db.exec(`ALTER TABLE design_requests ADD COLUMN ${ddl}`);
+  };
+  add("assignee_id", "assignee_id TEXT");
+  add("submitted_by", "submitted_by TEXT");
+}
+
+function ensureDesignTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS design_proofs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL,
+      version TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      file_url TEXT,
+      mime_type TEXT,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES design_requests(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS design_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL,
+      proof_id INTEGER,
+      author_id TEXT,
+      author_name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL,
+      marker_x REAL,
+      marker_y REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES design_requests(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS design_notification_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER,
+      recipient_email TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      error TEXT
+    );
+  `);
+}
+
+function seedDesignData(db) {
+  const n = db.prepare("SELECT COUNT(*) AS n FROM design_requests").get().n;
+  if (n > 0) return;
+
+  const clients = db.prepare("SELECT id, name FROM clients WHERE active = 1 LIMIT 3").all();
+  const clientId = clients[0]?.id || "demo";
+  const clientName = clients[0]?.name || "Demo Client";
+
+  const designers = db.prepare(
+    `SELECT id, name FROM users WHERE role IN ('staff', 'admin') ORDER BY name LIMIT 2`
+  ).all();
+  if (designers.length) {
+    const mark = db.prepare("UPDATE users SET is_designer = 1 WHERE id = ?");
+    for (const d of designers.slice(0, 2)) mark.run(d.id);
+  }
+
+  const insert = db.prepare(
+    `INSERT INTO design_requests (title, client_id, status, priority, due, assignee_id, submitted_by, payload_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const samples = [
+    {
+      title: "Coalition launch one-pager",
+      status: "In Design",
+      priority: "Standard",
+      due: "2026-07-05",
+      assigneeId: designers[0]?.id || null,
+      payload: { assetType: "Print — one-pager / leave-behind", audience: "Suburban voters 35–54", cta: "Renewal starts locally." },
+    },
+    {
+      title: "30s TV spot — lighthouse concept",
+      status: "Proofing",
+      priority: "Rush",
+      due: "2026-07-02",
+      assigneeId: designers[1]?.id || designers[0]?.id || null,
+      payload: { assetType: "Video — broadcast TV", audience: "OH suburban women 35–54", cta: "Steady leadership for Ohio." },
+    },
+    {
+      title: "Direct mail piece #4",
+      status: "Brief Review",
+      priority: "Standard",
+      due: "2026-07-10",
+      assigneeId: null,
+      payload: { assetType: "Print — direct mail", audience: "Likely voters", cta: "Vote early." },
+    },
+    {
+      title: "Social cut-downs (6 assets)",
+      status: "Intake",
+      priority: "Election critical",
+      due: "2026-07-01",
+      assigneeId: null,
+      payload: { assetType: "Social — static", audience: "Digital persuasion", cta: "Join the movement." },
+    },
+    {
+      title: "Memo cover series — June batch",
+      status: "Approved",
+      priority: "Standard",
+      due: "2026-06-20",
+      assigneeId: designers[0]?.id || null,
+      payload: { assetType: "Print — one-pager / leave-behind" },
+    },
+  ];
+
+  for (const s of samples) {
+    insert.run(
+      s.title,
+      clientId,
+      s.status,
+      s.priority,
+      s.due,
+      s.assigneeId,
+      null,
+      JSON.stringify(s.payload),
+    );
+  }
+
+  const reqIds = db.prepare("SELECT id FROM design_requests ORDER BY id").all();
+  const proofing = reqIds.find((_, i) => samples[i]?.status === "Proofing");
+  if (proofing) {
+    db.prepare(
+      `INSERT INTO design_proofs (request_id, version, label, file_url, mime_type, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(proofing.id, "v1", "First cut", "", "video/mp4", designers[1]?.id || designers[0]?.id || null);
+    db.prepare(
+      `INSERT INTO design_proofs (request_id, version, label, file_url, mime_type, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(proofing.id, "v3", "Final mix", "", "video/mp4", designers[1]?.id || designers[0]?.id || null);
+    db.prepare(
+      `INSERT INTO design_comments (request_id, author_name, role, text, marker_x, marker_y)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(proofing.id, "Strategy lead", "staff", "Beam needs to read at thumbnail size.", 31, 24);
+  }
 }
 
 function ensureClientColumns(db) {
