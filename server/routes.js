@@ -26,6 +26,8 @@ import {
   clearAuthCookie,
   signToken,
 } from "./auth.js";
+import { registerDesignRoutes } from "./design-routes.js";
+import { ACTIVE_STATUSES } from "./design-status.js";
 
 const ALL_CLIENT = {
   id: "all",
@@ -119,6 +121,7 @@ export function registerRoutes(app, db) {
       about: row.about || "",
       phone: row.phone || "",
       photo: row.photo ?? null,
+      isDesigner: false,
     };
     const token = signToken(user, { remember: true });
     setAuthCookie(res, token, { remember: true, req });
@@ -140,7 +143,8 @@ export function registerRoutes(app, db) {
     }
     const user = db.prepare(
       `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
-              system_admin AS systemAdmin, title, location, about, phone, photo
+              system_admin AS systemAdmin, is_designer AS isDesigner,
+              title, location, about, phone, photo
        FROM users WHERE email = ? COLLATE NOCASE`
     ).get(email.trim());
     if (!user) {
@@ -157,6 +161,7 @@ export function registerRoutes(app, db) {
     }
     delete user.password_hash;
     user.systemAdmin = !!user.systemAdmin;
+    user.isDesigner = !!user.isDesigner;
     const token = signToken(user, { remember: !!remember });
     setAuthCookie(res, token, { remember: !!remember, req });
     res.json({ user, token });
@@ -224,10 +229,12 @@ export function registerRoutes(app, db) {
     db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...args);
     const user = db.prepare(
       `SELECT id, email, name, team, role, client_id AS clientId,
-              system_admin AS systemAdmin, title, location, about, phone, photo
+              system_admin AS systemAdmin, is_designer AS isDesigner,
+              title, location, about, phone, photo
        FROM users WHERE id = ?`
     ).get(req.user.id);
     user.systemAdmin = !!user.systemAdmin;
+    user.isDesigner = !!user.isDesigner;
     res.json({ user });
   });
 
@@ -330,10 +337,11 @@ export function registerRoutes(app, db) {
 
   app.get("/api/badges", auth, (req, res) => {
     const scope = clientScope(req.user, req.query.clientId);
+    const ph = ACTIVE_STATUSES.map(() => "?").join(", ");
     const designWhere = scope ? " AND client_id = ?" : "";
-    const designArgs = scope ? [scope] : [];
+    const designArgs = [...ACTIVE_STATUSES, ...(scope ? [scope] : [])];
     const openDesign = db.prepare(
-      `SELECT COUNT(*) AS n FROM design_requests WHERE status IN ('open','in_review')${designWhere}`
+      `SELECT COUNT(*) AS n FROM design_requests WHERE status IN (${ph})${designWhere}`
     ).get(...designArgs)?.n || 0;
     const mediaWhere = scope ? " WHERE client_id = ?" : "";
     const mediaN = db.prepare(`SELECT COUNT(*) AS n FROM media_mentions${mediaWhere}`).get(...(scope ? [scope] : []))?.n || 0;
@@ -386,9 +394,10 @@ export function registerRoutes(app, db) {
       return { name: r.name, ...p };
     });
 
+    const ph = ACTIVE_STATUSES.map(() => "?").join(", ");
     const openDesign = db.prepare(
-      `SELECT COUNT(*) AS n FROM design_requests WHERE status IN ('open','in_review')${scope ? " AND client_id = ?" : ""}`
-    ).get(...(scope ? [scope] : []))?.n || 0;
+      `SELECT COUNT(*) AS n FROM design_requests WHERE status IN (${ph})${scope ? " AND client_id = ?" : ""}`
+    ).get(...(scope ? [...ACTIVE_STATUSES, scope] : ACTIVE_STATUSES))?.n || 0;
 
     res.json({
       announcements,
@@ -434,16 +443,7 @@ export function registerRoutes(app, db) {
     ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
   })));
 
-  app.get("/api/design/requests", auth, list("design_requests", (r) => ({
-    id: r.id,
-    title: r.title,
-    clientId: r.client_id,
-    status: r.status,
-    priority: r.priority,
-    due: r.due,
-    assignee: r.assignee,
-    ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-  })));
+  registerDesignRoutes(app, db, auth);
 
   app.get("/api/proposals", auth, list("proposals", (r) => ({
     id: r.id,
@@ -726,17 +726,18 @@ export function registerRoutes(app, db) {
   app.get("/api/admin/users", auth, requireRole("admin"), (_req, res) => {
     const users = db.prepare(
       `SELECT u.id, u.email, u.name, u.team, u.role, u.client_id AS clientId,
-              u.system_admin AS systemAdmin, u.title, u.location, u.created_at AS createdAt,
+              u.system_admin AS systemAdmin, u.is_designer AS isDesigner,
+              u.title, u.location, u.created_at AS createdAt,
               c.name AS clientName
        FROM users u
        LEFT JOIN clients c ON c.id = u.client_id
        ORDER BY u.name COLLATE NOCASE`
-    ).all().map((u) => ({ ...u, systemAdmin: !!u.systemAdmin }));
+    ).all().map((u) => ({ ...u, systemAdmin: !!u.systemAdmin, isDesigner: !!u.isDesigner }));
     res.json({ users });
   });
 
   app.post("/api/admin/users", auth, requireRole("admin"), async (req, res) => {
-    const { email, password, name, team, role, clientId, systemAdmin } = req.body || {};
+    const { email, password, name, team, role, clientId, systemAdmin, isDesigner } = req.body || {};
     if (!email || !password || !name || !role) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -746,10 +747,11 @@ export function registerRoutes(app, db) {
     const id = randomUUID();
     try {
       db.prepare(
-        `INSERT INTO users (id, email, password_hash, name, team, role, client_id, system_admin)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO users (id, email, password_hash, name, team, role, client_id, system_admin, is_designer)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(id, email.trim(), await hashPassword(password), name, team || "", role, clientId || null,
-            (systemAdmin && role === "admin") ? 1 : 0);
+            (systemAdmin && role === "admin") ? 1 : 0,
+            (isDesigner && role !== "client") ? 1 : 0);
     } catch (e) {
       if (e.code === "SQLITE_CONSTRAINT_UNIQUE") {
         return res.status(409).json({ error: "Email already exists" });
@@ -770,7 +772,7 @@ export function registerRoutes(app, db) {
     ).get(req.params.id);
     if (!target) return res.status(404).json({ error: "Not found" });
 
-    const { name, team, role, clientId, password, systemAdmin } = req.body || {};
+    const { name, team, role, clientId, password, systemAdmin, isDesigner } = req.body || {};
     const updates = [];
     const args = [];
     const changes = [];
@@ -823,6 +825,15 @@ export function registerRoutes(app, db) {
       updates.push("system_admin = ?");
       args.push(systemAdmin ? 1 : 0);
       changes.push("system admin");
+    }
+    if (isDesigner !== undefined) {
+      const effectiveRole = role !== undefined ? role : target.role;
+      if (effectiveRole === "client" && isDesigner) {
+        return res.status(400).json({ error: "Clients cannot be designers" });
+      }
+      updates.push("is_designer = ?");
+      args.push(isDesigner ? 1 : 0);
+      changes.push("designer");
     }
 
     if (!updates.length) return res.status(400).json({ error: "No changes provided" });

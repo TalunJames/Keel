@@ -64,6 +64,7 @@ export default function App() {
   const [theme, setTheme] = usePref("theme", "light");
   const [clientId, setClientId] = usePref("client", "all");
   const [section, setSection] = useState("home");
+  const [designInitialTab, setDesignInitialTab] = useState(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -197,7 +198,10 @@ export default function App() {
 
   const handleNewAction = (action) => {
     if (action === "client") setSection("new-client");
-    else if (action === "design") setSection("design");
+    else if (action === "design") {
+      setDesignInitialTab(user.role === "client" ? null : "new");
+      setSection("design");
+    }
     else if (action === "proposals") setSection("proposals");
     else if (action === "calendar") setSection("calendar");
   };
@@ -246,7 +250,13 @@ export default function App() {
         <div className={"content" + (section === "election" ? " no-pad" : "") + (section !== "election" ? " chart-bg" : "")}>
           {section === "home" && guardModule("home", <HomeView {...viewProps} />)}
           {section === "calendar" && guardModule("calendar", <CalendarView {...viewProps} />)}
-          {section === "design" && guardModule("design", <DesignView {...viewProps} />)}
+          {section === "design" && guardModule("design", (
+            <DesignView
+              {...viewProps}
+              initialTab={designInitialTab}
+              onNavigate={(s) => { setDesignInitialTab(null); setSection(s); }}
+            />
+          ))}
           {section === "proposals" && guardModule("proposals", user.role === "client" ? <ClientLockOut /> : <ProposalsView {...viewProps} />)}
           {section === "media" && guardModule("media", user.role === "client" ? <ClientLockOut /> : <MediaView {...viewProps} />)}
           {section === "election" && guardModule("election", <ElectionView {...viewProps} />)}
