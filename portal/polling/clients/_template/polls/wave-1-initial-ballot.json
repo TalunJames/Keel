@@ -1,0 +1,25 @@
+{
+  "id": "CLIENT-wave1-initial-ballot",
+  "title": "Wave 1 — Initial Ballot",
+  "client_id": "CLIENT_ID_HERE",
+  "n": 800,
+  "moe": "±3.5%",
+  "date_range": "Field dates here",
+  "unlocked": false,
+  "tone": "Headline finding for strategists",
+  "payload": {
+    "type": "ballot_test",
+    "releaseTier": "topline",
+    "question": "Ballot question text",
+    "topline": { "support": 0, "oppose": 0, "undecided": 0 },
+    "bars": [
+      { "label": "Support", "value": 0, "color": "var(--fs-success)" },
+      { "label": "Oppose", "value": 0, "color": "var(--fs-danger)" },
+      { "label": "Not sure", "value": 0, "color": "var(--fs-ink-300)" }
+    ],
+    "assets": {
+      "pdf": "/client-assets/CLIENT_ID_HERE/topline.pdf",
+      "crosstabPdf": "/client-assets/CLIENT_ID_HERE/crosstabs.pdf"
+    }
+  }
+}

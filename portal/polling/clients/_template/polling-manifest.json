@@ -1,0 +1,33 @@
+{
+  "clientId": "CLIENT_ID_HERE",
+  "threshold": 55,
+  "client": {
+    "name": "Client Name",
+    "tag": "TAG",
+    "initials": "XX",
+    "account": "Client Account Name",
+    "type": "School bond · Feasibility",
+    "color": "var(--fs-navy)",
+    "audience": "Registered voters in target jurisdiction",
+    "payload": {
+      "state": "CO",
+      "pollingManifestUrl": "/election-data/clients/CLIENT_ID_HERE/polling-manifest.json",
+      "polling": {
+        "topline": true,
+        "issue": true,
+        "adtest": false,
+        "banner": false,
+        "raw": false
+      }
+    }
+  },
+  "waves": [
+    {
+      "wave": "Wave 1 · Initial ballot",
+      "date": "2026-01-15",
+      "support": 0,
+      "oppose": 0,
+      "undecided": 0
+    }
+  ]
+}

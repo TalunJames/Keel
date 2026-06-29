@@ -507,16 +507,44 @@ export function registerRoutes(app, db) {
       sql += " WHERE client_id IS NULL OR client_id = ?";
       args.push(scope);
     }
-    const polls = db.prepare(sql + " ORDER BY created_at DESC").all(...args).map((p) => ({
+    let polls = db.prepare(sql + " ORDER BY created_at DESC").all(...args).map((p) => ({
       id: p.id,
       title: p.title,
       n: p.n,
       moe: p.moe,
       date: p.date_range,
-      unlocked: !!p.unlocked || req.user.role !== "client",
+      unlocked: !!p.unlocked,
+      tone: p.payload_json ? JSON.parse(p.payload_json).tone : null,
       payload: p.payload_json ? JSON.parse(p.payload_json) : null,
     }));
+    if (req.user.role === "client") {
+      polls = polls.filter((p) => p.unlocked);
+    }
     res.json({ polls });
+  });
+
+  app.patch("/api/polling/polls/:id", auth, requireRole("admin"), (req, res) => {
+    const row = db.prepare("SELECT * FROM polls WHERE id = ?").get(req.params.id);
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    if (req.body.unlocked !== undefined) {
+      db.prepare("UPDATE polls SET unlocked = ? WHERE id = ?").run(req.body.unlocked ? 1 : 0, req.params.id);
+    }
+
+    const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+    if (req.body.payload && typeof req.body.payload === "object") {
+      db.prepare("UPDATE polls SET payload_json = ? WHERE id = ?").run(
+        JSON.stringify({ ...payload, ...req.body.payload }),
+        req.params.id,
+      );
+    }
+
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Updated poll ${req.params.id}${req.body.unlocked !== undefined ? ` (unlocked=${!!req.body.unlocked})` : ""}`,
+      "Data",
+    );
+    res.json({ ok: true });
   });
 
   app.get("/api/election/races", auth, (req, res) => {

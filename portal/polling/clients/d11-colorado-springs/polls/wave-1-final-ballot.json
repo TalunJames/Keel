@@ -1,0 +1,30 @@
+{
+  "id": "cssd11-wave1-final-ballot",
+  "title": "Baseline Bond Survey — Final Ballot (Q9)",
+  "client_id": "d11-colorado-springs",
+  "n": 852,
+  "moe": "±3.3%",
+  "date_range": "Mar 24–Apr 17, 2026",
+  "unlocked": true,
+  "tone": "Support drops to 51.5% after hearing both sides",
+  "payload": {
+    "type": "ballot_test",
+    "releaseTier": "topline",
+    "question": "After hearing both sides, would you vote for or against the $750 million bond measure?",
+    "topline": { "support": 51.5, "oppose": 37.5, "undecided": 10.9 },
+    "bars": [
+      { "label": "Vote for the bond", "value": 51.5, "color": "var(--fs-success)" },
+      { "label": "Vote against the bond", "value": 37.5, "color": "var(--fs-danger)" },
+      { "label": "Not sure", "value": 10.9, "color": "var(--fs-ink-300)" }
+    ],
+    "comparison": {
+      "label": "Change from initial ballot (Q3)",
+      "supportDelta": -7.0,
+      "opposeDelta": 6.2
+    },
+    "assets": {
+      "pdf": "/client-assets/d11-colorado-springs/Topline_FSS_CSSD11_2a.pdf",
+      "reportPdf": "/client-assets/d11-colorado-springs/PollReport_FSS_CSSD11_3b.pdf"
+    }
+  }
+}

@@ -52,7 +52,7 @@ Endpoints exist; data is empty until you ingest:
 - **Calendar** — `POST` events or Google Calendar sync → `/api/calendar/events`
 - **Design** — Odoo → `/api/design/requests`
 - **Media** — Muck Rack → `/api/media/mentions`
-- **Polling** — `polls` table + `/api/polling/polls`
+- **Polling** — `polls` table + `/api/polling/polls`; ingest from `portal/polling/clients/<id>/` via `npm run poll:ingest -- --client <id>`
 - **Election** — Bundled El Paso ENR collector (`election-collector/`) + Race Detail Monitor; manage from the UI or `/api/election/collector/*`; results in `data/election/results.db`
 - **Voter warehouse** — Implement row fetch in `server/routes.js` `POST /api/voter/query` against Parquet/DuckDB in `VOTER_DATA_DIR`
 

@@ -1,0 +1,49 @@
+{
+  "clientId": "d11-colorado-springs",
+  "threshold": 55,
+  "client": {
+    "name": "School District 11 · Colorado Springs",
+    "tag": "D11",
+    "initials": "D11",
+    "account": "Colorado Springs SD 11",
+    "type": "School bond · Feasibility",
+    "color": "var(--fs-navy)",
+    "audience": "Registered voters in Colorado Springs School District 11",
+    "payload": {
+      "state": "CO",
+      "district": "School District 11",
+      "electionDay": "2026-11-03",
+      "pollingManifestUrl": "/election-data/clients/d11-colorado-springs/polling-manifest.json",
+      "polling": {
+        "topline": true,
+        "issue": true,
+        "adtest": false,
+        "banner": false,
+        "raw": false
+      }
+    }
+  },
+  "waves": [
+    {
+      "wave": "Wave 1 · Initial (Q3)",
+      "date": "2026-03-24",
+      "support": 58.5,
+      "oppose": 31.3,
+      "undecided": 10.2
+    },
+    {
+      "wave": "Wave 1 · After support (Q7)",
+      "date": "2026-03-24",
+      "support": 58.5,
+      "oppose": 31.5,
+      "undecided": 9.8
+    },
+    {
+      "wave": "Wave 1 · Final (Q9)",
+      "date": "2026-03-24",
+      "support": 51.5,
+      "oppose": 37.5,
+      "undecided": 10.9
+    }
+  ]
+}

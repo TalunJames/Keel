@@ -159,7 +159,7 @@ import "./race-detail.css";
       ballotRacesUrl: "/election-data/ballot-races-2026-primary.json",
       liveContestKey: null,
       measureThreshold: null,
-      pollingManifestUrl: "/election-data/polling-manifest.json",
+      pollingManifestUrl: "/election-data/clients/d11-colorado-springs/polling-manifest.json",
     };
 
     const AREA_NAMES = ["Southwest Area", "Southeast Area", "Northwest Area", "Northeast Area"];
