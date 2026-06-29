@@ -53,7 +53,7 @@ Endpoints exist; data is empty until you ingest:
 - **Design** — Odoo → `/api/design/requests`
 - **Media** — Muck Rack → `/api/media/mentions`
 - **Polling** — `polls` table + `/api/polling/polls`
-- **Election** — AP Elections → `election_races`
+- **Election** — Bundled El Paso ENR collector (`election-collector/`) + Race Detail Monitor; manage from the UI or `/api/election/collector/*`; results in `data/election/results.db`
 - **Voter warehouse** — Implement row fetch in `server/routes.js` `POST /api/voter/query` against Parquet/DuckDB in `VOTER_DATA_DIR`
 
 ## Environment

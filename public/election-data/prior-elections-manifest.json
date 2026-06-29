@@ -13,26 +13,11 @@
           "scale": "diverging",
           "mid": 50,
           "stops": [
-            [
-              35,
-              "#A8341E"
-            ],
-            [
-              47,
-              "#C77B66"
-            ],
-            [
-              50,
-              "#E6E5DA"
-            ],
-            [
-              53,
-              "#6FA08A"
-            ],
-            [
-              65,
-              "#1A3A5C"
-            ]
+            [35, "#A8341E"],
+            [47, "#C77B66"],
+            [50, "#E6E5DA"],
+            [53, "#6FA08A"],
+            [65, "#1A3A5C"]
           ],
           "opponentField": "trump_pct",
           "opponentLabel": "Trump"
@@ -43,18 +28,9 @@
           "field": "turnout_pct",
           "scale": "sequential",
           "stops": [
-            [
-              40,
-              "#F0EDE4"
-            ],
-            [
-              55,
-              "#B8932A"
-            ],
-            [
-              70,
-              "#1A3A5C"
-            ]
+            [40, "#F0EDE4"],
+            [55, "#B8932A"],
+            [70, "#1A3A5C"]
           ]
         }
       ]
@@ -72,26 +48,11 @@
           "scale": "diverging",
           "mid": 50,
           "stops": [
-            [
-              35,
-              "#A8341E"
-            ],
-            [
-              47,
-              "#C77B66"
-            ],
-            [
-              50,
-              "#E6E5DA"
-            ],
-            [
-              53,
-              "#6FA08A"
-            ],
-            [
-              65,
-              "#1A3A5C"
-            ]
+            [35, "#A8341E"],
+            [47, "#C77B66"],
+            [50, "#E6E5DA"],
+            [53, "#6FA08A"],
+            [65, "#1A3A5C"]
           ],
           "opponentField": "opp_pct",
           "opponentLabel": "GOP"
@@ -102,18 +63,9 @@
           "field": "turnout_pct",
           "scale": "sequential",
           "stops": [
-            [
-              40,
-              "#F0EDE4"
-            ],
-            [
-              55,
-              "#B8932A"
-            ],
-            [
-              70,
-              "#1A3A5C"
-            ]
+            [40, "#F0EDE4"],
+            [55, "#B8932A"],
+            [70, "#1A3A5C"]
           ]
         }
       ]

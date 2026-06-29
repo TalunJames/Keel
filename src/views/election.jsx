@@ -1,6 +1,7 @@
 import React from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
 import { RaceDetailApp } from "../election/RaceDetailApp.jsx";
+import { RaceDetailErrorBoundary } from "../election/RaceDetailErrorBoundary.jsx";
 
 export function ElectionView({ role }) {
   if (role === "client") {
@@ -19,5 +20,9 @@ export function ElectionView({ role }) {
     );
   }
 
-  return <RaceDetailApp />;
+  return (
+    <RaceDetailErrorBoundary>
+      <RaceDetailApp />
+    </RaceDetailErrorBoundary>
+  );
 }

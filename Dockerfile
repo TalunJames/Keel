@@ -42,6 +42,10 @@ ENV NODE_ENV=production \
     SERVE_STATIC=true \
     DATABASE_PATH=/app/data/keel.db \
     VOTER_DATA_DIR=/app/data/voter \
+    ELECTION_DATA_DIR=/app/data/election \
+    ELECTION_RESULTS_DB_PATH=/app/data/election/results.db \
+    EP_DB_PATH=/app/data/election/results.db \
+    EP_RAW_DIR=/app/data/election/raw \
     KEEL_GIT_SHA=$GIT_SHA \
     KEEL_GIT_SHA_SHORT=$GIT_SHA_SHORT \
     KEEL_BUILD_TIME=$BUILD_TIME \
@@ -49,17 +53,18 @@ ENV NODE_ENV=production \
 
 # tini gives us PID 1 signal handling so SIGTERM cleanly shuts down node
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tini ca-certificates \
+ && apt-get install -y --no-install-recommends tini ca-certificates python3 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build     /app/dist         ./dist
 COPY package.json ./
 COPY server ./server
+COPY election-collector ./election-collector
 COPY docker-entrypoint.sh ./
 
 RUN chmod +x docker-entrypoint.sh \
- && mkdir -p /app/data /app/data/voter /app/uploads
+ && mkdir -p /app/data /app/data/voter /app/data/election /app/uploads
 
 EXPOSE 3001
 

@@ -3,6 +3,26 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { Delaunay } from "d3-delaunay";
+import { electionLiveApi } from "../lib/api.js";
+import { ElectionCollectorPanel } from "./ElectionCollectorPanel.jsx";
+import {
+  formatLiveUpdated,
+  formatResultsTimestamp,
+  resultsSourceLabel,
+  liveAreaStatus,
+  findBallotRace,
+  findBallotRaceById,
+  formatRaceCandidates,
+  formatRaceLabel,
+  isRaceUnopposed,
+  isContestUnopposed,
+  computeTurnoutPct,
+  isTrackedCandidate,
+  listBallotRaces,
+  filterContestsByChamber,
+  findContestForBallotRace,
+  sortContestsForBallot,
+} from "./race-detail-helpers.js";
 import "./race-detail.css";
 
 
@@ -110,32 +130,26 @@ import "./race-detail.css";
     }
 
     // ========================================================================
-    // DATA LAYER — single client: Colorado Springs School District 11.
-    // Real jurisdiction boundary (DOLA / Census TIGER); results still mock.
+    // DATA LAYER — D11 area: all ballot races voters here see (no single measure).
+    // Real jurisdiction boundary; prior elections + live ENR when wired.
     // ========================================================================
     const CLIENT = {
-      id: "csd11-colorado",
-      clientName: "Colorado Springs School District 11",
-      measureCode: "Ballot Issue 8C",
-      measureTitle: "Capital Construction Mill Levy",
-      jurisdiction: "Colorado Springs, CO",
-      ask: "$48M/yr mill levy",
-      electionDate: "Jun 2, 2026",
+      id: "d11-colorado-springs",
+      clientName: "School District 11 · Colorado Springs",
+      monitorTitle: "2026 Primary Election Monitor",
+      monitorSubtitle: "Colorado primary · D11 precinct footprint",
+      jurisdiction: "Colorado Springs, CO · School District 11",
+      electionDate: "Jun 30, 2026",
+      pollsClose: "7:00 PM MT",
       consultant: "D. Whitfield",
-      threshold: 55,
       estimatedVoters: 95000,
       boundaryUrl: "/election-data/d11-boundary.geojson",
-      // Real El Paso County precincts (filtered to the D11 area)
       precinctsUrl: "/election-data/overlay-precincts.geojson",
+      ballotRacesUrl: "/election-data/ballot-races-2026-primary.json",
+      liveContestKey: null,
+      measureThreshold: null,
+      pollingManifestUrl: "/election-data/polling-manifest.json",
     };
-
-    // Historical polling only — waves are frozen before election day
-    const POLLING = [
-      { wave: "Wave 1", date: "Feb 9",  support: 52, oppose: 33 },
-      { wave: "Wave 2", date: "Mar 16", support: 55, oppose: 31 },
-      { wave: "Wave 3", date: "Apr 27", support: 58, oppose: 29 },
-      { wave: "Wave 4", date: "May 25", support: 60, oppose: 28 },
-    ];
 
     const AREA_NAMES = ["Southwest Area", "Southeast Area", "Northwest Area", "Northeast Area"];
     const SCHOOL_TIER_COLORS = { 1: "#1A3A5C", 2: "#B8932A", 3: "#8B9AAB" };
@@ -640,13 +654,20 @@ import "./race-detail.css";
       };
     }
 
-    // Build the full mock race dataset on REAL precinct geography. Shapes and
-    // IDs come from the county GIS file; results/turnout/doors are still mock,
-    // seeded per precinct number so they're stable. Stats are anchored to the
-    // final polling wave so the live narrative matches the historical trend.
-    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC) {
+    // Build the full race dataset on REAL precinct geography. Shapes and IDs
+    // come from the county GIS file. When liveResults is present, public ENR
+    // totals replace mock reporting; field metrics (doors, prior wave) stay seeded.
+    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC, liveResults = null, pollingWaves = [], raceContext = null) {
+      const liveByPrecinct = liveResults?.precincts || null;
+      const isUnopposed = !!(liveResults?.totals?.isUnopposed)
+        || isContestUnopposed({ race: raceContext, totals: liveResults?.totals });
+      const contestRegistered = liveResults?.contest?.registered;
+      const inContestOnMap = liveResults?.jurisdiction?.inContestOnMap;
+      const estRegisteredPerPrecinct = contestRegistered && inContestOnMap
+        ? contestRegistered / inContestOnMap
+        : null;
       const rand = mulberry32(hashSeed(client.id));
-      const anchor = POLLING.length ? POLLING[POLLING.length - 1].support : 52;
+      const anchor = pollingWaves.length ? pollingWaves[pollingWaves.length - 1].support : 52;
       const [minX, minY, maxX, maxY] = turf.bbox(boundary);
       const bbox = [minX, minY, maxX, maxY];
 
@@ -691,22 +712,75 @@ import "./race-detail.css";
         });
       });
 
-      // Pass 2 — mock stats per precinct, seeded by real precinct number
+      // Pass 2 — live ENR when a contest is wired; mock only in simulated mode
+      const liveActive = !!(liveResults?.contest && liveResults?.totals);
       const precinctFeatures = inDistrict.map((p) => {
         const prand = mulberry32(hashSeed(`${client.id}:precinct:${p.num}`));
-        const reported = prand() > 0.35;
-        const turnoutRate = +(40 + prand() * 45).toFixed(1);
-        const priorYes = +(anchor - 9 + prand() * 18).toFixed(1); // spread ±9 around final wave
+        const priorYes = +(anchor - 9 + prand() * 18).toFixed(1);
         const doorsKnocked = Math.round(200 + prand() * 800);
         const registered = Math.round(client.estimatedVoters / inDistrict.length * (0.7 + prand() * 0.6));
+        const turnoutRate = +(40 + prand() * 45).toFixed(1);
 
-        // Live result drifts off prior support, weighted by canvass effort
+        if (liveActive) {
+          const liveP = liveByPrecinct?.[String(p.num)] ?? {
+            inContest: false,
+            reported: false,
+            protected: false,
+            yesVotes: 0,
+            noVotes: 0,
+            ballots: 0,
+            yesPct: null,
+            registered: null,
+          };
+          const displayPct = isUnopposed
+            ? (liveP.reported && liveP.ballots > 0
+              ? (liveP.registered && liveP.registered > 0
+                ? +((liveP.ballots / liveP.registered) * 100).toFixed(1)
+                : estRegisteredPerPrecinct
+                  ? +((liveP.ballots / estRegisteredPerPrecinct) * 100).toFixed(1)
+                  : liveP.ballots)
+              : -1)
+            : (liveP.reported && (liveP.leaderPct ?? liveP.yesPct) != null
+              ? (liveP.leaderPct ?? liveP.yesPct)
+              : -1);
+          const turnoutPct = isUnopposed && displayPct >= 0 && displayPct <= 100 ? displayPct : null;
+          return {
+            type: "Feature",
+            id: p.num,
+            properties: {
+              id: p.num,
+              name: `Precinct ${p.num}`,
+              county: AREA_NAMES[p.quad],
+              senate: p.senate, rep: p.rep, comDist: p.comDist,
+              quad: p.quad,
+              reported: liveP.reported,
+              inContest: liveP.inContest,
+              protected: liveP.protected,
+              registered: liveP.registered ?? (estRegisteredPerPrecinct ? Math.round(estRegisteredPerPrecinct) : null),
+              yesPct: displayPct,
+              turnoutPct,
+              isUnopposed,
+              leaderPct: isUnopposed ? turnoutPct : (liveP.leaderPct ?? liveP.yesPct),
+              leaderName: isUnopposed
+                ? (liveResults?.totals?.nomineeName ?? raceContext?.candidates?.[0]?.name ?? liveP.leaderName)
+                : (liveP.leaderName ?? null),
+              yesVotes: liveP.yesVotes || 0,
+              noVotes: liveP.noVotes || 0,
+              ballots: liveP.ballots || 0,
+              reportMin: 0,
+              live: true,
+            },
+            geometry: p.geometry,
+          };
+        }
+
+        const reported = prand() > 0.35;
         const drift = (prand() - 0.5) * 7 + (doorsKnocked - 600) / 250;
         const yesPct = reported ? +Math.min(78, Math.max(28, priorYes + drift)).toFixed(1) : null;
         const ballots = reported ? Math.round(registered * turnoutRate / 100) : 0;
         const yesVotes = reported ? Math.round(ballots * yesPct / 100) : 0;
         const noVotes = reported ? ballots - yesVotes : 0;
-        const reportMin = Math.round(prand() * 150); // minutes after 8:00 PM close
+        const reportMin = Math.round(prand() * 150);
 
         return {
           type: "Feature",
@@ -718,9 +792,10 @@ import "./race-detail.css";
             senate: p.senate, rep: p.rep, comDist: p.comDist,
             quad: p.quad, reported, registered,
             turnoutRate, priorYes, doorsKnocked,
-            yesPct: reported ? yesPct : -1,
-            yesVotes, noVotes, ballots, reportMin,
-          },
+              yesPct: reported ? yesPct : -1,
+              yesVotes, noVotes, ballots, reportMin,
+              inContest: true, protected: false, live: false,
+            },
           geometry: p.geometry,
         };
       });
@@ -780,9 +855,21 @@ import "./race-detail.css";
     // ========================================================================
     const dk = (p) => p.doorsTotal || p.doorsKnocked; // county carries the sum
 
-    function resultsFillColorExpr(threshold, settings) {
-      const t = threshold;
+    function resultsFillColorExpr(threshold, settings, isUnopposed = false) {
       const c = settings.colors;
+      if (isUnopposed) {
+        return [
+          "case",
+          ["any", ["!", ["get", "reported"]], ["<", ["get", "yesPct"], 0]], c.neutral,
+          ["interpolate", ["linear"], ["get", "yesPct"],
+            15, "#E6E5DA",
+            30, "#8B9AAB",
+            45, "#5B7A9E",
+            60, "#1A3A5C",
+          ],
+        ];
+      }
+      const t = threshold;
       const band = settings.band;
       if (settings.mapColorMode === "passFail") {
         return [
@@ -806,8 +893,21 @@ import "./race-detail.css";
       ];
     }
 
-    function formatReporting(p, threshold) {
+    function formatReporting(p, threshold, isUnopposed = false) {
+      if (p.live && p.inContest === false) return "Outside contest area";
+      if (p.protected) return "In — detail withheld by county";
       if (!p.reported || p.yesPct < 0) return "Awaiting results";
+      if (isUnopposed || p.isUnopposed) {
+        const pct = p.turnoutPct ?? (p.yesPct <= 100 ? p.yesPct : null);
+        if (pct != null && pct <= 100) {
+          return `${pct}% turnout · ${(p.ballots || 0).toLocaleString()} ballots`;
+        }
+        return `${(p.ballots || 0).toLocaleString()} ballots cast`;
+      }
+      if (p.leaderName && p.leaderPct != null) {
+        const margin = p.leaderPct - threshold;
+        return `${p.leaderName} ${p.leaderPct}%${margin !== 0 ? ` · ${margin >= 0 ? "+" : ""}${margin.toFixed(1)} vs ${threshold}%` : ""}`;
+      }
       const margin = p.yesPct - threshold;
       return `${p.yesPct}% yes · ${margin >= 0 ? "+" : ""}${margin.toFixed(1)} vs ${threshold}%`;
     }
@@ -827,12 +927,18 @@ import "./race-detail.css";
       return ["case", ["==", ["get", field], null], 0.5, 0.72];
     }
 
+    const MAP_METRIC_KEYS = ["results", "priorElections", "turnout", "doors"];
+
+    function visibleMapMetrics(accurateOnly) {
+      return accurateOnly ? ["results", "priorElections"] : ["priorElections"];
+    }
+
     const METRICS = {
       results: {
         label: "Reporting",
         mode: "choropleth",
         choroplethKind: "reporting",
-        format: formatReporting,
+        format: (p, threshold, isUnopposed) => formatReporting(p, threshold, isUnopposed),
       },
       priorElections: {
         label: "Prior Elections",
@@ -935,7 +1041,7 @@ import "./race-detail.css";
     // ========================================================================
     // MAP — 70% canvas, precinct/county zoom, layered heatmap
     // ========================================================================
-    function MapView({ geojson, dots, boundary, metric, threshold, level, fitKey, overlays, schoolFilters, priorCtx, settings, onSelect }) {
+    function MapView({ geojson, dots, boundary, metric, threshold, level, fitKey, overlays, schoolFilters, priorCtx, settings, onSelect, isUnopposed }) {
       const containerRef = useRef(null);
       const mapRef = useRef(null);
       const popupRef = useRef(null);
@@ -956,6 +1062,8 @@ import "./race-detail.css";
       priorCtxRef.current = priorCtx;
       const settingsRef = useRef(settings);
       settingsRef.current = settings;
+      const isUnopposedRef = useRef(isUnopposed);
+      isUnopposedRef.current = isUnopposed;
       const overlayLoaded = useRef({});
       const schoolDataRef = useRef(null);
       const overlayHoverRef = useRef(false);
@@ -1054,9 +1162,9 @@ import "./race-detail.css";
               fmt = ctx?.metricDef ? formatPriorMetric(p, ctx.metricDef) : "Prior election data not loaded";
               if (ctx?.election) sub = `<div style="color:#7A7975;font-size:11px">${ctx.election.label} · ${ctx.election.date}</div>`;
             } else if (m.mode === "choropleth") {
-              fmt = m.format(p, thresholdRef.current);
+              fmt = m.format(p, thresholdRef.current, isUnopposedRef.current);
               sub = p.reported && p.yesPct >= 0
-                ? `<div style="color:#7A7975;font-size:11px">Public precinct total · ${fmtTime(p.reportMin)}</div>`
+                ? `<div style="color:#7A7975;font-size:11px">Public precinct total${p.live ? "" : ` · ${fmtTime(p.reportMin)}`}</div>`
                 : `<div style="color:#7A7975;font-size:11px">No totals released yet</div>`;
             } else {
               fmt = m.format(p);
@@ -1226,7 +1334,7 @@ import "./race-detail.css";
               map.setPaintProperty("areas-fill", "fill-opacity", 0.5);
             }
           } else {
-            map.setPaintProperty("areas-fill", "fill-color", resultsFillColorExpr(threshold, settingsRef.current));
+            map.setPaintProperty("areas-fill", "fill-color", resultsFillColorExpr(threshold, settingsRef.current, isUnopposed));
             map.setPaintProperty("areas-fill", "fill-opacity", [
               "case",
               ["any", ["!", ["get", "reported"]], ["<", ["get", "yesPct"], 0]], 0.5,
@@ -1242,7 +1350,7 @@ import "./race-detail.css";
         m.dots.categories.forEach(c => matchExpr.push(c.key, c.color));
         matchExpr.push("#999999");
         map.setPaintProperty("dots-circle", "circle-color", matchExpr);
-      }, [ready, metric, threshold, level, priorCtx, settings]);
+      }, [ready, metric, threshold, level, priorCtx, settings, isUnopposed]);
 
       return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
     }
@@ -1259,19 +1367,29 @@ import "./race-detail.css";
       letterSpacing: "var(--fs-tracking-caps)", color: "var(--fs-fg-accent)", marginBottom: 10,
     };
 
-    function StatusPill({ yesPct, threshold, reportedShare, settings }) {
+    function StatusPill({ yesPct, threshold, reportedShare, settings, isMeasure, leaderName, leaderPct, isUnopposed, nomineeName }) {
       const c = settings.colors;
       const band = settings.band;
       let label, bg, fg;
-      const sKey = statusFor(yesPct, threshold, band);
-      if (reportedShare < 0.05 || yesPct == null || sKey === "awaiting") {
-        label = "Awaiting results"; bg = "var(--fs-bone-100)"; fg = "var(--fs-ink-500)";
-      } else if (sKey === "pass") {
-        label = "Likely Pass"; bg = `${c.pass}1F`; fg = c.pass;
-      } else if (sKey === "watch") {
-        label = "Too Close"; bg = `${c.watch}33`; fg = c.watch;
+      if (isUnopposed) {
+        label = nomineeName ? `Unopposed · ${nomineeName}` : "Unopposed";
+        bg = `${c.pass}1F`;
+        fg = c.pass;
+      } else if (!isMeasure && leaderPct != null && reportedShare >= 0.05) {
+        label = leaderName ? `Leading · ${leaderName}` : "Leading";
+        bg = `${c.pass}1F`;
+        fg = c.pass;
       } else {
-        label = "Trailing"; bg = `${c.fail}1A`; fg = c.fail;
+        const sKey = statusFor(yesPct, threshold, band);
+        if (reportedShare < 0.05 || yesPct == null || sKey === "awaiting") {
+          label = "Awaiting results"; bg = "var(--fs-bone-100)"; fg = "var(--fs-ink-500)";
+        } else if (sKey === "pass") {
+          label = "Likely Pass"; bg = `${c.pass}1F`; fg = c.pass;
+        } else if (sKey === "watch") {
+          label = "Too Close"; bg = `${c.watch}33`; fg = c.watch;
+        } else {
+          label = "Trailing"; bg = `${c.fail}1A`; fg = c.fail;
+        }
       }
       return (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: bg, color: fg }}>
@@ -1281,18 +1399,138 @@ import "./race-detail.css";
       );
     }
 
-    function LiveResultsCard({ client, stats, settings, embedded }) {
+    function LiveResultsCard({ client, stats, settings, embedded, live, liveResults, ballotConfig, accurateOnly, selectedBallotRace }) {
+      const preUnopposed = isRaceUnopposed(selectedBallotRace);
+      if (!accurateOnly) {
+        const tracked = ballotConfig?.trackedCandidates || [];
+        const nominee = selectedBallotRace?.candidates?.[0];
+        return (
+          <div style={embedded ? { height: "100%" } : cardStyle}>
+            <div style={eyebrowStyle}>2026 Primary · {ballotConfig?.pollsClose || client.pollsClose}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--fs-navy)", marginBottom: 8 }}>
+              {selectedBallotRace ? formatRaceLabel(selectedBallotRace) : "Select a race above"}
+            </div>
+            {preUnopposed && nominee && (
+              <div style={{
+                marginBottom: 14, padding: 12, borderRadius: "var(--fs-radius-md)",
+                background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)",
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fs-gold-700)", marginBottom: 4 }}>
+                  Unopposed
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fs-navy)" }}>{nominee.name}</div>
+                <div style={{ fontSize: 11, color: "var(--fs-fg-muted)", marginTop: 4 }}>
+                  No primary opponent — watch turnout and ballots cast on election night.
+                </div>
+              </div>
+            )}
+            {!preUnopposed && selectedBallotRace?.candidates?.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                {selectedBallotRace.candidates.map((c) => (
+                  <div key={c.name} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 10px", borderRadius: "var(--fs-radius-md)",
+                    background: c.tracked ? "var(--fs-bone-100)" : "transparent",
+                    border: c.tracked ? "1px solid var(--fs-border)" : "1px solid transparent",
+                  }}>
+                    <span style={{ fontWeight: c.tracked ? 700 : 500, color: "var(--fs-navy)" }}>
+                      {c.name}{c.tracked ? " ★" : ""}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--fs-fg-muted)" }}>{c.party}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {selectedBallotRace?.d11Precincts && (
+              <div style={{ fontSize: 12, color: "var(--fs-fg-muted)", marginBottom: 12 }}>
+                {selectedBallotRace.d11Precincts} D11 precincts on map
+              </div>
+            )}
+            {tracked.length > 0 && (
+              <div style={{
+                padding: 10, borderRadius: "var(--fs-radius-md)",
+                background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)", marginBottom: 12,
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fs-gold-700)", marginBottom: 4 }}>
+                  Tracking
+                </div>
+                {tracked.map((t) => (
+                  <div key={t.name} style={{ fontSize: 12, color: "var(--fs-navy)" }}>
+                    <b>{t.name}</b>
+                    <span style={{ color: "var(--fs-fg-muted)" }}> · {findBallotRaceById(t.raceId, ballotConfig)?.label || t.raceId}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: "var(--fs-fg-muted)", lineHeight: 1.5 }}>
+              Live map results appear after polls close when El Paso ENR is connected.
+              Prior election layers are on the map until then.
+            </div>
+          </div>
+        );
+      }
+
       const { yesPct, reportedCount, totalCount, ballots } = stats;
-      const t = client.threshold;
-      const margin = yesPct != null ? yesPct - t : null;
+      const totals = liveResults?.totals;
+      const isMeasure = !!totals?.isMeasure;
+      const matchedRace = liveResults?.contest?.name
+        ? findBallotRace(liveResults.contest.name, ballotConfig)
+        : selectedBallotRace;
+      const isUnopposed = !!(totals?.isUnopposed) || isContestUnopposed({ race: matchedRace, totals });
+      const nomineeName = totals?.nomineeName
+        || matchedRace?.candidates?.[0]?.name
+        || totals?.leaderName;
+      const turnoutPct = totals?.turnoutPct
+        ?? computeTurnoutPct(liveResults?.contest?.ballotsCast, liveResults?.contest?.registered)
+        ?? (isUnopposed ? yesPct : null);
+      const t = isMeasure ? (client.measureThreshold ?? 50) : 50;
+      const leaderName = isUnopposed ? nomineeName : totals?.leaderName;
+      const leaderPct = isUnopposed ? turnoutPct : (totals?.leaderPct ?? yesPct);
+      const leaderTracked = leaderName ? isTrackedCandidate(leaderName, ballotConfig) : false;
+      const margin = !isUnopposed && yesPct != null ? yesPct - t : null;
       const rep = computeReportingStats(stats);
       const compact = !settings.showYesPercent && !settings.showMargin;
+      const certified = liveResults?.resultsPhase === "certified";
+      const lastUpdated = formatResultsTimestamp(
+        liveResults?.contest?.updatedAt || liveResults?.heartbeat?.lastUpdateAt
+      );
+      const contestName = liveResults?.contest?.name;
+      const eyebrow = certified
+        ? "Certified results"
+        : live
+          ? "Live · El Paso ENR"
+          : "Live · Provisional";
       return (
         <div style={embedded ? { height: "100%" } : cardStyle}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ ...eyebrowStyle, marginBottom: 0 }}>Live · Provisional</div>
+            <div>
+              <div style={{ ...eyebrowStyle, marginBottom: (lastUpdated || contestName) ? 4 : 0 }}>{eyebrow}</div>
+              {contestName && (
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fs-navy)", marginBottom: lastUpdated ? 2 : 0 }}>
+                  {matchedRace ? formatRaceLabel(matchedRace) : contestName}
+                </div>
+              )}
+              {!isUnopposed && matchedRace?.candidates?.length > 0 && matchedRace.label !== contestName && (
+                <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)", marginBottom: lastUpdated ? 2 : 0 }}>
+                  {formatRaceCandidates(matchedRace)}
+                </div>
+              )}
+              {lastUpdated && (
+                <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>Last updated {lastUpdated}</div>
+              )}
+            </div>
             {settings.showStatusPill && (
-              <StatusPill yesPct={yesPct} threshold={t} reportedShare={reportedCount / totalCount} settings={settings} />
+              <StatusPill
+                yesPct={yesPct}
+                threshold={t}
+                reportedShare={reportedCount / totalCount}
+                settings={settings}
+                isMeasure={isMeasure}
+                leaderName={leaderName}
+                leaderPct={leaderPct}
+                isUnopposed={isUnopposed}
+                nomineeName={nomineeName}
+              />
             )}
           </div>
           {!compact && (
@@ -1301,12 +1539,20 @@ import "./race-detail.css";
                 {settings.showYesPercent && (
                   <div>
                     <span style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 34, color: settings.colors.yes }}>
-                      {yesPct != null ? yesPct.toFixed(1) : "—"}%
+                      {leaderPct != null ? leaderPct.toFixed(1) : "—"}%
                     </span>
-                    <span style={{ fontSize: 12, color: "var(--fs-fg-muted)", marginLeft: 6 }}>Yes</span>
+                    <span style={{ fontSize: 12, color: "var(--fs-fg-muted)", marginLeft: 6 }}>
+                      {isMeasure ? "Yes" : isUnopposed ? "Turnout" : (leaderName || "Leader")}
+                      {!isUnopposed && leaderTracked ? " · tracking" : ""}
+                    </span>
                   </div>
                 )}
-                {settings.showMargin && margin != null && (
+                {isUnopposed && nomineeName && settings.showYesPercent && (
+                  <div style={{ fontSize: 12, color: "var(--fs-fg-muted)", marginBottom: 8 }}>
+                    Nominee · <b style={{ color: "var(--fs-navy)" }}>{nomineeName}</b>
+                  </div>
+                )}
+                {settings.showMargin && margin != null && isMeasure && (
                   <div>
                     <span style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 20, color: margin >= 0 ? settings.colors.yes : settings.colors.no }}>
                       {margin >= 0 ? "+" : ""}{margin.toFixed(1)}
@@ -1315,7 +1561,7 @@ import "./race-detail.css";
                   </div>
                 )}
               </div>
-              {settings.showYesPercent && (
+              {settings.showYesPercent && isMeasure && (
                 <>
                   <div style={{ position: "relative", height: 8, background: "var(--fs-bone-100)", borderRadius: 4, margin: "10px 0 6px" }}>
                     <div style={{ position: "absolute", inset: "0 auto 0 0", width: `${yesPct || 0}%`, background: settings.colors.yes, borderRadius: 4, transition: "width 600ms var(--fs-ease-out)" }} />
@@ -1331,12 +1577,32 @@ import "./race-detail.css";
                   </div>
                 </>
               )}
+              {!isMeasure && !isUnopposed && totals?.choices?.length > 0 && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {totals.choices.slice(0, 6).map((ch) => (
+                    <div key={ch.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{
+                        color: isTrackedCandidate(ch.name, ballotConfig) ? "var(--fs-navy)" : "var(--fs-fg-muted)",
+                        fontWeight: isTrackedCandidate(ch.name, ballotConfig) ? 700 : 400,
+                        maxWidth: "70%",
+                      }}>
+                        {ch.name}{isTrackedCandidate(ch.name, ballotConfig) ? " ★" : ""}
+                      </span>
+                      <span style={{ fontWeight: 700, color: "var(--fs-navy)" }}>{ch.pct}% · {ch.votes.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
           {(settings.showPercentIn || settings.showPercentOutstanding || settings.showBallotCount) && (
             <div style={{ marginTop: compact ? 0 : 12, paddingTop: compact ? 0 : 12, borderTop: compact ? "none" : "1px solid var(--fs-border)", display: "flex", gap: 18, fontSize: 12, color: "var(--fs-fg-muted)", flexWrap: "wrap" }}>
               {settings.showPercentIn && (
-                <span><b style={{ color: "var(--fs-navy)" }}>{rep.pctInPrecincts.toFixed(1)}%</b> precincts in · {reportedCount} of {totalCount}</span>
+                <span>
+                  <b style={{ color: "var(--fs-navy)" }}>{rep.pctInPrecincts.toFixed(1)}%</b> map precincts in
+                  · {reportedCount} of {totalCount} in contest
+                  {stats.jurisdiction ? ` (${stats.jurisdiction.outOfContestOnMap} outside contest)` : ""}
+                </span>
               )}
               {settings.showPercentOutstanding && (
                 <span><b style={{ color: "var(--fs-navy)" }}>{rep.pctOutPrecincts.toFixed(1)}%</b> precincts outstanding</span>
@@ -1395,7 +1661,7 @@ import "./race-detail.css";
       );
     }
 
-    function ResultsFeed({ precincts, threshold, settings, embedded }) {
+    function ResultsFeed({ precincts, threshold, settings, embedded, isUnopposed }) {
       const c = settings.colors;
       const feed = precincts
         .filter(p => p.reported)
@@ -1403,12 +1669,38 @@ import "./race-detail.css";
         .slice(0, embedded ? 24 : 8);
       return (
         <div style={embedded ? { height: "100%" } : { ...cardStyle, padding: 0 }}>
-          <div style={{ ...eyebrowStyle, marginBottom: 0, padding: embedded ? "0 0 10px" : "14px 16px 10px" }}>Reporting Feed</div>
+          <div style={{ ...eyebrowStyle, marginBottom: 0, padding: embedded ? "0 0 10px" : "14px 16px 10px" }}>
+            {isUnopposed ? "Turnout Feed" : "Reporting Feed"}
+          </div>
           <div style={{ fontSize: 10, color: "var(--fs-ink-400)", padding: embedded ? "0 0 8px" : "0 16px 8px" }}>
-            Precincts as they release public totals — newest first.
+            {isUnopposed
+              ? "Precinct turnout as public totals release — newest first."
+              : "Precincts as they release public totals — newest first."}
           </div>
           <div>
             {feed.map((p) => {
+              if (isUnopposed || p.isUnopposed) {
+                const turnout = p.turnoutPct ?? (p.yesPct <= 100 ? p.yesPct : null);
+                return (
+                  <div key={p.id} className="feedrow" style={{ display: "flex", alignItems: "center", gap: 10, padding: embedded ? "10px 0" : "8px 16px", borderTop: "1px solid var(--fs-border)", fontSize: 12 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: "var(--fs-navy)" }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: "var(--fs-navy)" }}>{p.name}</div>
+                      <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>
+                        {p.county}{p.live ? " · Public total" : ` · In at ${fmtTime(p.reportMin)}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, color: "var(--fs-navy)" }}>
+                        {turnout != null ? `${turnout}%` : `${(p.ballots || 0).toLocaleString()}`}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>
+                        {turnout != null ? `${(p.ballots || 0).toLocaleString()} ballots` : "ballots cast"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               const margin = p.yesPct - threshold;
               const passing = p.yesPct >= threshold;
               return (
@@ -1416,7 +1708,10 @@ import "./race-detail.css";
                   <span style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: passing ? c.pass : c.fail }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, color: "var(--fs-navy)" }}>{p.name}</div>
-                    <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>{p.county} · In at {fmtTime(p.reportMin)}</div>
+                    <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>
+                      {p.county}
+                      {p.live ? " · Public total" : ` · In at ${fmtTime(p.reportMin)}`}
+                    </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, color: passing ? c.pass : c.fail }}>{p.yesPct}%</div>
@@ -1431,22 +1726,68 @@ import "./race-detail.css";
       );
     }
 
-    function MeasureContextCard({ client, embedded }) {
+    function RaceContextCard({ client, embedded, liveResults, ballotConfig, selectedBallotRace }) {
+      const totals = liveResults?.totals;
+      const matched = liveResults?.contest?.name
+        ? findBallotRace(liveResults.contest.name, ballotConfig)
+        : selectedBallotRace;
+      const tracked = ballotConfig?.trackedCandidates || [];
+      const focusRace = matched || selectedBallotRace;
+      const rows = [
+        ["Election", `${client.electionDate} · polls close ${client.pollsClose}`],
+        ["Jurisdiction", client.jurisdiction],
+        ["Map footprint", ballotConfig?.footprint || "148 D11 precincts"],
+        ...(focusRace ? [["Selected race", formatRaceLabel(focusRace)]] : []),
+        ...(isRaceUnopposed(focusRace) && focusRace?.candidates?.[0]
+          ? [["Nominee", focusRace.candidates[0].name]]
+          : focusRace?.candidates?.length ? [["Candidates", formatRaceCandidates(focusRace)]] : []),
+        ...(totals?.isUnopposed || isRaceUnopposed(focusRace)
+          ? (totals?.turnoutPct != null ? [["Turnout", `${totals.turnoutPct}%`]] : [])
+          : totals?.leaderName && !totals?.isMeasure
+            ? [["Current leader", `${totals.leaderName} (${totals.leaderPct}%)`]]
+            : []),
+        ...(liveResults?.contest?.ballotsCast != null
+          ? [["Ballots cast", liveResults.contest.ballotsCast.toLocaleString()]]
+          : []),
+      ];
+      const houseCount = listBallotRaces(ballotConfig, { chamber: "house" }).length;
+      const senateCount = listBallotRaces(ballotConfig, { chamber: "senate" }).length;
       return (
         <div style={embedded ? { height: "100%" } : cardStyle}>
-          <div style={eyebrowStyle}>Measure Context</div>
-          {[
-            ["Jurisdiction", client.jurisdiction],
-            ["The ask", client.ask],
-            ["Passage threshold", `${client.threshold}%${client.threshold > 50 ? " supermajority" : " simple majority"}`],
-            ["Est. voters", `${(client.estimatedVoters / 1000).toFixed(0)}K`],
-            ["Consultant", client.consultant],
-          ].map(([k, v], i) => (
+          <div style={eyebrowStyle}>Ballot · {ballotConfig?.label || "2026 Primary"}</div>
+          {tracked.length > 0 && (
+            <div style={{
+              marginBottom: 14, padding: 10, borderRadius: "var(--fs-radius-md)",
+              background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fs-gold-700)", marginBottom: 6 }}>
+                Tracked candidates
+              </div>
+              {tracked.map((t) => {
+                const race = findBallotRaceById(t.raceId, ballotConfig);
+                return (
+                  <div key={t.name} style={{ fontSize: 12, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, color: "var(--fs-navy)" }}>{t.name}</span>
+                    <span style={{ color: "var(--fs-fg-muted)" }}> · {race?.label || t.raceId}</span>
+                    {t.note && <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>{t.note}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {rows.map(([k, v], i) => (
             <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: i ? "1px solid var(--fs-border)" : "none", fontSize: 13 }}>
               <span style={{ color: "var(--fs-fg-muted)" }}>{k}</span>
               <span style={{ fontWeight: 600, color: "var(--fs-navy)", textAlign: "right", maxWidth: "58%" }}>{v}</span>
             </div>
           ))}
+          {ballotConfig && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--fs-border)", fontSize: 12, color: "var(--fs-fg-muted)", lineHeight: 1.5 }}>
+              <b style={{ color: "var(--fs-navy)" }}>{houseCount}</b> State House races and{" "}
+              <b style={{ color: "var(--fs-navy)" }}>{senateCount}</b> State Senate races overlap the D11 map,
+              plus statewide and federal primaries. Use the race picker above to switch contests.
+            </div>
+          )}
         </div>
       );
     }
@@ -1464,33 +1805,53 @@ import "./race-detail.css";
       return rows;
     }
 
-    function SelectedAreaCard({ area, threshold, onClose, embedded, priorCtx, settings }) {
+    function SelectedAreaCard({ area, threshold, onClose, embedded, priorCtx, settings, accurateOnly, resultsPhase, lastUpdatedAt, isMeasure, isUnopposed }) {
       const c = settings?.colors || SETTINGS_DEFAULTS.colors;
       const isCounty = !!area.isCounty;
+      const certified = resultsPhase === "certified";
+      const lastUpdated = formatResultsTimestamp(lastUpdatedAt);
       const priorRows = priorCtx ? priorDetailRows(area, priorCtx) : [];
+      const areaUnopposed = isUnopposed || area.isUnopposed;
+      const turnoutVal = area.turnoutPct ?? (area.yesPct <= 100 ? area.yesPct : null);
+      const fieldRows = accurateOnly
+        ? []
+        : isCounty
+          ? [["Avg turnout", `${area.turnoutRate}%`], ["Doors knocked", Number(area.doorsTotal).toLocaleString()]]
+          : [["Turnout", `${area.turnoutRate}%`], ["Doors knocked", Number(area.doorsKnocked).toLocaleString()]];
+      const countyStatus = `${area.reportedCount} of ${area.totalCount} precincts in`;
+      const resultLabel = areaUnopposed
+        ? (turnoutVal != null ? `${turnoutVal}% turnout` : `${Number(area.ballots || 0).toLocaleString()} ballots`)
+        : (area.yesPct >= 0
+          ? (area.leaderName && !isMeasure ? `${area.leaderName} ${area.yesPct}%` : `${area.yesPct}%`)
+          : "—");
       const rows = isCounty
         ? [
             ...(area.repName ? [["Council member", area.repName]] : []),
-            ["Reporting", `${area.reportedCount} of ${area.totalCount} precincts in`],
-            ["Running yes", area.yesPct >= 0 ? `${area.yesPct}%` : "—"],
-            ["Avg turnout", `${area.turnoutRate}%`],
+            ["Status", certified && area.reportedCount > 0 ? "Certified" : "Reporting"],
+            ["Reporting", countyStatus],
+            ["Running total", resultLabel],
+            ...fieldRows,
             ...priorRows,
-            ["Doors knocked", Number(area.doorsTotal).toLocaleString()],
           ]
         : [
-            ["Status", area.reported ? `In at ${fmtTime(area.reportMin)}` : "Awaiting results"],
+            ["Status", area.live
+              ? liveAreaStatus(area, resultsPhase)
+              : (area.reported ? `In at ${fmtTime(area.reportMin)}` : "Awaiting results")],
             ...(area.zip ? [["ZIP code", area.zip]] : []),
-            ["Precinct yes", area.reported && area.yesPct >= 0 ? `${area.yesPct}%` : "—"],
-            ["Turnout", `${area.turnoutRate}%`],
+            [areaUnopposed ? "Precinct turnout" : "Precinct total", area.reported && area.yesPct >= 0 ? resultLabel : "—"],
+            ...(area.live && area.reported ? [["Ballots", Number(area.ballots).toLocaleString()]] : []),
+            ...(areaUnopposed && area.leaderName ? [["Nominee", area.leaderName]] : []),
+            ...fieldRows,
             ...priorRows,
-            ["Doors knocked", Number(area.doorsKnocked).toLocaleString()],
             ...(area.senate || area.comDist ? [["Districts", [
               area.comDist != null ? `CC ${area.comDist}` : null,
               area.senate != null ? `SD ${area.senate}` : null,
               area.rep != null ? `HD ${area.rep}` : null,
             ].filter(Boolean).join(" · ")]] : []),
           ];
-      const passing = area.yesPct >= 0 ? area.yesPct >= threshold : null;
+      const passing = !areaUnopposed && area.yesPct >= 0 ? area.yesPct >= threshold : null;
+      const headlinePct = areaUnopposed ? turnoutVal : area.yesPct;
+      const headlineLabel = areaUnopposed ? "turnout" : "yes";
       return (
         <div style={embedded ? { height: "100%" } : { ...cardStyle, borderColor: "var(--fs-border-strong)", boxShadow: "var(--fs-shadow-sm)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -1499,12 +1860,17 @@ import "./race-detail.css";
               <div style={{ fontSize: 11, color: "var(--fs-fg-subtle)" }}>
                 {isCounty ? (area.repName || area.county) : area.county}
               </div>
+              {lastUpdated && accurateOnly && (
+                <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)", marginTop: 4 }}>
+                  Last updated {lastUpdated}
+                </div>
+              )}
             </div>
             <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 18, lineHeight: 1, color: "var(--fs-ink-400)" }}>×</button>
           </div>
-          {area.yesPct >= 0 && (
-            <div style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 26, color: passing ? c.pass : c.fail, marginBottom: 8 }}>
-              {area.yesPct}% <span style={{ fontSize: 12, fontFamily: "var(--fs-font-sans)", fontWeight: 600, color: "var(--fs-fg-muted)" }}>yes</span>
+          {headlinePct != null && headlinePct >= 0 && (
+            <div style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 26, color: areaUnopposed ? "var(--fs-navy)" : (passing ? c.pass : c.fail), marginBottom: 8 }}>
+              {headlinePct}% <span style={{ fontSize: 12, fontFamily: "var(--fs-font-sans)", fontWeight: 600, color: "var(--fs-fg-muted)" }}>{headlineLabel}</span>
             </div>
           )}
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1522,7 +1888,7 @@ import "./race-detail.css";
     // ========================================================================
     // MAP OVERLAYS
     // ========================================================================
-    function Legend({ metric, threshold, priorCtx, settings }) {
+    function Legend({ metric, threshold, priorCtx, settings, isUnopposed }) {
       const m = METRICS[metric];
       const c = settings.colors;
       if (m.mode === "choropleth") {
@@ -1564,6 +1930,14 @@ import "./race-detail.css";
             `linear-gradient(90deg, ${colors.join(", ")})`,
             labels,
             md.scale === "diverging" ? "Diverging scale — higher % toward navy" : "Turnout by precinct",
+          );
+        }
+        if (isUnopposed) {
+          return legendBox(
+            "Turnout",
+            "linear-gradient(90deg, #E6E5DA, #8B9AAB, #5B7A9E, #1A3A5C)",
+            [<span key="lo">Low</span>, <span key="mid">Moderate</span>, <span key="hi">High</span>],
+            "Unopposed race — precinct shade by estimated turnout",
           );
         }
         if (settings.mapColorMode === "passFail") {
@@ -1627,6 +2001,8 @@ import "./race-detail.css";
       metric, setMetric, level, setLevel, overlays, toggleOverlay,
       districtType, setDistrictType, schoolFilters, setSchoolFilters,
       priorData, priorElectionId, setPriorElectionId, priorMetricId, setPriorMetricId,
+      accurateOnly, liveContests, selectedContestKey, onContestChange, ballotConfig,
+      legislativeFilter, setLegislativeFilter, selectedBallotRaceId, onBallotRaceChange,
     }) {
       const seg = (active) => ({
         fontSize: 12, fontWeight: active ? 700 : 500, padding: "7px 14px",
@@ -1643,13 +2019,109 @@ import "./race-detail.css";
         border: "none", background: active ? "var(--fs-navy)" : "transparent",
         color: active ? "#fff" : "var(--fs-navy)", borderRadius: 3,
       });
+      const ballotRaces = listBallotRaces(ballotConfig, { chamber: legislativeFilter });
+      const selectedBallotRace = selectedBallotRaceId
+        ? findBallotRaceById(selectedBallotRaceId, ballotConfig)
+        : null;
+      const liveRaceOptions = accurateOnly && liveContests.length > 0
+        ? sortContestsForBallot(
+            filterContestsByChamber(liveContests, legislativeFilter).length
+              ? filterContestsByChamber(liveContests, legislativeFilter)
+              : liveContests,
+            ballotConfig,
+          )
+        : [];
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {ballotConfig && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              padding: "10px 12px", borderRadius: "var(--fs-radius-md)",
+              background: "var(--fs-bone-50)", border: "1px solid var(--fs-border)",
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fs-ink-500)" }}>
+                Primary race
+              </span>
+              <div style={{ display: "flex", background: "var(--fs-bone-100)", border: "1px solid var(--fs-border)", borderRadius: "var(--fs-radius-md)", padding: 2, flexWrap: "wrap" }}>
+                {[
+                  { id: "tracked", label: "Tracked" },
+                  { id: "house", label: "House" },
+                  { id: "senate", label: "Senate" },
+                  { id: "all", label: "All" },
+                ].map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    style={miniSeg(legislativeFilter === chip.id)}
+                    onClick={() => setLegislativeFilter(chip.id)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={selectedBallotRaceId || ""}
+                onChange={(e) => onBallotRaceChange(e.target.value)}
+                style={{
+                  fontSize: 12, fontWeight: 600, padding: "6px 10px",
+                  borderRadius: "var(--fs-radius-md)", border: "1px solid var(--fs-border)",
+                  background: "var(--fs-paper)", color: "var(--fs-navy)", minWidth: 220, maxWidth: 420,
+                }}
+                aria-label="Select primary race"
+              >
+                {ballotRaces.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {formatRaceLabel(r)}
+                    {r.candidates?.length && !isRaceUnopposed(r) ? ` · ${formatRaceCandidates(r)}` : ""}
+                    {isRaceUnopposed(r) && r.candidates?.[0] ? ` · ${r.candidates[0].name}` : ""}
+                  </option>
+                ))}
+              </select>
+              {selectedBallotRace?.d11Precincts && (
+                <span style={{ fontSize: 11, color: "var(--fs-fg-muted)" }}>
+                  {selectedBallotRace.d11Precincts} D11 prec.
+                </span>
+              )}
+              {accurateOnly && liveRaceOptions.length > 1 && (
+                <select
+                  value={selectedContestKey || ""}
+                  onChange={(e) => onContestChange(e.target.value)}
+                  style={{
+                    fontSize: 12, padding: "6px 10px",
+                    borderRadius: "var(--fs-radius-md)", border: "1px solid var(--fs-border)",
+                    background: "var(--fs-paper)", color: "var(--fs-navy)", maxWidth: 360,
+                  }}
+                  aria-label="Select live ENR contest"
+                >
+                  {liveRaceOptions.map((c) => {
+                    const hint = findBallotRace(c.name, ballotConfig);
+                    return (
+                      <option key={c.contestKey} value={c.contestKey}>
+                        ENR: {hint?.label || c.name}
+                        {c.precinctsReported != null && c.totalPrecincts
+                          ? ` · ${c.precinctsReported}/${c.totalPrecincts} in`
+                          : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+              {!accurateOnly && (
+                <span style={{ fontSize: 11, color: "var(--fs-fg-subtle)" }}>
+                  Live map after {ballotConfig.pollsClose || "7:00 PM MT"}
+                </span>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {Object.entries(METRICS).map(([key, m]) => {
+                {visibleMapMetrics(accurateOnly).map((key) => {
+                  const m = METRICS[key];
                   const active = metric === key;
+                  const label = key === "results" && selectedBallotRace && isRaceUnopposed(selectedBallotRace)
+                    ? "Turnout"
+                    : m.label;
                   return (
                     <button key={key} className="layerbtn" onClick={() => setMetric(key)} style={{
                       fontSize: 12, fontWeight: active ? 700 : 500, padding: "7px 12px",
@@ -1657,7 +2129,7 @@ import "./race-detail.css";
                       border: `1px solid ${active ? "var(--fs-navy)" : "var(--fs-border)"}`,
                       background: active ? "var(--fs-navy)" : "var(--fs-paper)",
                       color: active ? "#fff" : "var(--fs-navy)",
-                    }}>{m.label}</button>
+                    }}>{label}</button>
                   );
                 })}
               </div>
@@ -1819,13 +2291,20 @@ import "./race-detail.css";
       ),
     };
 
-    const SIDEBAR_TABS = [
-      { id: "live", label: "Latest Update", icon: PANEL_ICONS.live },
+    const SIDEBAR_TABS_BASE = [
+      { id: "live", label: "Primary Race", icon: PANEL_ICONS.live },
       { id: "polling", label: "Polling", icon: PANEL_ICONS.polling },
       { id: "feed", label: "Reporting Feed", icon: PANEL_ICONS.feed },
-      { id: "context", label: "Measure", icon: PANEL_ICONS.context },
+      { id: "context", label: "Ballot", icon: PANEL_ICONS.context },
       { id: "selection", label: "Selected Area", icon: PANEL_ICONS.selection, requiresSelection: true },
     ];
+
+    function visibleSidebarTabs(accurateOnly, pollingWaves) {
+      return SIDEBAR_TABS_BASE.filter((t) => {
+        if (t.id === "polling" && (!pollingWaves?.length || accurateOnly)) return false;
+        return true;
+      });
+    }
 
     function InsightIconBar({ tabs, open, activeTab, onIconClick }) {
       return (
@@ -1854,7 +2333,7 @@ import "./race-detail.css";
       );
     }
 
-    function InsightSidePanel({ onOpenChange, activeTab, onTabChange, tabs, selected, onClearSelection, client, stats, polls, threshold, onIconClick, priorCtx, settings }) {
+    function InsightSidePanel({ onOpenChange, activeTab, onTabChange, tabs, selected, onClearSelection, client, stats, polls, threshold, onIconClick, priorCtx, settings, live, accurateOnly, liveResults, ballotConfig, selectedBallotRace, isUnopposed }) {
       const activeLabel = tabs.find(t => t.id === activeTab)?.label || "Insights";
 
       return (
@@ -1919,16 +2398,33 @@ import "./race-detail.css";
               </div>
 
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
-            {activeTab === "live" && <LiveResultsCard client={client} stats={stats} settings={settings} embedded />}
+            {activeTab === "live" && (
+              <LiveResultsCard
+                client={client}
+                stats={stats}
+                settings={settings}
+                embedded
+                live={live}
+                liveResults={liveResults}
+                ballotConfig={ballotConfig}
+                accurateOnly={accurateOnly}
+                selectedBallotRace={selectedBallotRace}
+              />
+            )}
             {activeTab === "polling" && <TrendChart polls={polls} threshold={threshold} embedded />}
-            {activeTab === "feed" && <ResultsFeed precincts={stats.precinctProps} threshold={threshold} settings={settings} embedded />}
-            {activeTab === "context" && <MeasureContextCard client={client} embedded />}
+            {activeTab === "feed" && <ResultsFeed precincts={stats.precinctProps} threshold={threshold} settings={settings} embedded isUnopposed={isUnopposed} />}
+            {activeTab === "context" && <RaceContextCard client={client} embedded liveResults={liveResults} ballotConfig={ballotConfig} selectedBallotRace={selectedBallotRace} />}
             {activeTab === "selection" && selected && (
               <SelectedAreaCard
                 area={selected}
                 threshold={threshold}
                 priorCtx={priorCtx}
                 settings={settings}
+                accurateOnly={accurateOnly}
+                isMeasure={!!liveResults?.totals?.isMeasure}
+                isUnopposed={isUnopposed}
+                resultsPhase={liveResults?.resultsPhase}
+                lastUpdatedAt={liveResults?.contest?.updatedAt || liveResults?.heartbeat?.lastUpdateAt}
                 onClose={() => { onClearSelection(); onTabChange("live"); }}
                 embedded
               />
@@ -2048,9 +2544,12 @@ import "./race-detail.css";
     const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
     export function RaceDetailApp() {
+      const client = CLIENT;
       const [settings, setSetting, setColor, resetSettings] = useSettings();
       const [settingsOpen, setSettingsOpen] = useState(false);
-      const [metric, setMetric] = useState("results");
+      const [collectorOpen, setCollectorOpen] = useState(false);
+      const [collectorTick, setCollectorTick] = useState(0);
+      const [metric, setMetric] = useState("priorElections");
       const [level, setLevel] = useState("precinct");
       const [selected, setSelected] = useState(null);
       const [geo, setGeo] = useState(null); // { boundary, precincts, councilDistricts, zipDistricts }
@@ -2059,13 +2558,22 @@ import "./race-detail.css";
       const [schoolFilters, setSchoolFilters] = useState({ tier: "all", showCharter: true });
       const [districtType, setDistrictType] = useState("council");
       const [sidebarTab, setSidebarTab] = useState("live");
-      const [panelOpen, setPanelOpen] = useState(false);
+      const [panelOpen, setPanelOpen] = useState(true);
       const [priorData, setPriorData] = useState(null);
       const [priorElectionId, setPriorElectionId] = useState(null);
       const [priorMetricId, setPriorMetricId] = useState(null);
+      const [liveResults, setLiveResults] = useState(null);
+      const [liveContests, setLiveContests] = useState([]);
+      const [selectedContestKey, setSelectedContestKey] = useState(client.liveContestKey);
+      const [pollingWaves, setPollingWaves] = useState([]);
+      const [ballotConfig, setBallotConfig] = useState(null);
+      const [legislativeFilter, setLegislativeFilter] = useState("tracked");
+      const [selectedBallotRaceId, setSelectedBallotRaceId] = useState(null);
+      const [liveMode, setLiveMode] = useState(null);
+      const liveSeenRef = useRef(false);
+      const contestPatterns = ballotConfig?.enrPatterns || [];
       const toggleOverlay = useCallback((key) => setOverlays(o => ({ ...o, [key]: !o[key] })), []);
 
-      const client = CLIENT;
       const boundary = geo ? geo.boundary : null;
 
       // Load the real jurisdiction boundary + county precincts (WGS84 GeoJSON)
@@ -2097,6 +2605,115 @@ import "./race-detail.css";
           .catch(e => setLoadError(String(e)));
       }, []);
 
+      useEffect(() => {
+        fetch(client.ballotRacesUrl)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d) {
+              setBallotConfig(d);
+              if (d.defaultRaceId) setSelectedBallotRaceId(d.defaultRaceId);
+            }
+          })
+          .catch(() => {});
+      }, []);
+
+      const selectedBallotRace = useMemo(
+        () => (selectedBallotRaceId ? findBallotRaceById(selectedBallotRaceId, ballotConfig) : null),
+        [selectedBallotRaceId, ballotConfig],
+      );
+
+      const handleBallotRaceChange = useCallback((raceId) => {
+        setSelectedBallotRaceId(raceId);
+        const race = findBallotRaceById(raceId, ballotConfig);
+        const match = findContestForBallotRace(race, liveContests);
+        if (match) setSelectedContestKey(String(match.contestKey));
+      }, [ballotConfig, liveContests]);
+
+      useEffect(() => {
+        if (!ballotConfig || !selectedBallotRaceId) return;
+        const visible = listBallotRaces(ballotConfig, { chamber: legislativeFilter });
+        if (visible.length && !visible.some((r) => r.id === selectedBallotRaceId)) {
+          setSelectedBallotRaceId(visible[0].id);
+        }
+      }, [legislativeFilter, ballotConfig, selectedBallotRaceId]);
+
+      useEffect(() => {
+        fetch(client.pollingManifestUrl)
+          .then((r) => (r.ok ? r.json() : { waves: [] }))
+          .then((d) => setPollingWaves(Array.isArray(d?.waves) ? d.waves : []))
+          .catch(() => setPollingWaves([]));
+      }, []);
+
+      // Load available ENR contests for this ballot area
+      useEffect(() => {
+        let cancelled = false;
+        if (!contestPatterns.length) return undefined;
+        electionLiveApi.contests(contestPatterns)
+          .then((data) => {
+            if (cancelled) return;
+            setLiveContests(data?.contests || []);
+          })
+          .catch(() => { if (!cancelled) setLiveContests([]); });
+        return () => { cancelled = true; };
+      }, [contestPatterns.join("|"), collectorTick]);
+
+      // Sync ENR contest when live contests load for the selected ballot race
+      useEffect(() => {
+        if (!selectedBallotRace || !liveContests.length) return;
+        const match = findContestForBallotRace(selectedBallotRace, liveContests);
+        if (match) setSelectedContestKey(String(match.contestKey));
+      }, [liveContests, selectedBallotRace]);
+
+      // Detect replay vs live collector mode
+      useEffect(() => {
+        let cancelled = false;
+        electionLiveApi.status()
+          .then((s) => {
+            if (cancelled) return;
+            setLiveMode(s?.mode || null);
+            if (s?.mode === "replay" && !selectedContestKey) {
+              setSelectedContestKey("replay");
+            }
+          })
+          .catch(() => {});
+        return () => { cancelled = true; };
+      }, []);
+
+      // Poll El Paso ENR for the selected race (replay works with no contest key)
+      useEffect(() => {
+        let cancelled = false;
+        const poll = () => {
+          const key = client.liveContestKey || selectedContestKey;
+          const req = key
+            ? electionLiveApi.results({ contestKey: key })
+            : electionLiveApi.results({});
+          req
+            .then((data) => {
+              if (cancelled) return;
+              if (data?.available && data?.contest && data?.totals) {
+                setLiveResults(data);
+                if (!selectedContestKey && data.contest.contestKey) {
+                  setSelectedContestKey(String(data.contest.contestKey));
+                }
+              } else {
+                setLiveResults(null);
+              }
+            })
+            .catch(() => { if (!cancelled) setLiveResults(null); });
+        };
+        poll();
+        const id = setInterval(poll, 10000);
+        return () => { cancelled = true; clearInterval(id); };
+      }, [selectedContestKey, collectorTick]);
+
+      // First live results → switch map to Live Results layer
+      useEffect(() => {
+        if (liveResults?.contest && liveResults?.mode === "live" && !liveSeenRef.current) {
+          liveSeenRef.current = true;
+          setMetric("results");
+        }
+      }, [liveResults]);
+
       const priorCtx = useMemo(() => {
         if (!priorData || !priorElectionId) return null;
         const election = priorData.elections.find(e => e.id === priorElectionId) || priorData.elections[0];
@@ -2104,12 +2721,16 @@ import "./race-detail.css";
         return { electionId: election.id, election, metricDef, metricId: metricDef?.id };
       }, [priorData, priorElectionId, priorMetricId]);
 
-      // Stable mock stats on real precinct geography, built once geo is in
+      // Race geography + results (live ENR when collector DB is wired)
       const race = useMemo(() => {
         if (!geo) return null;
-        const r = makeRaceData(client, geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts);
-        return priorData ? { ...r, priorData } : r;
-      }, [geo, priorData]);
+        const r = makeRaceData(
+          client, geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts,
+          liveResults, pollingWaves, selectedBallotRace,
+        );
+        const withPrior = priorData ? { ...r, priorData } : r;
+        return liveResults ? { ...withPrior, liveResults } : withPrior;
+      }, [geo, priorData, liveResults, pollingWaves, selectedBallotRace]);
 
       const filteredView = useMemo(() => {
         if (!race) return { geojson: EMPTY_FC, yesPct: null, reportedCount: 0, totalCount: 0, ballots: 0, precinctProps: [] };
@@ -2119,15 +2740,62 @@ import "./race-detail.css";
 
       const geojson = filteredView.geojson;
       const dots = useMemo(() => race ? makeDots(geojson, metric, client.id) : EMPTY_FC, [geojson, metric, race]);
-      const polls = POLLING;
+      const polls = pollingWaves;
+      const accurateOnly = !!(liveResults?.contest && liveResults?.totals);
+      const isUnopposed = accurateOnly
+        ? isContestUnopposed({ race: selectedBallotRace, totals: liveResults?.totals })
+        : isRaceUnopposed(selectedBallotRace);
+      const displayThreshold = liveResults?.totals?.isMeasure
+        ? (client.measureThreshold ?? 50)
+        : 50;
+      const awaitingPrimaryEid = liveMode === "live"
+        && ballotConfig
+        && liveContests.length > 0
+        && !liveContests.some((c) => /governor/i.test(c.name));
+      const visibleMetrics = useMemo(() => visibleMapMetrics(accurateOnly), [accurateOnly]);
+      const sidebarTabs = useMemo(
+        () => visibleSidebarTabs(accurateOnly, pollingWaves).filter((t) => !t.requiresSelection || selected),
+        [accurateOnly, pollingWaves, selected]
+      );
 
-      const stats = useMemo(() => ({
-        yesPct: filteredView.yesPct,
-        reportedCount: filteredView.reportedCount,
-        totalCount: filteredView.totalCount,
-        ballots: filteredView.ballots,
-        precinctProps: filteredView.precinctProps,
-      }), [filteredView]);
+      useEffect(() => {
+        if (!visibleMetrics.includes(metric)) {
+          setMetric(visibleMetrics[0] || "priorElections");
+        }
+      }, [visibleMetrics, metric]);
+
+      useEffect(() => {
+        if (!accurateOnly) return;
+        if (metric === "turnout" || metric === "doors") setMetric("results");
+        if (sidebarTab === "polling") setSidebarTab("live");
+      }, [accurateOnly, metric, sidebarTab]);
+
+      const stats = useMemo(() => {
+        const base = {
+          yesPct: filteredView.yesPct,
+          reportedCount: filteredView.reportedCount,
+          totalCount: filteredView.totalCount,
+          ballots: filteredView.ballots,
+          precinctProps: filteredView.precinctProps,
+        };
+        if (liveResults?.totals && (liveResults.totals.leaderPct != null || liveResults.totals.yesPct != null || liveResults.totals.turnoutPct != null)) {
+          const j = liveResults.jurisdiction;
+          const turnoutPct = liveResults.totals.turnoutPct
+            ?? computeTurnoutPct(liveResults.contest?.ballotsCast, liveResults.contest?.registered);
+          const displayPct = isUnopposed ? turnoutPct : (liveResults.totals.leaderPct ?? liveResults.totals.yesPct);
+          return {
+            ...base,
+            yesPct: displayPct,
+            ballots: liveResults.contest?.ballotsCast ?? liveResults.totals.ballots,
+            reportedCount: j?.reportedOnMap ?? base.reportedCount,
+            totalCount: j?.inContestOnMap ?? base.totalCount,
+            jurisdiction: j,
+            isUnopposed,
+            turnoutPct,
+          };
+        }
+        return { ...base, isUnopposed };
+      }, [filteredView, liveResults, isUnopposed]);
 
       const handleSelect = useCallback((props) => {
         setSelected(props);
@@ -2141,7 +2809,7 @@ import "./race-detail.css";
       }, [selected, sidebarTab]);
 
       return (
-        <div className="race-detail-monitor" style={{ minHeight: "calc(100vh - 120px)", height: "100%", display: "flex", flexDirection: "column" }}>
+        <div className="race-detail-monitor" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           {/* ============ Header ============ */}
           <header style={{ background: "var(--fs-navy)", padding: "0 24px", height: 64, display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
             <img src="/election-assets/logo-horizontal-white.png" alt="Fog Signal Strategies" style={{ height: 34 }} />
@@ -2150,31 +2818,49 @@ import "./race-detail.css";
               Race Detail Monitor
             </div>
             <div style={{ flex: 1 }} />
+            <button type="button" className={`header-settings-btn${collectorOpen ? " active" : ""}`}
+                    aria-label="ENR collector" title="ENR collector"
+                    onClick={() => { setCollectorOpen((o) => !o); setSettingsOpen(false); }}>
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M9 2v2M9 14v2M2 9h2M14 9h2M4.2 4.2l1.4 1.4M12.4 12.4l1.4 1.4M4.2 13.8l1.4-1.4M12.4 5.6l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            </button>
             <button type="button" className={`header-settings-btn${settingsOpen ? " active" : ""}`}
                     aria-label="Settings" title="Settings"
-                    onClick={() => setSettingsOpen(o => !o)}>
+                    onClick={() => { setSettingsOpen((o) => !o); setCollectorOpen(false); }}>
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                 <path d="M9 11.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" strokeWidth="1.4" />
                 <path d="M14.1 10.1l1.1.6-.9 1.6-1.2-.2a4.6 4.6 0 0 1-1.2.7l-.2 1.2-1.8.1-.3-1.2a4.6 4.6 0 0 1-1.1-.7l-1.2.4-1.3-1.3.7-1.1a4.6 4.6 0 0 1-.1-1.3l-1.1-.7.9-1.6 1.2.2c.4-.3.8-.5 1.2-.7l.2-1.2 1.8-.1.3 1.2c.4.2.8.4 1.1.7l1.2-.4 1.3 1.3-.7 1.1c.1.4.1.9.1 1.3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
               </svg>
             </button>
-            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--fs-gold)", border: "1px solid rgba(239,197,63,0.45)", borderRadius: 999, padding: "4px 10px" }}>
-              Simulated data
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: liveResults ? (liveResults.resultsPhase === "certified" ? "var(--fs-navy-300, #8BA4C4)" : liveResults.mode === "replay" ? "var(--fs-gold)" : "var(--fs-success, #2F6B4F)") : "var(--fs-gold)", border: liveResults ? (liveResults.resultsPhase === "certified" ? "1px solid rgba(139,164,196,0.45)" : liveResults.mode === "replay" ? "1px solid rgba(239,197,63,0.45)" : "1px solid rgba(47,107,79,0.45)") : "1px solid rgba(239,197,63,0.45)", borderRadius: 999, padding: "4px 10px" }}>
+              {resultsSourceLabel(liveResults)}
             </span>
             <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", padding: "9px 14px", background: "var(--fs-navy-800)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "var(--fs-radius-md)" }}>
-              {client.clientName} — {client.measureCode}
+              {client.clientName}
             </div>
           </header>
 
           {/* ============ Title strip ============ */}
           <div style={{ background: "var(--fs-paper)", borderBottom: "1px solid var(--fs-border)", padding: "14px 24px", display: "flex", alignItems: "baseline", gap: 16, flexShrink: 0, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fs-gold-700)" }}>{client.measureCode}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fs-gold-700)" }}>{client.electionDate}</span>
             <h1 style={{ fontFamily: "var(--fs-font-display)", fontSize: 22, fontWeight: 700, color: "var(--fs-navy)", lineHeight: 1.2 }}>
-              {client.measureTitle}
+              {client.monitorTitle}
             </h1>
             <span style={{ fontSize: 12, color: "var(--fs-fg-subtle)" }}>
-              {client.jurisdiction} · {client.ask} · Election {client.electionDate} · {client.threshold}% to pass
+              {client.monitorSubtitle} · Polls close {client.pollsClose}
             </span>
+            {!accurateOnly && liveMode !== "replay" && (
+              <span style={{ fontSize: 11, color: "var(--fs-gold-700)", fontWeight: 600 }}>
+                Prior elections on map · open ENR collector (header) to start live feed
+              </span>
+            )}
+            {awaitingPrimaryEid && (
+              <span style={{ fontSize: 11, color: "var(--fs-danger)", fontWeight: 600 }}>
+                Collector DB still on test EID — set EP_EID from live ENR URL when results post
+              </span>
+            )}
           </div>
 
           {/* ============ Content: full-width map ============ */}
@@ -2196,6 +2882,15 @@ import "./race-detail.css";
                 setPriorElectionId={setPriorElectionId}
                 priorMetricId={priorMetricId}
                 setPriorMetricId={setPriorMetricId}
+                accurateOnly={accurateOnly}
+                liveContests={liveContests}
+                selectedContestKey={selectedContestKey}
+                onContestChange={setSelectedContestKey}
+                ballotConfig={ballotConfig}
+                legislativeFilter={legislativeFilter}
+                setLegislativeFilter={setLegislativeFilter}
+                selectedBallotRaceId={selectedBallotRaceId}
+                onBallotRaceChange={handleBallotRaceChange}
               />
               <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0, position: "relative", borderRadius: "var(--fs-radius-md)", border: "1px solid var(--fs-border)", background: "var(--fs-bone-200)" }}>
@@ -2205,16 +2900,17 @@ import "./race-detail.css";
                       dots={dots}
                       boundary={boundary}
                       metric={metric}
-                      threshold={client.threshold}
+                      threshold={displayThreshold}
                       level={level}
-                      fitKey={`${race ? client.id : "loading"}:${level}:${districtType}:${metric}:${priorElectionId}:${priorMetricId}:${schoolFilters.tier}:${schoolFilters.showCharter}`}
+                      fitKey={`${race ? client.id : "loading"}:${level}:${districtType}:${metric}:${priorElectionId}:${priorMetricId}:${selectedContestKey}:${schoolFilters.tier}:${schoolFilters.showCharter}:${isUnopposed}`}
                       overlays={overlays}
                       schoolFilters={schoolFilters}
                       priorCtx={metric === "priorElections" ? priorCtx : null}
                       settings={settings}
                       onSelect={handleSelect}
+                      isUnopposed={isUnopposed}
                     />
-                    <Legend metric={metric} threshold={client.threshold} priorCtx={metric === "priorElections" ? priorCtx : null} settings={settings} />
+                    <Legend metric={metric} threshold={displayThreshold} priorCtx={metric === "priorElections" ? priorCtx : null} settings={settings} isUnopposed={isUnopposed && metric === "results"} />
                     {loadError && (
                       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(248,247,241,0.9)", zIndex: 6, fontSize: 13, color: "var(--fs-danger)" }}>
                         Failed to load jurisdiction boundary: {loadError}
@@ -2223,7 +2919,7 @@ import "./race-detail.css";
                   </div>
                   {!panelOpen && (
                     <InsightIconBar
-                      tabs={SIDEBAR_TABS.filter(t => !t.requiresSelection || selected)}
+                      tabs={sidebarTabs}
                       open={panelOpen}
                       activeTab={sidebarTab}
                       onIconClick={(tabId) => {
@@ -2238,16 +2934,22 @@ import "./race-detail.css";
                     onOpenChange={setPanelOpen}
                     activeTab={sidebarTab}
                     onTabChange={setSidebarTab}
-                    tabs={SIDEBAR_TABS.filter(t => !t.requiresSelection || selected)}
+                    tabs={sidebarTabs}
                     onIconClick={setSidebarTab}
                     selected={selected}
                     onClearSelection={() => setSelected(null)}
                     client={client}
                     stats={stats}
                     polls={polls}
-                    threshold={client.threshold}
+                    threshold={displayThreshold}
                     priorCtx={metric === "priorElections" ? priorCtx : null}
                     settings={settings}
+                    live={!!liveResults}
+                    accurateOnly={accurateOnly}
+                    liveResults={liveResults}
+                    ballotConfig={ballotConfig}
+                    selectedBallotRace={selectedBallotRace}
+                    isUnopposed={isUnopposed}
                   />
                 )}
               </div>
@@ -2261,6 +2963,12 @@ import "./race-detail.css";
             setSetting={setSetting}
             setColor={setColor}
             resetSettings={resetSettings}
+          />
+
+          <ElectionCollectorPanel
+            open={collectorOpen}
+            onClose={() => setCollectorOpen(false)}
+            onCollectorChange={() => setCollectorTick((t) => t + 1)}
           />
 
           <footer className="app-footer">

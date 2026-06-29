@@ -1,6 +1,21 @@
 import { randomUUID } from "crypto";
 import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
 import {
+  getElectionLiveStatus,
+  listElectionContests,
+  getElectionLiveResults,
+} from "./election-live.js";
+import {
+  getCollectorStatus,
+  getCollectorConfig,
+  updateCollectorConfig,
+  startCollector,
+  stopCollector,
+  runCollectorOnce,
+  discoverCollectorEids,
+  testCollector,
+} from "./election-collector-service.js";
+import {
   comparePassword,
   hashPassword,
   requireAuth,
@@ -391,6 +406,70 @@ export function registerRoutes(app, db) {
       ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
     }));
     res.json({ races });
+  });
+
+  app.get("/api/election/live/status", auth, requireRole("staff", "admin"), (_req, res) => {
+    res.json(getElectionLiveStatus());
+  });
+
+  app.get("/api/election/live/contests", auth, requireRole("staff", "admin"), (req, res) => {
+    const patterns = req.query.patterns
+      ? String(req.query.patterns).split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    res.json({ contests: listElectionContests(patterns) });
+  });
+
+  app.get("/api/election/live/results", auth, requireRole("staff", "admin"), (req, res) => {
+    const { contestKey, contestName } = req.query;
+    res.json(getElectionLiveResults({ contestKey, contestName }));
+  });
+
+  app.get("/api/election/collector/status", auth, requireRole("staff", "admin"), (_req, res) => {
+    res.json(getCollectorStatus());
+  });
+
+  app.get("/api/election/collector/config", auth, requireRole("staff", "admin"), (_req, res) => {
+    res.json(getCollectorConfig());
+  });
+
+  app.put("/api/election/collector/config", auth, requireRole("staff", "admin"), (req, res) => {
+    const config = updateCollectorConfig(req.body || {});
+    res.json({ config, status: getCollectorStatus() });
+  });
+
+  app.post("/api/election/collector/start", auth, requireRole("staff", "admin"), (req, res) => {
+    res.json(startCollector(req.body || {}));
+  });
+
+  app.post("/api/election/collector/stop", auth, requireRole("staff", "admin"), (_req, res) => {
+    res.json(stopCollector());
+  });
+
+  app.post("/api/election/collector/once", auth, requireRole("staff", "admin"), async (req, res) => {
+    try {
+      const result = await runCollectorOnce(req.body || {});
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/election/collector/discover", auth, requireRole("staff", "admin"), async (req, res) => {
+    try {
+      const result = await discoverCollectorEids(req.body || {});
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/election/collector/test", auth, requireRole("staff", "admin"), async (req, res) => {
+    try {
+      const result = await testCollector(req.body || {});
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ---------- Voter ----------

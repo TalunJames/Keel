@@ -1,0 +1,276 @@
+{
+  "id": "2026-co-primary",
+  "label": "2026 Colorado Primary",
+  "date": "Jun 30, 2026",
+  "pollsClose": "7:00 PM MT",
+  "source": "Colorado Secretary of State · June 29, 2026 candidate list",
+  "footprint": "148 precincts · School District 11 map · HD 14–18, 20, 22 · SD 9–12",
+  "defaultRaceId": "hd16-r",
+  "trackedCandidates": [
+  {
+    "name": "Jill Haffley",
+    "raceId": "hd16-r",
+    "party": "Republican",
+    "note": "D11 School Board VP · open HD-16 seat"
+  }
+  ],
+  "enrPatterns": [
+    "Governor",
+    "United States Senator",
+    "Representative to the 116th Congress District 5",
+    "Congress District 5",
+    "State Representative District",
+    "State Senator District",
+    "County Commissioner",
+    "Attorney General",
+    "Secretary of State",
+    "State Treasurer",
+    "Regent",
+    "State Board of Education"
+  ],
+  "groups": [
+    {
+      "id": "statewide",
+      "label": "Statewide",
+      "races": [
+        {
+          "id": "gov-r",
+          "label": "Governor · Republican",
+          "enrMatch": ["Governor", "Republican"],
+          "candidates": [
+            { "name": "Barb Kirkmeyer", "party": "Republican" },
+            { "name": "Scott Bottoms", "party": "Republican" },
+            { "name": "Victor Marx", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "gov-d",
+          "label": "Governor · Democratic",
+          "enrMatch": ["Governor", "Democratic"],
+          "candidates": [
+            { "name": "Phil Weiser", "party": "Democratic" },
+            { "name": "Michael Bennet", "party": "Democratic" }
+          ]
+        },
+        {
+          "id": "ussenate-r",
+          "label": "U.S. Senate · Republican",
+          "enrMatch": ["United States Senator", "Republican"],
+          "candidates": [{ "name": "Mark Baisley", "party": "Republican" }]
+        },
+        {
+          "id": "ussenate-d",
+          "label": "U.S. Senate · Democratic",
+          "enrMatch": ["United States Senator", "Democratic"],
+          "candidates": [
+            { "name": "John Hickenlooper", "party": "Democratic" },
+            { "name": "Julie Gonzales", "party": "Democratic" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "federal",
+      "label": "Federal · CD-5",
+      "races": [
+        {
+          "id": "cd5-d",
+          "label": "U.S. House CD-5 · Democratic",
+          "enrMatch": ["Congress District 5", "Democratic"],
+          "candidates": [
+            { "name": "Jessica Killin", "party": "Democratic" },
+            { "name": "Joe Reagan", "party": "Democratic" }
+          ]
+        },
+        {
+          "id": "cd5-r",
+          "label": "U.S. House CD-5 · Republican",
+          "enrMatch": ["Congress District 5", "Republican"],
+          "candidates": [{ "name": "Jeff Crank", "party": "Republican" }]
+        }
+      ]
+    },
+    {
+      "id": "senate",
+      "label": "State Senate · D11 footprint",
+      "races": [
+        {
+          "id": "sd9-r",
+          "label": "SD-9 · Republican",
+          "enrMatch": ["Senator District 9", "Republican"],
+          "d11Precincts": 18,
+          "candidates": [
+            { "name": "Lynda Zamora Wilson", "party": "Republican", "incumbent": true },
+            { "name": "Terri Carver", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "sd9-d",
+          "label": "SD-9 · Democratic",
+          "enrMatch": ["Senator District 9", "Democratic"],
+          "d11Precincts": 18,
+          "candidates": [{ "name": "William Delano Moses III", "party": "Democratic" }]
+        },
+        {
+          "id": "sd11-r",
+          "label": "SD-11 · Republican",
+          "enrMatch": ["Senator District 11", "Republican"],
+          "d11Precincts": 42,
+          "candidates": [{ "name": "Levon Stilson", "party": "Republican" }]
+        },
+        {
+          "id": "sd11-d",
+          "label": "SD-11 · Democratic",
+          "enrMatch": ["Senator District 11", "Democratic"],
+          "d11Precincts": 42,
+          "candidates": [{ "name": "Tony Exum Sr", "party": "Democratic" }]
+        }
+      ]
+    },
+    {
+      "id": "house",
+      "label": "State House · D11 footprint",
+      "races": [
+        {
+          "id": "hd16-r",
+          "label": "HD-16 · Republican",
+          "enrMatch": ["Representative District 16", "Republican"],
+          "d11Precincts": 43,
+          "candidates": [
+            { "name": "Jill Haffley", "party": "Republican", "tracked": true },
+            { "name": "Jamie Koch", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "hd16-d",
+          "label": "HD-16 · Democratic",
+          "enrMatch": ["Representative District 16", "Democratic"],
+          "d11Precincts": 43,
+          "candidates": [{ "name": "Steph Vigil", "party": "Democratic" }]
+        },
+        {
+          "id": "hd14-r",
+          "label": "HD-14 · Republican",
+          "enrMatch": ["Representative District 14", "Republican"],
+          "d11Precincts": 12,
+          "candidates": [
+            { "name": "Ava Flanell", "party": "Republican", "incumbent": true },
+            { "name": "Troy Vanderhule", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "hd14-d",
+          "label": "HD-14 · Democratic",
+          "enrMatch": ["Representative District 14", "Democratic"],
+          "d11Precincts": 12,
+          "candidates": [{ "name": "Sarah Emery", "party": "Democratic" }]
+        },
+        {
+          "id": "hd21-r",
+          "label": "HD-21 · Republican",
+          "enrMatch": ["Representative District 21", "Republican"],
+          "candidates": [
+            { "name": "Brenda Miller", "party": "Republican" },
+            { "name": "Alexander M. Africa", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "hd21-d",
+          "label": "HD-21 · Democratic",
+          "enrMatch": ["Representative District 21", "Democratic"],
+          "candidates": [{ "name": "Michelle Tweed", "party": "Democratic" }]
+        },
+        {
+          "id": "hd15-r",
+          "label": "HD-15 · Republican",
+          "enrMatch": ["Representative District 15", "Republican"],
+          "d11Precincts": 12,
+          "candidates": [{ "name": "Pricella Tiegen", "party": "Republican" }]
+        },
+        {
+          "id": "hd15-d",
+          "label": "HD-15 · Democratic",
+          "enrMatch": ["Representative District 15", "Democratic"],
+          "d11Precincts": 12,
+          "candidates": [{ "name": "Jeff K. Livingston", "party": "Democratic" }]
+        },
+        {
+          "id": "hd17-r",
+          "label": "HD-17 · Republican",
+          "enrMatch": ["Representative District 17", "Republican"],
+          "d11Precincts": 15,
+          "candidates": [{ "name": "Laura Martin", "party": "Republican" }]
+        },
+        {
+          "id": "hd17-d",
+          "label": "HD-17 · Democratic",
+          "enrMatch": ["Representative District 17", "Democratic"],
+          "d11Precincts": 15,
+          "candidates": [
+            { "name": "Chauncy Johnson", "party": "Democratic" },
+            { "name": "Regina English", "party": "Democratic" }
+          ]
+        },
+        {
+          "id": "hd18-r",
+          "label": "HD-18 · Republican",
+          "enrMatch": ["Representative District 18", "Republican"],
+          "d11Precincts": 31,
+          "candidates": [{ "name": "Adriana Cuva", "party": "Republican" }]
+        },
+        {
+          "id": "hd18-d",
+          "label": "HD-18 · Democratic",
+          "enrMatch": ["Representative District 18", "Democratic"],
+          "d11Precincts": 31,
+          "candidates": [{ "name": "Amy T Paschal", "party": "Democratic" }]
+        },
+        {
+          "id": "hd22-r",
+          "label": "HD-22 · Republican",
+          "enrMatch": ["Representative District 22", "Republican"],
+          "d11Precincts": 33,
+          "candidates": [{ "name": "Ken deGraaf", "party": "Republican" }]
+        },
+        {
+          "id": "hd22-d",
+          "label": "HD-22 · Democratic",
+          "enrMatch": ["Representative District 22", "Democratic"],
+          "d11Precincts": 33,
+          "candidates": [{ "name": "Michael Pierson", "party": "Democratic" }]
+        },
+        {
+          "id": "hd20-r",
+          "label": "HD-20 · Republican",
+          "enrMatch": ["Representative District 20", "Republican"],
+          "d11Precincts": 2,
+          "candidates": [{ "name": "Jarvis Caldwell", "party": "Republican" }]
+        }
+      ]
+    },
+    {
+      "id": "county",
+      "label": "El Paso County",
+      "races": [
+        {
+          "id": "comm-d1-r",
+          "label": "County Commissioner · D1 · Republican",
+          "enrMatch": ["Commissioner", "District 1", "Republican"],
+          "candidates": [
+            { "name": "Lindsay Moore", "party": "Republican" },
+            { "name": "Ryan Graham", "party": "Republican" }
+          ]
+        },
+        {
+          "id": "comm-d5-r",
+          "label": "County Commissioner · D5 · Republican",
+          "enrMatch": ["Commissioner", "District 5", "Republican"],
+          "candidates": [
+            { "name": "Lauren Nelson", "party": "Republican", "incumbent": true },
+            { "name": "Vickie Tonkins", "party": "Republican" }
+          ]
+        }
+      ]
+    }
+  ]
+}
