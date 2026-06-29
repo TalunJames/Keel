@@ -115,9 +115,24 @@ export const teamApi = {
 };
 
 export const modulesApi = {
-  get: () => api("/modules"),
+  get: (clientId) => {
+    const q = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+    return api("/modules" + q);
+  },
   set: (role, modules) =>
     api("/modules/" + role, { method: "PUT", body: JSON.stringify({ modules }) }),
+};
+
+export const accessApi = {
+  userOverrides: (userId, clientId) => {
+    const q = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+    return api(`/admin/users/${userId}/access${q}`);
+  },
+  setUserOverrides: (userId, clientId, modules) =>
+    api(`/admin/users/${userId}/access`, {
+      method: "PUT",
+      body: JSON.stringify({ clientId, modules }),
+    }),
 };
 
 export const badgesApi = {

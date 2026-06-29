@@ -5,7 +5,7 @@ import { Loading } from "../components/Loading.jsx";
 
 const ROLE_OPTIONS = [
   { value: "staff", label: "Staff" },
-  { value: "admin", label: "Admin" },
+  { value: "admin", label: "Admin / Partner" },
   { value: "client", label: "Client" },
 ];
 
@@ -14,7 +14,7 @@ const EMPTY_FORM = { email: "", password: "", name: "", team: "", role: "staff",
 function roleTag(u) {
   if (u.systemAdmin) return <Tag tone="gold">System admin</Tag>;
   const tones = { admin: "gold", client: "outline", staff: "navy" };
-  const labels = { admin: "Admin", client: "Client", staff: "Staff" };
+  const labels = { admin: "Admin / Partner", client: "Client", staff: "Staff" };
   return <Tag tone={tones[u.role] || "navy"}>{labels[u.role] || u.role}</Tag>;
 }
 

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { authApi, clientsApi, modulesApi, badgesApi, api, withClient, setupApi } from "./lib/api.js";
 import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
+import { computeEffectiveModules, visibleModuleList, canAccessModule } from "./lib/access.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
@@ -39,12 +40,25 @@ function ClientLockOut() {
   );
 }
 
+function ModuleLockOut({ clientName }) {
+  return (
+    <div>
+      <PageHead eyebrow="Restricted" title="Not enabled for this client" sub={clientName ? `${clientName} doesn't include this workspace tab.` : "This tab isn't enabled for the selected client."} />
+      <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 16, maxWidth: 480 }}>
+        <Icon name="lock" size={20} color="var(--fs-navy)" />
+        <div className="mut" style={{ fontSize: 13 }}>Switch clients or ask an admin if you need access here.</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [setup, setSetup] = useState(null);
   const [booting, setBooting] = useState(true);
   const [clients, setClients] = useState([]);
-  const [modules, setModules] = useState(DEFAULT_MODULES_FALLBACK.staff);
+  const [roleModules, setRoleModules] = useState(DEFAULT_MODULES_FALLBACK.staff);
+  const [userOverrides, setUserOverrides] = useState({});
   const [badges, setBadges] = useState({});
   const [announcements, setAnnouncements] = useState([]);
   const [theme, setTheme] = usePref("theme", "light");
@@ -77,8 +91,48 @@ export default function App() {
       setClients(list);
       if (user.role === "client" && list[0]) setClientId(list[0].id);
     });
-    modulesApi.get().then((r) => setModules(r.modules || DEFAULT_MODULES_FALLBACK[user.role]));
+    modulesApi.get(clientId).then((r) => {
+      setRoleModules(r.modules || DEFAULT_MODULES_FALLBACK[user.role]);
+      setUserOverrides(r.overrides || {});
+    }).catch(() => {
+      setRoleModules(DEFAULT_MODULES_FALLBACK[user.role]);
+      setUserOverrides({});
+    });
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    modulesApi.get(clientId).then((r) => {
+      if (r.modules) setRoleModules(r.modules);
+      if (r.overrides) setUserOverrides(r.overrides);
+    }).catch(() => {});
+  }, [user, clientId]);
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === clientId) || clients[0] || { id: "all", name: "All Clients", initials: "ALL", color: "var(--fs-navy)" },
+    [clients, clientId]
+  );
+
+  const effectiveModules = useMemo(() => computeEffectiveModules({
+    role: user?.role,
+    roleModules,
+    client: selectedClient,
+    userOverrides: userOverrides[selectedClient?.id] || null,
+  }), [user?.role, roleModules, selectedClient, userOverrides]);
+
+  const visibleModules = useMemo(
+    () => (user ? visibleModuleList(effectiveModules, user.role) : []),
+    [effectiveModules, user]
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    const workspaceSections = ALL_MODULES.map((m) => m.id);
+    if (!workspaceSections.includes(section)) return;
+    if (!canAccessModule(section, effectiveModules, user.role)) {
+      setSection("home");
+    }
+  }, [clientId, effectiveModules, section, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -109,18 +163,19 @@ export default function App() {
 
   if (!user) return <LoginView onLogin={handleLogin} />;
 
-  const visibleModules = ALL_MODULES.filter(
-    (m) => (modules[m.id] || m.mandatory) && !(m.staffOnly && user.role === "client")
-  );
-
-  const selectedClient = clients.find((c) => c.id === clientId) || clients[0] || { id: "all", name: "All Clients", initials: "ALL", color: "var(--fs-navy)" };
-
   const viewProps = {
     user,
     role: user.role,
     clientId: selectedClient?.id || "all",
     client: selectedClient,
     onNavigate: setSection,
+  };
+
+  const guardModule = (moduleId, content) => {
+    if (!canAccessModule(moduleId, effectiveModules, user.role)) {
+      return <ModuleLockOut clientName={selectedClient?.id !== "all" ? selectedClient?.name : null} />;
+    }
+    return content;
   };
 
   const titles = {
@@ -189,19 +244,19 @@ export default function App() {
           />
         )}
         <div className={"content" + (section === "election" ? " no-pad" : "") + (section !== "election" ? " chart-bg" : "")}>
-          {section === "home" && <HomeView {...viewProps} />}
-          {section === "calendar" && <CalendarView {...viewProps} />}
-          {section === "design" && <DesignView {...viewProps} />}
-          {section === "proposals" && (user.role === "client" ? <ClientLockOut /> : <ProposalsView {...viewProps} />)}
-          {section === "media" && (user.role === "client" ? <ClientLockOut /> : <MediaView {...viewProps} />)}
-          {section === "election" && <ElectionView {...viewProps} />}
-          {section === "voter" && (user.role === "client" ? <ClientLockOut /> : <VoterView {...viewProps} />)}
-          {section === "polling" && <PollingView {...viewProps} />}
-          {section === "stakeholders" && (user.role === "client" ? <ClientLockOut /> : <StakeholdersView {...viewProps} />)}
-          {section === "resources" && <ResourcesView {...viewProps} />}
-          {section === "onboarding" && (user.role === "client" ? <ClientLockOut /> : <OnboardingView {...viewProps} />)}
+          {section === "home" && guardModule("home", <HomeView {...viewProps} />)}
+          {section === "calendar" && guardModule("calendar", <CalendarView {...viewProps} />)}
+          {section === "design" && guardModule("design", <DesignView {...viewProps} />)}
+          {section === "proposals" && guardModule("proposals", user.role === "client" ? <ClientLockOut /> : <ProposalsView {...viewProps} />)}
+          {section === "media" && guardModule("media", user.role === "client" ? <ClientLockOut /> : <MediaView {...viewProps} />)}
+          {section === "election" && guardModule("election", <ElectionView {...viewProps} />)}
+          {section === "voter" && guardModule("voter", user.role === "client" ? <ClientLockOut /> : <VoterView {...viewProps} />)}
+          {section === "polling" && guardModule("polling", <PollingView {...viewProps} />)}
+          {section === "stakeholders" && guardModule("stakeholders", user.role === "client" ? <ClientLockOut /> : <StakeholdersView {...viewProps} />)}
+          {section === "resources" && guardModule("resources", <ResourcesView {...viewProps} />)}
+          {section === "onboarding" && guardModule("onboarding", user.role === "client" ? <ClientLockOut /> : <OnboardingView {...viewProps} />)}
           {section === "admin" && (user.role === "admin" ? (
-            <AdminView user={user} modules={modules} onChangeModules={setModules} allRoles={DEFAULT_MODULES_FALLBACK} />
+            <AdminView user={user} modules={roleModules} onChangeModules={setRoleModules} allRoles={DEFAULT_MODULES_FALLBACK} />
           ) : <ClientLockOut />)}
           {section === "account" && <AccountView user={user} onUserUpdate={setUser} />}
           {section === "new-client" && (user.role === "admin" ? (

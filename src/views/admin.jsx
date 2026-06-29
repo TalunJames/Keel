@@ -3,9 +3,8 @@ import { PageHead, Icon } from "../components/ui.jsx";
 import { api, loginAnnouncementApi } from "../lib/api.js";
 import { useApi } from "../lib/useApi.js";
 import { Loading } from "../components/Loading.jsx";
-import { ALL_MODULES } from "../lib/modules.js";
-import { modulesApi } from "../lib/api.js";
 import { AdminUsersTab } from "./admin-users.jsx";
+import { AdminModulesTab } from "./admin-modules.jsx";
 
 export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const isSystemAdmin = !!user?.systemAdmin;
@@ -70,13 +69,6 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
     setAnnounceForm({ title: "", body: "", tag: "" });
     reloadAudit();
     flash("Announcement posted");
-  };
-
-  const [roleModules, setRoleModules] = useState(allRoles || {});
-
-  const saveModules = async (role) => {
-    await modulesApi.set(role, roleModules[role] || allRoles[role]);
-    flash("Module settings saved for " + role);
   };
 
   return (
@@ -206,28 +198,7 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
       )}
 
       {tab === "modules" && (
-        <div className="card card-pad">
-          <h3 style={{ margin: "0 0 12px", color: "var(--fs-navy)" }}>Module access by role</h3>
-          {Object.keys(allRoles || {}).map((role) => (
-            <div key={role} style={{ marginBottom: 16 }}>
-              <div className="lbl">{role}</div>
-              <div className="col" style={{ gap: 6 }}>
-                {ALL_MODULES.map((m) => (
-                  <label key={m.id} className="row" style={{ fontSize: 13 }}>
-                    <input type="checkbox" checked={!!(roleModules[role] || {})[m.id] || m.mandatory}
-                      disabled={m.mandatory}
-                      onChange={(e) => setRoleModules((prev) => ({
-                        ...prev,
-                        [role]: { ...(prev[role] || allRoles[role]), [m.id]: e.target.checked },
-                      }))} />
-                    {m.label}
-                  </label>
-                ))}
-              </div>
-              <button type="button" className="btn secondary sm" style={{ marginTop: 8 }} onClick={() => saveModules(role)}>Save {role}</button>
-            </div>
-          ))}
-        </div>
+        <AdminModulesTab allRoles={allRoles} onFlash={flash} />
       )}
 
       {tab === "audit" && (
