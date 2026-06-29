@@ -5,6 +5,7 @@ import { useApi } from "../lib/useApi.js";
 import { Loading } from "../components/Loading.jsx";
 import { ALL_MODULES } from "../lib/modules.js";
 import { modulesApi } from "../lib/api.js";
+import { AdminUsersTab } from "./admin-users.jsx";
 
 export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const isSystemAdmin = !!user?.systemAdmin;
@@ -13,7 +14,6 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const { data: clientsData, loading: clientsLoading, reload: reloadClients } = useApi("/admin/clients");
   const { data: auditData, reload: reloadAudit } = useApi("/admin/audit");
 
-  const [userForm, setUserForm] = useState({ email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false });
   const [clientForm, setClientForm] = useState({ id: "", name: "", tag: "", initials: "", account: "", type: "" });
   const [voterForm, setVoterForm] = useState({ clientId: "", source: "", recordCount: "" });
   const [announceForm, setAnnounceForm] = useState({ title: "", body: "", tag: "" });
@@ -28,22 +28,6 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   }, [isSystemAdmin]);
 
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 3000); };
-
-  const createUser = async (e) => {
-    e.preventDefault();
-    await api("/admin/users", { method: "POST", body: JSON.stringify(userForm) });
-    setUserForm({ email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false });
-    reloadUsers();
-    reloadAudit();
-    flash("User created");
-  };
-
-  const toggleSystemAdmin = async (id, next) => {
-    await api("/admin/users/" + id, { method: "PATCH", body: JSON.stringify({ systemAdmin: next }) });
-    reloadUsers();
-    reloadAudit();
-    flash(next ? "System admin granted" : "System admin revoked");
-  };
 
   const saveLoginAnnouncement = async (e) => {
     e.preventDefault();
@@ -98,7 +82,16 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   return (
     <div>
       <PageHead eyebrow="Administration" title="Admin Console" sub="Users, clients, voter files, and workspace settings." />
-      {msg && <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-navy)" }}>{msg}</div>}
+      {msg && (
+        <div className="card card-pad" style={{
+          marginBottom: 16, fontSize: 13, color: "var(--fs-navy)",
+          display: "flex", alignItems: "center", gap: 8,
+          borderColor: "var(--fs-gold)", background: "var(--fs-bone-50)",
+        }}>
+          <Icon name="check" size={14} color="var(--fs-gold-700)" />
+          {msg}
+        </div>
+      )}
 
       <div className="row" style={{ gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {[
@@ -117,59 +110,15 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
       </div>
 
       {tab === "users" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-          <form className="card card-pad col" onSubmit={createUser} style={{ gap: 10 }}>
-            <h3 style={{ margin: 0, color: "var(--fs-navy)" }}>Add user</h3>
-            <input className="input" placeholder="Email" required value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
-            <input className="input" type="password" placeholder="Password" required value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} />
-            <input className="input" placeholder="Full name" required value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} />
-            <input className="input" placeholder="Team" value={userForm.team} onChange={(e) => setUserForm({ ...userForm, team: e.target.value })} />
-            <select className="input" value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
-              <option value="staff">staff</option>
-              <option value="admin">admin</option>
-              <option value="client">client</option>
-            </select>
-            {userForm.role === "client" && (
-              <input className="input" placeholder="client id" value={userForm.clientId} onChange={(e) => setUserForm({ ...userForm, clientId: e.target.value })} />
-            )}
-            {isSystemAdmin && userForm.role === "admin" && (
-              <label className="row" style={{ gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={userForm.systemAdmin}
-                  onChange={(e) => setUserForm({ ...userForm, systemAdmin: e.target.checked })} />
-                Grant system admin (can edit login screen)
-              </label>
-            )}
-            <button type="submit" className="btn primary">Create user</button>
-          </form>
-          <div className="card">
-            {usersLoading ? <Loading /> : (
-              <table className="tbl">
-                <thead><tr><th>Name</th><th>Email</th><th>Role</th>{isSystemAdmin && <th>System admin</th>}</tr></thead>
-                <tbody>
-                  {(usersData?.users || []).map((u) => (
-                    <tr key={u.id}>
-                      <td>{u.name}</td>
-                      <td className="mut">{u.email}</td>
-                      <td>{u.systemAdmin ? "system admin" : u.role}</td>
-                      {isSystemAdmin && (
-                        <td>
-                          {u.role === "admin" ? (
-                            <label className="row" style={{ gap: 6, fontSize: 12 }}>
-                              <input type="checkbox" checked={!!u.systemAdmin}
-                                disabled={u.id === user?.id}
-                                onChange={(e) => toggleSystemAdmin(u.id, e.target.checked)} />
-                              {u.id === user?.id ? "you" : (u.systemAdmin ? "yes" : "no")}
-                            </label>
-                          ) : <span className="mut">—</span>}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
+        <AdminUsersTab
+          user={user}
+          users={usersData?.users}
+          usersLoading={usersLoading}
+          clients={clientsData?.clients || []}
+          isSystemAdmin={isSystemAdmin}
+          onReload={() => { reloadUsers(); reloadAudit(); }}
+          onFlash={flash}
+        />
       )}
 
       {tab === "login" && isSystemAdmin && (

@@ -567,9 +567,12 @@ export function registerRoutes(app, db) {
   // ---------- Admin ----------
   app.get("/api/admin/users", auth, requireRole("admin"), (_req, res) => {
     const users = db.prepare(
-      `SELECT id, email, name, team, role, client_id AS clientId,
-              system_admin AS systemAdmin, title, location, created_at AS createdAt
-       FROM users ORDER BY created_at DESC`
+      `SELECT u.id, u.email, u.name, u.team, u.role, u.client_id AS clientId,
+              u.system_admin AS systemAdmin, u.title, u.location, u.created_at AS createdAt,
+              c.name AS clientName
+       FROM users u
+       LEFT JOIN clients c ON c.id = u.client_id
+       ORDER BY u.name COLLATE NOCASE`
     ).all().map((u) => ({ ...u, systemAdmin: !!u.systemAdmin }));
     res.json({ users });
   });
@@ -603,21 +606,76 @@ export function registerRoutes(app, db) {
     res.status(201).json({ id });
   });
 
-  app.patch("/api/admin/users/:id", auth, requireSystemAdmin, (req, res) => {
-    const target = db.prepare("SELECT id, role, email FROM users WHERE id = ?").get(req.params.id);
+  app.patch("/api/admin/users/:id", auth, requireRole("admin"), async (req, res) => {
+    const target = db.prepare(
+      "SELECT id, role, email, system_admin AS systemAdmin FROM users WHERE id = ?"
+    ).get(req.params.id);
     if (!target) return res.status(404).json({ error: "Not found" });
-    const { systemAdmin } = req.body || {};
+
+    const { name, team, role, clientId, password, systemAdmin } = req.body || {};
+    const updates = [];
+    const args = [];
+    const changes = [];
+
+    if (name !== undefined) {
+      const trimmed = (name || "").trim();
+      if (!trimmed) return res.status(400).json({ error: "Name cannot be empty" });
+      updates.push("name = ?");
+      args.push(trimmed);
+      changes.push("name");
+    }
+    if (team !== undefined) {
+      updates.push("team = ?");
+      args.push(team || "");
+      changes.push("team");
+    }
+    if (role !== undefined) {
+      if (!["staff", "admin", "client"].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      if (target.id === req.user.id && role !== target.role) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+      updates.push("role = ?");
+      args.push(role);
+      changes.push("role");
+      if (role !== "admin") updates.push("system_admin = 0");
+    }
+    if (clientId !== undefined) {
+      updates.push("client_id = ?");
+      args.push(clientId || null);
+      changes.push("client");
+    }
+    if (password) {
+      updates.push("password_hash = ?");
+      args.push(await hashPassword(password));
+      changes.push("password");
+    }
     if (systemAdmin !== undefined) {
-      if (systemAdmin && target.role !== "admin") {
+      if (!req.user.systemAdmin) {
+        return res.status(403).json({ error: "Only a system admin can change system admin status" });
+      }
+      const effectiveRole = role !== undefined ? role : target.role;
+      if (systemAdmin && effectiveRole !== "admin") {
         return res.status(400).json({ error: "User must have admin role first" });
       }
-      db.prepare("UPDATE users SET system_admin = ? WHERE id = ?").run(systemAdmin ? 1 : 0, target.id);
-      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
-        req.user.email,
-        `${systemAdmin ? "Granted" : "Revoked"} system admin for ${target.email}`,
-        "Users"
-      );
+      if (target.id === req.user.id && !systemAdmin) {
+        return res.status(400).json({ error: "Cannot revoke your own system admin" });
+      }
+      updates.push("system_admin = ?");
+      args.push(systemAdmin ? 1 : 0);
+      changes.push("system admin");
     }
+
+    if (!updates.length) return res.status(400).json({ error: "No changes provided" });
+
+    args.push(target.id);
+    db.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`).run(...args);
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Updated user ${target.email} (${changes.join(", ")})`,
+      "Users"
+    );
     res.json({ ok: true });
   });
 

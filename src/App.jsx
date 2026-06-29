@@ -141,17 +141,19 @@ export default function App() {
         theme={theme}
         onToggleTheme={() => setTheme(theme === "light" ? "dark" : "light")}
       />
-      <main className="main" data-screen-label={"Keel · " + (titles[section] || "Home")}>
-        <TopBar
-          section={titles[section] || "Home"}
-          crumbs={"Keel" + (selectedClient?.id && selectedClient.id !== "all" ? " · " + selectedClient.name : "")}
-          role={user.role}
-          clients={clients}
-          selectedClient={selectedClient}
-          onSelectClient={setClientId}
-          onNew={() => setSection(user.role === "client" ? "home" : "design")}
-          announcements={announcements}
-        />
+      <main className={"main" + (section === "election" ? " election-immersive" : "")} data-screen-label={"Keel · " + (titles[section] || "Home")}>
+        {section !== "election" && (
+          <TopBar
+            section={titles[section] || "Home"}
+            crumbs={"Keel" + (selectedClient?.id && selectedClient.id !== "all" ? " · " + selectedClient.name : "")}
+            role={user.role}
+            clients={clients}
+            selectedClient={selectedClient}
+            onSelectClient={setClientId}
+            onNew={() => setSection(user.role === "client" ? "home" : "design")}
+            announcements={announcements}
+          />
+        )}
         <div className={"content" + (section === "election" ? " no-pad" : "") + (section !== "election" ? " chart-bg" : "")}>
           {section === "home" && <HomeView {...viewProps} />}
           {section === "calendar" && <CalendarView {...viewProps} />}
