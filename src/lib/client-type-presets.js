@@ -19,7 +19,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Campaign Services",
     label: "Campaign Services",
-    icon: "flag",
+    icon: "ballot-box",
     desc: "Full campaign stack — creative, data, election night, and voter tools.",
     staffModules: mods(["home", "calendar", "design", "proposals", "media", "election", "voter", "polling", "stakeholders", "resources", "onboarding"]),
     clientModules: clientMods(["home", "calendar", "design", "polling", "stakeholders", "resources"]),
@@ -28,7 +28,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Community Outreach",
     label: "Community Outreach",
-    icon: "users",
+    icon: "users-group",
     desc: "Grassroots organizing, events, and stakeholder engagement.",
     staffModules: mods(["home", "calendar", "design", "proposals", "media", "stakeholders", "resources", "onboarding"]),
     clientModules: clientMods(["home", "calendar", "design", "stakeholders", "resources"]),
@@ -37,7 +37,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Crisis Communications",
     label: "Crisis Communications",
-    icon: "alert",
+    icon: "shield-alert",
     desc: "Rapid-response media monitoring, messaging, and approvals.",
     staffModules: mods(["home", "calendar", "design", "proposals", "media", "stakeholders", "resources"]),
     clientModules: clientMods(["home", "calendar", "design", "resources"]),
@@ -46,7 +46,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Public Affairs",
     label: "Public Affairs",
-    icon: "lighthouse",
+    icon: "landmark",
     desc: "Policy advocacy, polling, and stakeholder tracking.",
     staffModules: mods(["home", "calendar", "design", "proposals", "media", "polling", "stakeholders", "resources", "onboarding"]),
     clientModules: clientMods(["home", "calendar", "design", "polling", "stakeholders", "resources"]),
@@ -55,7 +55,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Financial Strategy",
     label: "Financial Strategy",
-    icon: "compass",
+    icon: "chart-bar",
     desc: "Scope docs, memos, and resource delivery — light on creative.",
     staffModules: mods(["home", "calendar", "proposals", "resources", "onboarding"]),
     clientModules: clientMods(["home", "calendar", "resources"]),
@@ -64,7 +64,7 @@ export const CLIENT_TYPE_PRESETS = [
   {
     id: "Custom",
     label: "Custom",
-    icon: "layout",
+    icon: "sliders",
     desc: "Pick exactly which tabs staff and clients see.",
     staffModules: mods(["home", "calendar", "design", "proposals", "resources"]),
     clientModules: clientMods(["home", "calendar", "resources"]),

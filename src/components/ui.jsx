@@ -60,6 +60,12 @@ const Icon = ({ name, size = 18, stroke = 1.75, style = {}, color = "currentColo
     case "rotate-ccw": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>;
     case "key":      return <svg style={s} viewBox="0 0 24 24" {...c}><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L21 2"/><path d="M18 5l3 3"/><path d="M15 8l3 3"/></svg>;
     case "shield":   return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z"/></svg>;
+    case "shield-alert": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z"/><path d="M12 9v4"/><circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none"/></svg>;
+    case "ballot-box": return <svg style={s} viewBox="0 0 24 24" {...c}><rect x="5" y="9" width="14" height="12" rx="1.5"/><path d="M8 9V7a4 4 0 0 1 8 0v2"/><path d="M9 13h6M9 16h4"/></svg>;
+    case "users-group": return <svg style={s} viewBox="0 0 24 24" {...c}><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><circle cx="5" cy="10" r="2"/><path d="M2 20c0-3 2.5-5 7-5s7 2 7 5"/><path d="M14 16c2.5 0 4.5 1 5.5 3"/><path d="M1 18c0-2 1.5-3.5 4-4"/></svg>;
+    case "landmark": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M3 21h18"/><path d="M12 3L5 10h14L12 3z"/><path d="M6 21V10h12v11"/><path d="M9 21v-5h2v5M13 21v-5h2v5"/><path d="M9 13h2M13 13h2"/></svg>;
+    case "chart-bar": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-7"/><path d="M22 20V8"/><path d="M3 20h19"/></svg>;
+    case "sliders":  return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>;
     case "lighthouse": return <svg style={s} viewBox="0 0 24 24" {...c}><path d="M12 3l-1.5 3h3L12 3z"/><path d="M11 6h2v3h-2z"/><path d="M9 9h6l-1 12h-4L9 9z"/><path d="M5 12l4-1M19 12l-4-1M6 15l3 0M18 15l-3 0"/></svg>;
     default: return null;
   }

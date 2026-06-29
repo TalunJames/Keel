@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Icon, Eyebrow, Tag } from "../components/ui.jsx";
 import { clientsApi, teamApi } from "../lib/api.js";
-
-const CLIENT_TYPES = [
-  "Campaign Services",
-  "Community Outreach",
-  "Crisis Communications",
-  "Public Affairs",
-  "Financial Strategy",
-];
+import {
+  CLIENT_TYPE_PRESETS,
+  STAFF_MODULE_OPTIONS,
+  CLIENT_MODULE_OPTIONS,
+  modulesForType,
+  getPreset,
+  enabledModuleLabels,
+} from "../lib/client-type-presets.js";
 
 const BRAND_COLORS = [
   "var(--fs-navy)", "var(--fs-navy-600)", "var(--fs-gold-700)",
@@ -23,15 +23,20 @@ const STAFF_ROLES = [
 ];
 
 const STEPS = [
+  { id: "type", label: "Service line" },
   { id: "identity", label: "Identity & brand" },
   { id: "team", label: "Client staff" },
   { id: "contacts", label: "Portal contacts" },
   { id: "review", label: "Review & create" },
 ];
 
+const defaultModules = modulesForType("Campaign Services");
+
 const EMPTY_DRAFT = {
   name: "", tag: "", initials: "", color: "var(--fs-navy-600)",
   type: "Campaign Services", desc: "", logo: null,
+  staffModules: defaultModules.staffModules,
+  clientModules: defaultModules.clientModules,
   team: { lead: "", account: "", designer: "", data: "", others: [] },
   contacts: [{ name: "", email: "", role: "Principal", views: "Full client view" }],
 };
@@ -60,11 +65,21 @@ export function NewClientWizard({ onCancel, onCreated }) {
 
   const upd = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const updTeam = (patch) => setDraft((d) => ({ ...d, team: { ...d.team, ...patch } }));
+  const updMod = (which, key, on) => setDraft((d) => ({ ...d, [which]: { ...d[which], [key]: on } }));
+
+  const selectType = (typeId) => {
+    const { staffModules, clientModules } = modulesForType(typeId);
+    upd({ type: typeId, staffModules, clientModules });
+  };
+
+  const isCustom = draft.type === "Custom";
+  const preset = getPreset(draft.type);
 
   const canNext = (() => {
-    if (step === 0) return draft.name.trim().length > 1 && draft.type;
-    if (step === 1) return !!draft.team.lead;
-    if (step === 2) return draft.contacts.some((c) => c.email.trim());
+    if (step === 0) return !!draft.type;
+    if (step === 1) return draft.name.trim().length > 1;
+    if (step === 2) return !!draft.team.lead;
+    if (step === 3) return draft.contacts.some((c) => c.email.trim());
     return true;
   })();
 
@@ -90,13 +105,13 @@ export function NewClientWizard({ onCancel, onCreated }) {
     setSaving(true);
     setError("");
     try {
-      const { contacts, team, desc, logo, ...core } = draft;
+      const { contacts, team, desc, logo, staffModules, clientModules, ...core } = draft;
       const result = await clientsApi.create({
         ...core,
         logo,
         account: team.account || team.lead || "",
         audience: desc || "",
-        payload: { team, contacts, desc },
+        payload: { team, contacts, desc, staffModules, clientModules },
       });
       onCreated?.(result.id);
     } catch (err) {
@@ -115,7 +130,7 @@ export function NewClientWizard({ onCancel, onCreated }) {
             Set up a new client
           </h2>
           <p className="mut" style={{ fontSize: 14, margin: 0, maxWidth: 580 }}>
-            Walk through identity, team assignments, and portal contacts — everything you need before the client goes live.
+            Choose a service line to configure Keel tabs, then walk through identity, team, and portal contacts.
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={onCancel}>
@@ -143,10 +158,19 @@ export function NewClientWizard({ onCancel, onCreated }) {
       </div>
 
       <div className="card card-pad" style={{ minHeight: 360 }}>
-        {step === 0 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} />}
-        {step === 1 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} toggleOther={toggleOther} />}
-        {step === 2 && <StepContacts draft={draft} upd={upd} />}
-        {step === 3 && <StepReview draft={draft} />}
+        {step === 0 && (
+          <StepServiceLine
+            draft={draft}
+            selectType={selectType}
+            isCustom={isCustom}
+            preset={preset}
+            updMod={updMod}
+          />
+        )}
+        {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} />}
+        {step === 2 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} toggleOther={toggleOther} />}
+        {step === 3 && <StepContacts draft={draft} upd={upd} />}
+        {step === 4 && <StepReview draft={draft} />}
       </div>
 
       {error && (
@@ -173,13 +197,127 @@ export function NewClientWizard({ onCancel, onCreated }) {
   );
 }
 
+function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
+  return (
+    <div>
+      <Eyebrow>Step 1 · Service line</Eyebrow>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>What kind of engagement is this?</h3>
+      <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
+        Your selection sets which Keel tabs are enabled for staff and the client portal. Choose Custom to configure manually.
+      </p>
+
+      <div className="type-card-grid">
+        {CLIENT_TYPE_PRESETS.map((p) => {
+          const selected = draft.type === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              className={"type-card" + (selected ? " selected" : "")}
+              onClick={() => selectType(p.id)}
+            >
+              <span className="type-card-icon">
+                <Icon name={p.icon} size={32} />
+              </span>
+              <span className="type-card-label">{p.label}</span>
+              <span className="type-card-desc">{p.desc}</span>
+              {selected && (
+                <span className="type-card-check">
+                  <Icon name="check" size={14} />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {!isCustom && preset && (
+        <div className="type-modules-preview">
+          <div className="type-modules-col">
+            <div className="lbl">Staff workspace</div>
+            <div className="type-module-tags">
+              {enabledModuleLabels(draft.staffModules, STAFF_MODULE_OPTIONS).map((label) => (
+                <Tag key={label} tone="navy">{label}</Tag>
+              ))}
+            </div>
+          </div>
+          <div className="type-modules-col">
+            <div className="lbl">Client portal</div>
+            <div className="type-module-tags">
+              {enabledModuleLabels(draft.clientModules, CLIENT_MODULE_OPTIONS).map((label) => (
+                <Tag key={label} tone="gold">{label}</Tag>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCustom && (
+        <div className="type-custom-modules">
+          <p className="mut" style={{ fontSize: 13, margin: "0 0 16px" }}>
+            Toggle which tabs each side can access. Home is always on.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            <div className="card" style={{ background: "var(--fs-bone-50)" }}>
+              <div className="card-head"><h3>Staff workspace</h3></div>
+              <div style={{ padding: "8px 16px" }}>
+                {STAFF_MODULE_OPTIONS.map((m) => (
+                  <ModuleToggle
+                    key={m.id}
+                    mod={m}
+                    on={!!draft.staffModules[m.id]}
+                    onChange={(v) => updMod("staffModules", m.id, v)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="card" style={{ background: "var(--fs-bone-50)" }}>
+              <div className="card-head"><h3>Client portal</h3></div>
+              <div style={{ padding: "8px 16px" }}>
+                {CLIENT_MODULE_OPTIONS.map((m) => (
+                  <ModuleToggle
+                    key={m.id}
+                    mod={m}
+                    on={!!draft.clientModules[m.id]}
+                    onChange={(v) => updMod("clientModules", m.id, v)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModuleToggle({ mod, on, onChange }) {
+  const active = on || mod.mandatory;
+  return (
+    <label className={"module-toggle" + (active ? " on" : "") + (mod.mandatory ? " locked" : "")}>
+      <span className="module-toggle-icon">
+        <Icon name={mod.icon} size={18} />
+      </span>
+      <span className="module-toggle-label">{mod.label}</span>
+      <input
+        type="checkbox"
+        checked={active}
+        disabled={mod.mandatory}
+        onChange={(e) => onChange(e.target.checked)}
+        className="module-toggle-input"
+      />
+      <span className="module-toggle-switch" aria-hidden="true" />
+    </label>
+  );
+}
+
 function StepIdentity({ draft, upd, onLogoPick }) {
   return (
     <div>
-      <Eyebrow>Step 1 · Identity & brand</Eyebrow>
+      <Eyebrow>Step 2 · Identity & brand</Eyebrow>
       <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Who is this client?</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
-        This name appears in the client switcher, on proposals, and across Keel.
+        {draft.type} · This name appears in the client switcher, on proposals, and across Keel.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "start" }}>
@@ -225,15 +363,6 @@ function StepIdentity({ draft, upd, onLogoPick }) {
       </div>
 
       <div className="field">
-        <label>Client type</label>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          {CLIENT_TYPES.map((t) => (
-            <button key={t} type="button" className={"btn " + (draft.type === t ? "primary" : "secondary")} style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => upd({ type: t })}>{t}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="field">
         <label>Brand color</label>
         <div className="row" style={{ gap: 8 }}>
           {BRAND_COLORS.map((c) => (
@@ -259,7 +388,7 @@ function StepTeam({ draft, updTeam, staff, toggleOther }) {
 
   return (
     <div>
-      <Eyebrow>Step 2 · Client staff</Eyebrow>
+      <Eyebrow>Step 3 · Client staff</Eyebrow>
       <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Assign your team</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         Choose who owns this account. Assigned staff see the client in their workspace switcher.
@@ -311,7 +440,7 @@ function StepContacts({ draft, upd }) {
 
   return (
     <div>
-      <Eyebrow>Step 3 · Portal contacts</Eyebrow>
+      <Eyebrow>Step 4 · Portal contacts</Eyebrow>
       <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Who gets client portal access?</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         Each contact can be invited to the client portal scoped to this account.
@@ -343,9 +472,12 @@ function StepContacts({ draft, upd }) {
 }
 
 function StepReview({ draft }) {
+  const staffLabels = enabledModuleLabels(draft.staffModules, STAFF_MODULE_OPTIONS);
+  const clientLabels = enabledModuleLabels(draft.clientModules, CLIENT_MODULE_OPTIONS);
+
   return (
     <div>
-      <Eyebrow>Step 4 · Review & create</Eyebrow>
+      <Eyebrow>Step 5 · Review & create</Eyebrow>
       <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>Ready to go live</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
         Confirm the details below. You can edit everything later from Admin Console.
@@ -373,6 +505,18 @@ function StepReview({ draft }) {
           <Row k="Designer" v={draft.team.designer || "—"} />
           <Row k="Data lead" v={draft.team.data || "—"} />
           <Row k="Others" v={draft.team.others.length ? draft.team.others.join(", ") : "—"} />
+        </ReviewBlock>
+
+        <ReviewBlock title="Staff tabs">
+          <div className="type-module-tags" style={{ marginTop: 4 }}>
+            {staffLabels.map((label) => <Tag key={label} tone="navy">{label}</Tag>)}
+          </div>
+        </ReviewBlock>
+
+        <ReviewBlock title="Client portal tabs">
+          <div className="type-module-tags" style={{ marginTop: 4 }}>
+            {clientLabels.map((label) => <Tag key={label} tone="gold">{label}</Tag>)}
+          </div>
         </ReviewBlock>
 
         <ReviewBlock title="Portal invites" style={{ gridColumn: "1 / -1" }}>
