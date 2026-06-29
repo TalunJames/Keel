@@ -63,7 +63,7 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
 
   return (
     <div>
-      <PageHead eyebrow="Administration" title="Admin Console" sub="Users, clients, voter files, and workspace settings." />
+      <PageHead title="Admin Console" sub="Users, clients, voter files, and workspace settings." />
       {msg && (
         <div className="card card-pad" style={{
           marginBottom: 16, fontSize: 13, color: "var(--fs-navy)",

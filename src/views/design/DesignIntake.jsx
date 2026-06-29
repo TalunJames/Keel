@@ -84,7 +84,6 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
   return (
     <div>
       <PageHead
-        eyebrow="Design Requests"
         title="Submit a Design Request"
         sub="Fill out the brief below. We'll route the request to the design team."
         actions={

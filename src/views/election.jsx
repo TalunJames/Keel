@@ -8,7 +8,6 @@ export function ElectionView({ role }) {
     return (
       <div>
         <PageHead
-          eyebrow="Election Night"
           title="Live results aren't released to client view."
           sub="Your strategist will share post-election analysis once results are certified. Reach out if you need an early read."
         />

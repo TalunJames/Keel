@@ -1,9 +1,11 @@
-import React from "react";
-import { PageHead, Icon } from "../components/ui.jsx";
+import React, { useMemo, useRef, useState } from "react";
+import { Icon } from "../components/ui.jsx";
 import { useApi } from "../lib/useApi.js";
+import { usePref } from "../lib/usePref.js";
 import { withClient, api } from "../lib/api.js";
 import { Loading } from "../components/Loading.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { HOME_STAT_CATALOG, DEFAULT_HOME_STATS, normalizeHomeStats } from "../lib/homeStats.js";
 
 function greeting() {
   const h = new Date().getHours();
@@ -32,9 +34,70 @@ const QUICK_LINKS = {
   ],
 };
 
+function useClickOutside(ref, onClose) {
+  React.useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [ref, onClose]);
+}
+
+function HomeStatsCustomizer({ stats, onChange, onClose }) {
+  const wrapRef = useRef(null);
+  useClickOutside(wrapRef, onClose);
+
+  const toggle = (id) => {
+    onChange(stats.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)));
+  };
+
+  const relabel = (id, label) => {
+    onChange(stats.map((s) => (s.id === id ? { ...s, label } : s)));
+  };
+
+  return (
+    <div ref={wrapRef} className="home-stats-pop" role="dialog" aria-label="Customize home stats">
+      <div className="home-stats-pop-head">Home stats</div>
+      <p className="mut" style={{ fontSize: 12, margin: "0 0 12px", lineHeight: 1.45 }}>
+        Choose which numbers appear on your home screen and rename them.
+      </p>
+      <div className="col" style={{ gap: 10 }}>
+        {stats.map((s) => (
+          <label key={s.id} className="row" style={{ gap: 10, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={s.enabled}
+              onChange={() => toggle(s.id)}
+              style={{ accentColor: "var(--fs-navy)" }}
+            />
+            <input
+              className="input"
+              value={s.label}
+              onChange={(e) => relabel(s.id, e.target.value)}
+              style={{ flex: 1, fontSize: 13, padding: "6px 10px" }}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+        <button type="button" className="btn secondary" onClick={() => onChange(DEFAULT_HOME_STATS)}>Reset</button>
+        <button type="button" className="btn primary" onClick={onClose}>Done</button>
+      </div>
+    </div>
+  );
+}
+
 export function HomeView({ user, role, onNavigate, client, clientId }) {
   const { data, loading, reload } = useApi(withClient("/home", clientId), [clientId]);
+  const [rawHomeStats, setRawHomeStats] = usePref("homeStats", DEFAULT_HOME_STATS);
+  const [customizing, setCustomizing] = useState(false);
   const links = QUICK_LINKS[role] || QUICK_LINKS.staff;
+  const isStaff = role === "staff" || role === "admin";
+
+  const homeStats = useMemo(() => normalizeHomeStats(rawHomeStats), [rawHomeStats]);
+  const enabledStats = useMemo(
+    () => homeStats.filter((s) => s.enabled),
+    [homeStats],
+  );
 
   const toggleTask = (id, done) => {
     api("/home/tasks/" + id, { method: "PATCH", body: JSON.stringify({ done: !done }) }).then(reload);
@@ -46,6 +109,10 @@ export function HomeView({ user, role, onNavigate, client, clientId }) {
   const tasks = data?.tasks || [];
   const races = data?.races || [];
   const stats = data?.stats || { openProofs: 0, tasksDue: 0, racesTonight: 0 };
+
+  const statValues = Object.fromEntries(
+    HOME_STAT_CATALOG.map((cat) => [cat.id, stats[cat.statKey] ?? 0]),
+  );
 
   return (
     <div>
@@ -68,11 +135,34 @@ export function HomeView({ user, role, onNavigate, client, clientId }) {
                 : "Your workspace — announcements, tasks, and quick links."}
             </p>
           </div>
-          {role !== "client" && (
-            <div style={{ display: "flex", gap: 20, padding: "12px 24px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 4 }}>
-              <StatBlock value={stats.racesTonight} label="Live races" />
-              <StatBlock value={stats.openProofs} label="Open proofs" />
-              <StatBlock value={stats.tasksDue} label="Tasks due" />
+          {isStaff && (
+            <div style={{ position: "relative" }}>
+              {enabledStats.length > 0 && (
+                <div style={{ display: "flex", gap: 20, padding: "12px 24px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 4 }}>
+                  {enabledStats.map((s) => (
+                    <StatBlock key={s.id} value={statValues[s.id]} label={s.label} />
+                  ))}
+                </div>
+              )}
+              {role === "staff" && (
+                <button
+                  type="button"
+                  className="home-stats-edit"
+                  onClick={() => setCustomizing((o) => !o)}
+                  aria-label="Customize home stats"
+                  title="Customize stats"
+                  style={enabledStats.length === 0 ? { position: "static" } : undefined}
+                >
+                  <Icon name="sliders" size={14} />
+                </button>
+              )}
+              {customizing && role === "staff" && (
+                <HomeStatsCustomizer
+                  stats={homeStats}
+                  onChange={setRawHomeStats}
+                  onClose={() => setCustomizing(false)}
+                />
+              )}
             </div>
           )}
         </div>

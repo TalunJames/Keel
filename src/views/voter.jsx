@@ -144,7 +144,6 @@ export function VoterView({ role, clientId, client }) {
       )}
 
       <PageHead
-        eyebrow="Voter & Polling Data"
         title="Voter File Explorer"
         sub={file
           ? `Active file: ${file.source} · ${file.record_count?.toLocaleString()} records · refreshed ${file.refreshed_at?.slice?.(0, 10) || file.refreshed_at || "—"}`

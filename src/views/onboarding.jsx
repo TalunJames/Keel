@@ -4,7 +4,6 @@ export function OnboardingView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Client success"
       title="Onboarding"
       sub="New retainer checklists and provisioning status."
       endpoint="/onboarding/programs"

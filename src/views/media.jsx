@@ -4,7 +4,6 @@ export function MediaView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Comms"
       title="Media Monitoring"
       sub="Muck Rack and wire mentions ingested for retained clients."
       endpoint="/media/mentions"

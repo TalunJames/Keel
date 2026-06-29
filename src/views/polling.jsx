@@ -151,7 +151,6 @@ export function PollingView({ role, clientId, client }) {
   return (
     <div>
       <PageHead
-        eyebrow={role === "client" ? "Released to you" : "Research"}
         title="Polling"
         sub={role === "client"
           ? "Topline and issue numbers your Fog Signal team has released. Crosstabs and message tests are held until your next strategy review."
@@ -163,8 +162,8 @@ export function PollingView({ role, clientId, client }) {
           title="No polls for this client"
           description={
             clientId === "all"
-              ? "Poll data loads from portal configs on server startup. Run npm run poll:ingest -- --client d11-colorado-springs if this workspace was deployed before polling was added."
-              : `No released polls for ${client?.name || "this client"}. Switch to School District 11 · Colorado Springs in the client picker, or run poll:ingest for this account.`
+              ? "Poll data loads from portal configs on server startup. Run npm run poll:ingest if this workspace was deployed before polling was added."
+              : `No released polls for ${client?.name || "this client"}. Run npm run poll:ingest for this account if data was added after deploy.`
           }
           icon="trend-up"
         />

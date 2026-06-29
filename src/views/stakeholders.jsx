@@ -4,7 +4,6 @@ export function StakeholdersView(props) {
   return (
     <ModuleListView
       {...props}
-      eyebrow="Relationships"
       title="Stakeholders"
       sub="Endorsers, coalition partners, and VIP contacts by client."
       endpoint="/stakeholders"

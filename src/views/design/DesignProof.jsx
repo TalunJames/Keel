@@ -104,9 +104,8 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
   return (
     <div>
       <PageHead
-        eyebrow={`DR-${request.id} · ${request.clientName || request.clientId}`}
         title={request.title}
-        sub={`${request.status} · ${request.assigneeName ? `Assigned to ${request.assigneeName}` : "Unassigned"}`}
+        sub={`DR-${request.id} · ${request.clientName || request.clientId} · ${request.status} · ${request.assigneeName ? `Assigned to ${request.assigneeName}` : "Unassigned"}`}
         actions={
           <>
             <button type="button" className="btn ghost" onClick={onBack}>

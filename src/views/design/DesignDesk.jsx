@@ -30,7 +30,6 @@ export function DesignDesk({ clientId, onOpen, onReload }) {
   return (
     <div>
       <PageHead
-        eyebrow="Design Requests"
         title="Designer Desk"
         sub="Your assigned work and the unassigned pool. Claim jobs from the pool or work from your queue."
       />

@@ -9,7 +9,7 @@ import { EmptyState } from "../components/EmptyState.jsx";
  * Generic API-backed list for modules without bespoke UI yet.
  */
 export function ModuleListView({
-  eyebrow, title, sub, endpoint, clientId, itemKey = "items",
+  title, sub, endpoint, clientId, itemKey = "items",
   emptyTitle, emptyDescription, emptyIcon = "folder",
   renderItem,
   actions,
@@ -20,7 +20,7 @@ export function ModuleListView({
 
   return (
     <div>
-      <PageHead eyebrow={eyebrow} title={title} sub={sub} actions={actions} />
+      <PageHead title={title} sub={sub} actions={actions} />
       {loading && <Loading />}
       {error && (
         <div className="card card-pad" style={{ color: "#7a2210", fontSize: 13 }}>{error.message}</div>
