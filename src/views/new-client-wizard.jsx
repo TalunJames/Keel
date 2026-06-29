@@ -2,13 +2,15 @@ import React, { useState, useEffect } from "react";
 import { Icon, Eyebrow, Tag } from "../components/ui.jsx";
 import { clientsApi, teamApi } from "../lib/api.js";
 import {
-  CLIENT_TYPE_PRESETS,
+  STANDARD_TYPE_PRESETS,
+  CUSTOM_TYPE_PRESET,
   STAFF_MODULE_OPTIONS,
   CLIENT_MODULE_OPTIONS,
   modulesForType,
   getPreset,
   enabledModuleLabels,
 } from "../lib/client-type-presets.js";
+import { extractColorsFromDataUrl, colorToHex } from "../lib/logo-colors.js";
 
 const BRAND_COLORS = [
   "var(--fs-navy)", "var(--fs-navy-600)", "var(--fs-gold-700)",
@@ -35,6 +37,8 @@ const defaultModules = modulesForType("Campaign Services");
 const EMPTY_DRAFT = {
   name: "", tag: "", initials: "", color: "var(--fs-navy-600)",
   type: "Campaign Services", desc: "", logo: null,
+  detectedColors: [], colorSource: "preset",
+  driveFolderUrl: "",
   staffModules: defaultModules.staffModules,
   clientModules: defaultModules.clientModules,
   team: { lead: "", account: "", designer: "", data: "", others: [] },
@@ -91,9 +95,29 @@ export function NewClientWizard({ onCancel, onCreated }) {
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => upd({ logo: reader.result });
+    reader.onload = async () => {
+      const dataUrl = reader.result;
+      let detectedColors = [];
+      try {
+        detectedColors = await extractColorsFromDataUrl(dataUrl);
+      } catch {
+        detectedColors = [];
+      }
+      setDraft((d) => ({
+        ...d,
+        logo: dataUrl,
+        detectedColors,
+        color: detectedColors[0] || d.color,
+        colorSource: detectedColors.length ? "logo" : d.colorSource,
+      }));
+    };
     reader.readAsDataURL(file);
     setError("");
+    e.target.value = "";
+  };
+
+  const clearLogo = () => {
+    upd({ logo: null, detectedColors: [], colorSource: "preset" });
   };
 
   const toggleOther = (name) => {
@@ -105,13 +129,13 @@ export function NewClientWizard({ onCancel, onCreated }) {
     setSaving(true);
     setError("");
     try {
-      const { contacts, team, desc, logo, staffModules, clientModules, ...core } = draft;
+      const { contacts, team, desc, logo, staffModules, clientModules, driveFolderUrl, ...core } = draft;
       const result = await clientsApi.create({
         ...core,
         logo,
         account: team.account || team.lead || "",
         audience: desc || "",
-        payload: { team, contacts, desc, staffModules, clientModules },
+        payload: { team, contacts, desc, staffModules, clientModules, driveFolderUrl: driveFolderUrl.trim() || null },
       });
       onCreated?.(result.id);
     } catch (err) {
@@ -167,7 +191,7 @@ export function NewClientWizard({ onCancel, onCreated }) {
             updMod={updMod}
           />
         )}
-        {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} />}
+        {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} onClearLogo={clearLogo} />}
         {step === 2 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} toggleOther={toggleOther} />}
         {step === 3 && <StepContacts draft={draft} upd={upd} />}
         {step === 4 && <StepReview draft={draft} />}
@@ -198,16 +222,19 @@ export function NewClientWizard({ onCancel, onCreated }) {
 }
 
 function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
+  const custom = CUSTOM_TYPE_PRESET;
+  const customSelected = draft.type === custom?.id;
+
   return (
     <div>
       <Eyebrow>Step 1 · Service line</Eyebrow>
       <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "10px 0 6px", color: "var(--fs-navy)" }}>What kind of engagement is this?</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
-        Your selection sets which Keel tabs are enabled for staff and the client portal. Choose Custom to configure manually.
+        Your selection sets which Keel tabs are enabled for staff and the client portal.
       </p>
 
       <div className="type-card-grid">
-        {CLIENT_TYPE_PRESETS.map((p) => {
+        {STANDARD_TYPE_PRESETS.map((p) => {
           const selected = draft.type === p.id;
           return (
             <button
@@ -230,6 +257,27 @@ function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
           );
         })}
       </div>
+
+      {custom && (
+        <button
+          type="button"
+          className={"type-card type-card-custom" + (customSelected ? " selected" : "")}
+          onClick={() => selectType(custom.id)}
+        >
+          <span className="type-card-icon">
+            <Icon name={custom.icon} size={28} />
+          </span>
+          <span className="type-card-custom-text">
+            <span className="type-card-label">{custom.label}</span>
+            <span className="type-card-desc">{custom.desc}</span>
+          </span>
+          {customSelected && (
+            <span className="type-card-check">
+              <Icon name="check" size={14} />
+            </span>
+          )}
+        </button>
+      )}
 
       {!isCustom && preset && (
         <div className="type-modules-preview">
@@ -311,7 +359,9 @@ function ModuleToggle({ mod, on, onChange }) {
   );
 }
 
-function StepIdentity({ draft, upd, onLogoPick }) {
+function StepIdentity({ draft, upd, onLogoPick, onClearLogo }) {
+  const pickColor = (color, source) => upd({ color, colorSource: source });
+
   return (
     <div>
       <Eyebrow>Step 2 · Identity & brand</Eyebrow>
@@ -355,7 +405,7 @@ function StepIdentity({ draft, upd, onLogoPick }) {
           </label>
           <input id="client-logo-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={onLogoPick} style={{ display: "none" }} />
           {draft.logo && (
-            <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => upd({ logo: null })}>
+            <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={onClearLogo}>
               Remove logo
             </button>
           )}
@@ -364,14 +414,85 @@ function StepIdentity({ draft, upd, onLogoPick }) {
 
       <div className="field">
         <label>Brand color</label>
-        <div className="row" style={{ gap: 8 }}>
-          {BRAND_COLORS.map((c) => (
-            <button key={c} type="button" onClick={() => upd({ color: c })} aria-label={c} style={{
-              width: 32, height: 32, background: c, borderRadius: "50%",
-              border: draft.color === c ? "3px solid var(--fs-gold)" : "1px solid var(--fs-border)",
-              cursor: "pointer",
-            }} />
-          ))}
+        <p className="help" style={{ margin: "0 0 12px" }}>
+          {draft.detectedColors.length
+            ? "We pulled these from your logo — pick one, use a preset, or choose your own."
+            : "Upload a logo to auto-detect brand colors, or pick from the palette below."}
+        </p>
+
+        {draft.detectedColors.length > 0 && (
+          <div className="brand-color-group">
+            <div className="brand-color-group-label">From logo</div>
+            <div className="brand-color-swatches">
+              {draft.detectedColors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={"brand-color-swatch" + (draft.color === c && draft.colorSource === "logo" ? " selected" : "")}
+                  onClick={() => pickColor(c, "logo")}
+                  aria-label={"Logo color " + c}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="brand-color-group">
+          <div className="brand-color-group-label">Presets</div>
+          <div className="brand-color-swatches">
+            {BRAND_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={"brand-color-swatch" + (draft.color === c && draft.colorSource === "preset" ? " selected" : "")}
+                onClick={() => pickColor(c, "preset")}
+                aria-label={c}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="brand-color-group">
+          <div className="brand-color-group-label">Custom</div>
+          <div className="brand-color-custom">
+            <label className="brand-color-picker-wrap" aria-label="Pick custom brand color">
+              <input
+                type="color"
+                className="brand-color-picker"
+                value={colorToHex(draft.colorSource === "custom" ? draft.color : draft.detectedColors[0] || "#1a2744")}
+                onChange={(e) => pickColor(e.target.value, "custom")}
+              />
+              <span className="brand-color-picker-preview" style={{ background: draft.color }} />
+            </label>
+            <input
+              className="input brand-color-hex"
+              value={draft.colorSource === "custom" && draft.color.startsWith("#") ? draft.color : ""}
+              placeholder="#1A2744"
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                if (/^#[0-9a-fA-F]{6}$/.test(v)) pickColor(v, "custom");
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Google Drive folder</label>
+        <div className="drive-folder-field">
+          <span className="drive-folder-icon"><Icon name="folder" size={18} /></span>
+          <input
+            className="input"
+            type="url"
+            value={draft.driveFolderUrl}
+            onChange={(e) => upd({ driveFolderUrl: e.target.value })}
+            placeholder="https://drive.google.com/drive/folders/…"
+          />
+        </div>
+        <div className="help">
+          Paste a shared Drive folder link. Keel will link it in Resources for this client&apos;s team.
         </div>
       </div>
 
@@ -497,6 +618,12 @@ function StepReview({ draft }) {
             </div>
           </div>
           <p className="mut" style={{ fontSize: 13, margin: 0 }}>{draft.desc || <em>No description.</em>}</p>
+          {draft.driveFolderUrl && (
+            <div className="row" style={{ gap: 8, marginTop: 12, fontSize: 12 }}>
+              <Icon name="folder" size={14} color="var(--fs-gold-700)" />
+              <span className="mut" style={{ wordBreak: "break-all" }}>{draft.driveFolderUrl}</span>
+            </div>
+          )}
         </ReviewBlock>
 
         <ReviewBlock title="Team">

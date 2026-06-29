@@ -96,6 +96,9 @@ export const CLIENT_MODULE_OPTIONS = [
   { id: "resources", label: "Memos & resources", icon: "book" },
 ];
 
+export const STANDARD_TYPE_PRESETS = CLIENT_TYPE_PRESETS.filter((p) => !p.isCustom);
+export const CUSTOM_TYPE_PRESET = CLIENT_TYPE_PRESETS.find((p) => p.isCustom) || null;
+
 export function getPreset(typeId) {
   return CLIENT_TYPE_PRESETS.find((p) => p.id === typeId) || CLIENT_TYPE_PRESETS[0];
 }

@@ -1069,6 +1069,115 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   margin-top: 4px;
 }
 
+.type-card-custom {
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  text-align: left;
+  gap: 16px;
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+.type-card-custom .type-card-icon {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.type-card-custom-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  align-items: flex-start;
+}
+.type-card-custom .type-card-desc {
+  max-width: none;
+}
+
+.brand-color-group {
+  margin-bottom: 14px;
+}
+.brand-color-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--fs-fg-muted);
+  margin-bottom: 8px;
+}
+.brand-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.brand-color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--fs-border);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms, border-color 120ms;
+}
+.brand-color-swatch:hover { transform: scale(1.08); }
+.brand-color-swatch.selected {
+  border: 3px solid var(--fs-gold);
+  box-shadow: 0 0 0 1px var(--fs-gold);
+}
+.brand-color-custom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-color-picker-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.brand-color-picker {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.brand-color-picker-preview {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--fs-border);
+  pointer-events: none;
+}
+.brand-color-hex {
+  max-width: 140px;
+  font-family: var(--fs-font-mono);
+  font-size: 13px;
+}
+
+.drive-folder-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.drive-folder-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--fs-bone-50);
+  border: 1px solid var(--fs-border);
+  display: grid;
+  place-items: center;
+  color: var(--fs-gold-700);
+  flex-shrink: 0;
+}
+.drive-folder-field .input {
+  flex: 1;
+}
+
 .module-toggle {
   display: flex;
   align-items: center;
