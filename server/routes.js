@@ -281,10 +281,12 @@ export function registerRoutes(app, db) {
     } else {
       rows = db.prepare("SELECT * FROM clients WHERE active = 1 ORDER BY name").all();
     }
-    const clients = [ALL_CLIENT, ...rows.map(rowToClient).filter(Boolean)];
+    const mapped = rows.map(rowToClient).filter(Boolean);
     if (req.user.role === "client") {
-      return res.json({ clients: rows.map(rowToClient) });
+      return res.json({ clients: mapped });
     }
+    // With a single account, skip the synthetic "All Clients" row so voter/polling scope correctly.
+    const clients = mapped.length === 1 ? mapped : [ALL_CLIENT, ...mapped];
     res.json({ clients });
   });
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Icon, Avatar } from "./ui.jsx";
 import { versionApi } from "../lib/api.js";
+import { realClients } from "../lib/clients.js";
 
 function VersionStamp({ show }) {
   const [v, setV] = useState(null);
@@ -212,8 +213,9 @@ function ClientSwitcher({ clients, selected, onSelect }) {
 
   if (!clients.length) return null;
 
-  if (clients.length <= 1) {
-    const single = selected || clients[0];
+  const accounts = realClients(clients);
+  if (accounts.length <= 1) {
+    const single = accounts[0] || selected || clients[0];
     return (
       <div className="client-pill" style={{ cursor: "default" }}>
         <ClientAvatar client={single} size={22} />

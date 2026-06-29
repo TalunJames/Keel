@@ -3,6 +3,7 @@ import { authApi, clientsApi, modulesApi, badgesApi, api, withClient, setupApi }
 import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
 import { computeEffectiveModules, visibleModuleList, canAccessModule } from "./lib/access.js";
+import { resolveClientSelection } from "./lib/clients.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
@@ -104,11 +105,8 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !clients.length) return;
-    const ids = new Set(clients.map((c) => c.id));
-    if (clientId !== "all" && !ids.has(clientId)) {
-      const fallback = clients.find((c) => c.id !== "all")?.id || "all";
-      setClientId(fallback);
-    }
+    const resolved = resolveClientSelection(clients, clientId);
+    if (resolved !== clientId) setClientId(resolved);
   }, [clients, clientId, user]);
 
   useEffect(() => {
