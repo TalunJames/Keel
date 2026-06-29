@@ -28,19 +28,31 @@ export function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
+function resolveCookieSecure() {
+  if (process.env.COOKIE_SECURE === "0") return false;
+  if (process.env.COOKIE_SECURE === "1") return true;
+  return process.env.NODE_ENV === "production";
+}
+
 export function setAuthCookie(res, token, { remember = false } = {}) {
-  const secure = process.env.NODE_ENV === "production";
-  res.cookie(COOKIE, token, {
+  const secure = resolveCookieSecure();
+  const opts = {
     httpOnly: true,
     sameSite: "lax",
     secure,
     maxAge: (remember ? LONG_TTL_SECONDS : SHORT_TTL_SECONDS) * 1000,
     path: "/",
-  });
+  };
+  res.cookie(COOKIE, token, opts);
 }
 
 export function clearAuthCookie(res) {
-  res.clearCookie(COOKIE, { path: "/" });
+  res.clearCookie(COOKIE, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: resolveCookieSecure(),
+  });
 }
 
 export function tokenFromReq(req) {

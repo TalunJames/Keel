@@ -54,7 +54,7 @@ export function SetupView({ setup, onComplete }) {
             Welcome aboard.
           </h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-            This Keel instance has never been configured. Create your administrator password now — it is stored in the database and used for every sign-in after this.
+            Set your administrator password for this Keel deployment. This is a one-time step — the password is stored in the database and used for every sign-in afterward.
           </p>
         </div>
         <div style={{ position: "relative", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>

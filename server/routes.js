@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
-import { getSetupStatus, isBootstrapPending } from "./bootstrap.js";
+import { getSetupStatus, isBootstrapPending, markSetupComplete, findBootstrapUser } from "./bootstrap.js";
 import {
   getElectionLiveStatus,
   listElectionContests,
@@ -73,14 +73,9 @@ export function registerRoutes(app, db) {
       return res.status(400).json({ error: "Password must be at least 8 characters" });
     }
 
-    const row = db.prepare(
-      `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
-              system_admin AS systemAdmin, title, location, about, phone, photo
-       FROM users WHERE email = ? COLLATE NOCASE`
-    ).get(status.email);
-
-    if (!row || !isBootstrapPending(row.password_hash)) {
-      return res.status(400).json({ error: "Setup already completed" });
+    const row = findBootstrapUser(db);
+    if (!row) {
+      return res.status(400).json({ error: "Bootstrap admin account not found" });
     }
 
     const displayName = (name || row.name || status.name || "").trim();
@@ -88,26 +83,44 @@ export function registerRoutes(app, db) {
       return res.status(400).json({ error: "Name is required" });
     }
 
-    db.prepare("UPDATE users SET password_hash = ?, name = ? WHERE id = ?").run(
-      await hashPassword(password),
-      displayName,
-      row.id
-    );
+    db.prepare(
+      "UPDATE users SET password_hash = ?, name = ?, role = 'admin', system_admin = 1 WHERE id = ?"
+    ).run(await hashPassword(password), displayName, row.id);
+    markSetupComplete(db);
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
       status.email,
       "Completed first-boot setup and set admin password",
       "System"
     );
 
-    const user = { ...row, name: displayName };
-    delete user.password_hash;
-    user.systemAdmin = !!user.systemAdmin;
+    const user = {
+      id: row.id,
+      email: row.email,
+      name: displayName,
+      team: row.team || "Operations",
+      role: "admin",
+      clientId: row.clientId ?? null,
+      systemAdmin: true,
+      title: row.title || "",
+      location: row.location || "",
+      about: row.about || "",
+      phone: row.phone || "",
+      photo: row.photo ?? null,
+    };
     const token = signToken(user, { remember: true });
     setAuthCookie(res, token, { remember: true });
     res.json({ user, token });
   });
 
   app.post("/api/auth/login", async (req, res) => {
+    const setup = getSetupStatus(db);
+    if (setup.needsSetup) {
+      return res.status(403).json({
+        error: "Complete first-time setup before signing in",
+        needsSetup: true,
+      });
+    }
+
     const { email, password, remember } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password required" });

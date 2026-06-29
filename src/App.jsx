@@ -58,9 +58,14 @@ export default function App() {
     Promise.all([
       setupApi.status().catch(() => ({ needsSetup: false })),
       authApi.me().catch(() => null),
-    ]).then(([status, session]) => {
+    ]).then(async ([status, session]) => {
       setSetup(status);
-      if (session?.user) setUser(session.user);
+      if (status.needsSetup) {
+        setUser(null);
+        try { await authApi.logout(); } catch { /* ignore */ }
+      } else if (session?.user) {
+        setUser(session.user);
+      }
     }).finally(() => setBooting(false));
   }, []);
 
@@ -82,8 +87,13 @@ export default function App() {
       .catch(() => setAnnouncements([]));
   }, [user, clientId]);
 
-  const handleLogin = (u) => {
-    setUser(u);
+  const handleLogin = async (u) => {
+    try {
+      const { user: verified } = await authApi.me();
+      setUser(verified);
+    } catch {
+      setUser(u);
+    }
     setSetup({ needsSetup: false });
     setSection("home");
   };
