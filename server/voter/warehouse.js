@@ -597,6 +597,24 @@ export function getVoterMeta(clientId) {
   };
 }
 
+/** Prefer ingested warehouse manifest over voter_files.active (bootstrap may register poll CSVs last). */
+export function resolveVoterFile(db, clientId) {
+  const manifest = readManifest(clientId);
+  if (hasWarehouse(clientId) && manifest) {
+    return {
+      id: null,
+      client_id: clientId,
+      source: manifest.source,
+      record_count: manifest.recordCount || 0,
+      refreshed_at: manifest.ingestedAt || manifest.geocodedAt || null,
+      warehouse: true,
+    };
+  }
+  return db.prepare(
+    "SELECT id, client_id, source, record_count, refreshed_at FROM voter_files WHERE client_id = ? AND active = 1 ORDER BY refreshed_at DESC LIMIT 1"
+  ).get(clientId) || null;
+}
+
 export function registerVoterFileInDb(db, { clientId, manifest, storagePath = null }) {
   db.prepare("UPDATE voter_files SET active = 0 WHERE client_id = ?").run(clientId);
   db.prepare(

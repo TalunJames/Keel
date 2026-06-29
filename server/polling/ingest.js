@@ -191,11 +191,35 @@ export function ingestPollingPortal(db, { portalDir, publicRoot, extraResources 
   upsertPollResources(db, polls, clientId, extraResources);
   const manifestPath = writePollingManifest(clientId, manifest, publicRoot);
 
-  db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
-    who,
-    `Ingested ${polls.length} poll(s) and manifest for ${clientId}`,
-    "Data",
-  );
+  if (who !== "startup-sync") {
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      who,
+      `Ingested ${polls.length} poll(s) and manifest for ${clientId}`,
+      "Data",
+    );
+  }
 
   return { clientId, pollCount: polls.length, manifestPath, pollIds: polls.map((p) => p.id) };
+}
+
+/** Sync all portal/polling/clients/* configs into SQLite on startup (idempotent). */
+export function syncPortalPolls(db, rootDir, { who = "startup-sync" } = {}) {
+  const clientsDir = path.join(rootDir, "portal", "polling", "clients");
+  if (!fs.existsSync(clientsDir)) return [];
+
+  const publicRoot = path.join(rootDir, "public");
+  const results = [];
+
+  for (const entry of fs.readdirSync(clientsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
+    const portalDir = path.join(clientsDir, entry.name);
+    try {
+      const result = ingestPollingPortal(db, { portalDir, publicRoot, who });
+      results.push(result);
+    } catch (err) {
+      console.warn(`[polling] Skipped ${entry.name}: ${err.message}`);
+    }
+  }
+
+  return results;
 }

@@ -102,6 +102,15 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!user || !clients.length) return;
+    const ids = new Set(clients.map((c) => c.id));
+    if (clientId !== "all" && !ids.has(clientId)) {
+      const fallback = clients.find((c) => c.id !== "all")?.id || "all";
+      setClientId(fallback);
+    }
+  }, [clients, clientId, user]);
+
+  useEffect(() => {
     if (!user) return;
     modulesApi.get(clientId).then((r) => {
       if (r.modules) setRoleModules(r.modules);
