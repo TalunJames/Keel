@@ -86,9 +86,61 @@ function slugFromTag(tag) {
   return String(tag || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export function NewClientWizard({ onCancel, onCreated }) {
+export function clientToDraft(client) {
+  if (!client) {
+    return {
+      ...EMPTY_DRAFT,
+      staffModules: { ...defaultModules.staffModules },
+      clientModules: { ...defaultModules.clientModules },
+    };
+  }
+  const mods = modulesForType(client.type || "Campaign Services");
+  return {
+    name: client.name || "",
+    tag: client.tag || "",
+    initials: client.initials || "",
+    color: client.color || "var(--fs-navy-600)",
+    type: client.type || "Campaign Services",
+    desc: client.desc || client.audience || "",
+    logo: client.logo || null,
+    detectedColors: [],
+    colorSource: "preset",
+    driveFolderUrl: client.driveFolderUrl || "",
+    staffModules: client.staffModules ? { ...client.staffModules } : { ...mods.staffModules },
+    clientModules: client.clientModules ? { ...client.clientModules } : { ...mods.clientModules },
+    team: client.team ? { ...client.team, others: [...(client.team.others || [])] } : { ...EMPTY_DRAFT.team },
+    contacts: client.contacts?.length
+      ? client.contacts.map((c) => ({ ...c }))
+      : [{ name: "", email: "", role: "Principal", views: "Full client view" }],
+  };
+}
+
+function buildClientPayload(draft) {
+  const {
+    contacts, team, desc, logo, staffModules, clientModules, driveFolderUrl,
+    detectedColors, colorSource,
+    ...core
+  } = draft;
+  return {
+    ...core,
+    logo,
+    account: team.account || team.lead || "",
+    audience: desc || "",
+    payload: {
+      team,
+      contacts,
+      desc,
+      staffModules,
+      clientModules,
+      driveFolderUrl: driveFolderUrl.trim() || null,
+    },
+  };
+}
+
+export function ClientWizard({ client, onCancel, onCreated, onSaved }) {
+  const isEdit = !!client;
   const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [draft, setDraft] = useState(() => clientToDraft(client));
   const [staff, setStaff] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -98,11 +150,11 @@ export function NewClientWizard({ onCancel, onCreated }) {
   }, []);
 
   useEffect(() => {
-    if (!draft.name) return;
+    if (!draft.name || isEdit) return;
     const initials = draft.name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
     const tag = draft.name.split(/\s+/)[0].toUpperCase().slice(0, 8);
     setDraft((d) => ({ ...d, initials, tag }));
-  }, [draft.name]);
+  }, [draft.name, isEdit]);
 
   const upd = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const updTeam = (patch) => setDraft((d) => ({ ...d, team: { ...d.team, ...patch } }));
@@ -159,17 +211,23 @@ export function NewClientWizard({ onCancel, onCreated }) {
     setSaving(true);
     setError("");
     try {
-      const { contacts, team, desc, logo, staffModules, clientModules, driveFolderUrl, ...core } = draft;
-      const result = await clientsApi.create({
-        ...core,
-        logo,
-        account: team.account || team.lead || "",
-        audience: desc || "",
-        payload: { team, contacts, desc, staffModules, clientModules, driveFolderUrl: driveFolderUrl.trim() || null },
-      });
+      const result = await clientsApi.create(buildClientPayload(draft));
       onCreated?.(result.id);
     } catch (err) {
       setError(err.message || "Could not create client.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveClient = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await clientsApi.update(client.id, buildClientPayload(draft));
+      onSaved?.(client.id);
+    } catch (err) {
+      setError(err.message || "Could not save client.");
     } finally {
       setSaving(false);
     }
@@ -180,10 +238,12 @@ export function NewClientWizard({ onCancel, onCreated }) {
       <div className="row between" style={{ alignItems: "flex-start", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ fontFamily: "var(--fs-font-display)", fontSize: 30, fontWeight: 700, color: "var(--fs-navy)", margin: "0 0 4px", letterSpacing: "-0.01em" }}>
-            Set up a new client
+            {isEdit ? "Edit client" : "Set up a new client"}
           </h2>
           <p className="mut" style={{ fontSize: 14, margin: 0, maxWidth: 580 }}>
-            Choose a service line to configure Keel tabs, then walk through identity, team, and portal contacts.
+            {isEdit
+              ? "Update service line, identity, team assignments, portal tabs, and contacts for this account."
+              : "Choose a service line to configure Keel tabs, then walk through identity, team, and portal contacts."}
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={onCancel}>
@@ -197,8 +257,8 @@ export function NewClientWizard({ onCancel, onCreated }) {
             <button
               key={s.id}
               type="button"
-              onClick={() => i <= step && setStep(i)}
-              disabled={i > step}
+              onClick={() => (isEdit || i <= step) && setStep(i)}
+              disabled={!isEdit && i > step}
               className={"wizard-step" + (i === step ? " active" : "") + (i < step ? " done" : "")}
             >
               <span className="wizard-step-num">
@@ -220,10 +280,10 @@ export function NewClientWizard({ onCancel, onCreated }) {
             updMod={updMod}
           />
         )}
-        {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} onClearLogo={clearLogo} />}
+        {step === 1 && <StepIdentity draft={draft} upd={upd} onLogoPick={onLogoPick} onClearLogo={clearLogo} clientId={isEdit ? client.id : null} />}
         {step === 2 && <StepTeam draft={draft} updTeam={updTeam} staff={staff} />}
         {step === 3 && <StepContacts draft={draft} upd={upd} />}
-        {step === 4 && <StepReview draft={draft} />}
+        {step === 4 && <StepReview draft={draft} isEdit={isEdit} />}
       </div>
 
       {error && (
@@ -241,8 +301,8 @@ export function NewClientWizard({ onCancel, onCreated }) {
             Continue <Icon name="chevron-right" size={14} />
           </button>
         ) : (
-          <button type="button" className="btn accent" disabled={saving} onClick={createClient}>
-            <Icon name="check" size={14} /> {saving ? "Creating…" : "Create client"}
+          <button type="button" className="btn accent" disabled={saving} onClick={isEdit ? saveClient : createClient}>
+            <Icon name="check" size={14} /> {saving ? (isEdit ? "Saving…" : "Creating…") : (isEdit ? "Save changes" : "Create client")}
           </button>
         )}
       </div>
@@ -371,7 +431,7 @@ function StepServiceLine({ draft, selectType, isCustom, preset, updMod }) {
   );
 }
 
-function StepIdentity({ draft, upd, onLogoPick, onClearLogo }) {
+function StepIdentity({ draft, upd, onLogoPick, onClearLogo, clientId }) {
   const pickColor = (color, source) => upd({ color, colorSource: source });
 
   return (
@@ -395,8 +455,8 @@ function StepIdentity({ draft, upd, onLogoPick, onClearLogo }) {
             </div>
             <div className="field">
               <label>Client id</label>
-              <input className="input" value={slugFromTag(draft.tag)} readOnly style={{ opacity: 0.7 }} />
-              <div className="help">Auto-generated from tag.</div>
+              <input className="input" value={clientId || slugFromTag(draft.tag)} readOnly style={{ opacity: 0.7 }} />
+              <div className="help">{clientId ? "Client id cannot be changed." : "Auto-generated from tag."}</div>
             </div>
           </div>
         </div>
@@ -620,15 +680,15 @@ function StepContacts({ draft, upd }) {
   );
 }
 
-function StepReview({ draft }) {
+function StepReview({ draft, isEdit }) {
   const staffLabels = enabledModuleLabels(draft.staffModules, STAFF_MODULE_OPTIONS);
   const clientLabels = enabledModuleLabels(draft.clientModules, CLIENT_MODULE_OPTIONS);
 
   return (
     <div>
-      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>Ready to go live</h3>
+      <h3 style={{ fontFamily: "var(--fs-font-display)", margin: "0 0 6px", color: "var(--fs-navy)" }}>{isEdit ? "Ready to save" : "Ready to go live"}</h3>
       <p className="mut" style={{ fontSize: 13, margin: "0 0 22px" }}>
-        Confirm the details below. You can edit everything later from Admin Console.
+        {isEdit ? "Confirm the updates below before saving." : "Confirm the details below. You can edit everything later from Admin Console."}
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
@@ -708,4 +768,8 @@ function Row({ k, v }) {
       <span style={{ fontWeight: 600, color: "var(--fs-navy)", textAlign: "right" }}>{v}</span>
     </div>
   );
+}
+
+export function NewClientWizard(props) {
+  return <ClientWizard {...props} />;
 }

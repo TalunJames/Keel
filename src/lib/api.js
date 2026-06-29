@@ -108,6 +108,7 @@ export const versionApi = {
 export const clientsApi = {
   list: () => api("/clients"),
   create: (body) => api("/admin/clients", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) => api("/admin/clients/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(body) }),
 };
 
 export const teamApi = {
