@@ -6,6 +6,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { openDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
+import {
+  initElectionCollector,
+  shutdownElectionCollector,
+} from "./election-collector-service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -70,4 +74,12 @@ app.use((err, _req, res, _next) => {
 
 app.listen(PORT, () => {
   console.log(`Keel API listening on http://localhost:${PORT}`);
+  initElectionCollector();
 });
+
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, () => {
+    shutdownElectionCollector();
+    process.exit(0);
+  });
+}
