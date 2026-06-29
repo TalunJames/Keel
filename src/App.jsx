@@ -19,6 +19,7 @@ import { ResourcesView } from "./views/resources.jsx";
 import { OnboardingView } from "./views/onboarding.jsx";
 import { AdminView } from "./views/admin.jsx";
 import { AccountView } from "./views/account.jsx";
+import { NewClientWizard } from "./views/new-client-wizard.jsx";
 
 const DEFAULT_MODULES_FALLBACK = {
   staff: { home: true, calendar: true, design: true, proposals: true, media: true, election: false, voter: true, polling: true, stakeholders: true, resources: true, onboarding: true },
@@ -136,6 +137,24 @@ export default function App() {
     onboarding: "Onboarding",
     admin: "Admin Console",
     account: "Account Settings",
+    "new-client": "New Client",
+  };
+
+  const handleNewAction = (action) => {
+    if (action === "client") setSection("new-client");
+    else if (action === "design") setSection("design");
+    else if (action === "proposals") setSection("proposals");
+    else if (action === "calendar") setSection("calendar");
+  };
+
+  const reloadClients = () => {
+    clientsApi.list().then((r) => setClients(r.clients || [])).catch(() => {});
+  };
+
+  const handleClientCreated = (id) => {
+    reloadClients();
+    if (id) setClientId(id);
+    setSection("home");
   };
 
   const electionBadges = {};
@@ -165,7 +184,7 @@ export default function App() {
             clients={clients}
             selectedClient={selectedClient}
             onSelectClient={setClientId}
-            onNew={() => setSection(user.role === "client" ? "home" : "design")}
+            onNewAction={handleNewAction}
             announcements={announcements}
           />
         )}
@@ -185,6 +204,9 @@ export default function App() {
             <AdminView user={user} modules={modules} onChangeModules={setModules} allRoles={DEFAULT_MODULES_FALLBACK} />
           ) : <ClientLockOut />)}
           {section === "account" && <AccountView user={user} onUserUpdate={setUser} />}
+          {section === "new-client" && (user.role === "admin" ? (
+            <NewClientWizard onCancel={() => setSection("home")} onCreated={handleClientCreated} />
+          ) : <ClientLockOut />)}
         </div>
       </main>
     </div>

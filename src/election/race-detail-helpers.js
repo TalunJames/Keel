@@ -29,7 +29,7 @@ export function formatResultsTimestamp(iso) {
 }
 
 export function resultsSourceLabel(liveResults) {
-  if (!liveResults) return "Prior elections · map ready";
+  if (!liveResults?.contest || !liveResults?.totals) return null;
   const phase = liveResults.resultsPhase;
   const updated = formatResultsTimestamp(
     liveResults.contest?.updatedAt || liveResults.heartbeat?.lastUpdateAt

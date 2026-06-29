@@ -677,6 +677,32 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   color: var(--fs-navy-900);
 }
 
+.client-avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--ks-on-ink);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+}
+.client-avatar.all {
+  background: linear-gradient(135deg, var(--fs-navy) 0%, var(--fs-gold) 100%);
+  color: var(--fs-navy-900);
+}
+.client-avatar-logo {
+  border-radius: 6px;
+  background: var(--fs-paper);
+  border: 1px solid var(--fs-border);
+}
+.client-avatar-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* Client picker dropdown */
 .client-pop {
   position: absolute;
@@ -757,6 +783,188 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
   height: 1px;
   background: var(--fs-border);
   margin: 4px 0;
+}
+
+/* ---- New menu (hover dropdown) ------------------------------------- */
+.new-menu-wrap {
+  position: relative;
+}
+.new-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 36px;
+}
+.new-menu-chev {
+  opacity: 0.75;
+  display: none;
+}
+.new-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  background: var(--fs-paper);
+  border: 1px solid var(--fs-border);
+  border-radius: 6px;
+  box-shadow: var(--fs-shadow-md);
+  z-index: 220;
+  overflow: hidden;
+  padding: 4px;
+}
+.new-pop .head {
+  padding: 8px 12px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--fs-tracking-caps);
+  color: var(--fs-fg-subtle);
+  font-weight: 600;
+}
+.new-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+  color: var(--fs-fg);
+}
+.new-pop-item:hover {
+  background: var(--fs-bone-50);
+}
+.new-pop-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--fs-navy-50);
+  color: var(--fs-navy);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.new-pop-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.new-pop-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fs-navy);
+}
+.new-pop-desc {
+  font-size: 11px;
+  color: var(--fs-fg-muted);
+  line-height: 1.3;
+}
+
+@media (max-width: 720px) {
+  .new-menu-label { display: none; }
+  .new-menu-chev { display: none; }
+  .new-menu-btn { padding-left: 10px; padding-right: 10px; }
+}
+
+@media (min-width: 721px) {
+  .new-menu-chev { display: inline-flex; }
+}
+
+/* ---- Client wizard ------------------------------------------------- */
+.wizard-stepper {
+  margin-bottom: 18px;
+  padding: 16px 22px;
+}
+.wizard-step {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--fs-border);
+  cursor: pointer;
+  text-align: left;
+}
+.wizard-step.active { border-bottom-color: var(--fs-gold); }
+.wizard-step.done { border-bottom-color: var(--fs-success); }
+.wizard-step:disabled { cursor: not-allowed; }
+.wizard-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fs-bone-100);
+  color: var(--fs-fg-muted);
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.wizard-step.active .wizard-step-num {
+  background: var(--fs-gold);
+  color: var(--fs-navy-900);
+}
+.wizard-step.done .wizard-step-num {
+  background: var(--fs-success);
+  color: var(--fs-paper);
+}
+.wizard-step-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--fs-fg-muted);
+  vertical-align: middle;
+}
+.wizard-step.active .wizard-step-label { color: var(--fs-navy); }
+
+.logo-upload {
+  display: block;
+  width: 140px;
+  height: 140px;
+  border: 2px dashed var(--fs-border);
+  border-radius: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 160ms;
+}
+.logo-upload:hover { border-color: var(--fs-gold); }
+.logo-upload-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.logo-upload-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fs-navy);
+  text-align: center;
+  padding: 12px;
+}
+
+.contact-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr 1fr 40px;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .contact-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .contact-row .btn { grid-column: 1 / -1; justify-self: end; }
 }
 
 /* ---- Announcements popover (bell) ---------------------------------- */

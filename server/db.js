@@ -222,6 +222,7 @@ function migrate(db) {
   `);
 
   ensureUserColumns(db);
+  ensureClientColumns(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
   ensureBootstrapAdmin(db);
@@ -238,6 +239,15 @@ function ensureUserColumns(db) {
   add("about",        "about TEXT NOT NULL DEFAULT ''");
   add("phone",        "phone TEXT NOT NULL DEFAULT ''");
   add("photo",        "photo TEXT");
+}
+
+function ensureClientColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(clients)").all().map((c) => c.name);
+  const add = (name, ddl) => {
+    if (!cols.includes(name)) db.exec(`ALTER TABLE clients ADD COLUMN ${ddl}`);
+  };
+  add("logo",         "logo TEXT");
+  add("payload_json", "payload_json TEXT");
 }
 
 const DEFAULT_LOGIN_ANNOUNCEMENT = {
