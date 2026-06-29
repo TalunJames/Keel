@@ -18,6 +18,9 @@ const PORT = Number(process.env.PORT) || 3001;
 const db = openDb();
 const app = express();
 
+// Trust X-Forwarded-* from Cloudflare tunnel / reverse proxy so secure cookies work.
+app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS) || 1);
+
 // CORS_ORIGIN accepts a comma-separated allowlist so multiple public hostnames
 // (e.g. portal.fogsignalstrategies.com + keel.fogsignalstrategies.com) work
 // against the same backend. Empty/unset means "reflect any origin" (dev only).
