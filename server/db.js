@@ -261,7 +261,7 @@ function ensureClientColumns(db) {
 }
 
 const DEFAULT_LOGIN_ANNOUNCEMENT = {
-  enabled: true,
+  enabled: false,
   title: "Welcome to Keel",
   body: "A steady signal through noisy weeks.",
   tone: "info",

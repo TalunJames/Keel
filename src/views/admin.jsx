@@ -16,7 +16,7 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const [clientForm, setClientForm] = useState({ id: "", name: "", tag: "", initials: "", account: "", type: "" });
   const [voterForm, setVoterForm] = useState({ clientId: "", source: "", recordCount: "" });
   const [announceForm, setAnnounceForm] = useState({ title: "", body: "", tag: "" });
-  const [loginAnn, setLoginAnn] = useState({ enabled: true, title: "", body: "", tone: "info" });
+  const [loginAnn, setLoginAnn] = useState({ enabled: false, title: "", body: "", tone: "info" });
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -124,24 +124,26 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
               onChange={(e) => setLoginAnn({ ...loginAnn, enabled: e.target.checked })} />
             Show on login page
           </label>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Title</label>
-            <input className="input" placeholder="Welcome to Keel" maxLength={120}
-              value={loginAnn.title} onChange={(e) => setLoginAnn({ ...loginAnn, title: e.target.value })} />
-          </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Body</label>
-            <textarea className="input" rows={3} maxLength={600}
-              value={loginAnn.body} onChange={(e) => setLoginAnn({ ...loginAnn, body: e.target.value })} />
-          </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Tone</label>
-            <select className="input" value={loginAnn.tone}
-              onChange={(e) => setLoginAnn({ ...loginAnn, tone: e.target.value })}>
-              <option value="info">Info (navy)</option>
-              <option value="warning">Warning (gold)</option>
-              <option value="success">Success (green)</option>
-            </select>
+          <div className={"col" + (!loginAnn.enabled ? " disabled-fields" : "")} style={{ gap: 12 }}>
+            <div className="field" style={{ margin: 0 }}>
+              <label>Title</label>
+              <input className="input" placeholder="Welcome to Keel" maxLength={120} disabled={!loginAnn.enabled}
+                value={loginAnn.title} onChange={(e) => setLoginAnn({ ...loginAnn, title: e.target.value })} />
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <label>Body</label>
+              <textarea className="input" rows={3} maxLength={600} disabled={!loginAnn.enabled}
+                value={loginAnn.body} onChange={(e) => setLoginAnn({ ...loginAnn, body: e.target.value })} />
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <label>Tone</label>
+              <select className="input" value={loginAnn.tone} disabled={!loginAnn.enabled}
+                onChange={(e) => setLoginAnn({ ...loginAnn, tone: e.target.value })}>
+                <option value="info">Info (navy)</option>
+                <option value="warning">Warning (gold)</option>
+                <option value="success">Success (green)</option>
+              </select>
+            </div>
           </div>
           <button type="submit" className="btn primary" style={{ alignSelf: "flex-start" }}>
             <Icon name="check" size={13} /> Save login announcement

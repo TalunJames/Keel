@@ -42,17 +42,16 @@ function LoginView({ onLogin }) {
         </div>
 
         <div style={{ position: "relative", maxWidth: 480 }}>
-          <Eyebrow>Sign in</Eyebrow>
           <h1 style={{
             fontFamily: "var(--fs-font-display)", fontWeight: 700,
             fontSize: 48, lineHeight: 1.1, letterSpacing: "-0.015em",
             color: "var(--ks-on-ink)",
-            margin: "16px 0 18px",
+            margin: "0 0 18px",
           }}>
             A steady signal<br/>through noisy weeks.
           </h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-            Keel is the internal portal for Fog Signal staff and retained clients — design jobs, election night, the voter file, and everything in between, in one place.
+            Keel is the internal portal for Fog Signal staff and retained clients.
           </p>
         </div>
 
@@ -72,7 +71,7 @@ function LoginView({ onLogin }) {
 
           <div className="field">
             <label>Email</label>
-            <input className="input" placeholder="name@fogsignal.co" value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="input" placeholder="name@fogsignal.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div className="field">
             <label>Password</label>
