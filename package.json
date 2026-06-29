@@ -11,7 +11,9 @@
     "db:seed": "node server/seed.js",
     "poll:ingest": "node scripts/poll-ingest.js",
     "voter:register": "node scripts/voter-register.js",
-    "bootstrap:cssd11": "node scripts/bootstrap-cssd11.js"
+    "bootstrap:cssd11": "node scripts/bootstrap-cssd11.js",
+    "voter:ingest": "node scripts/voter-ingest.js",
+    "voter:geocode": "node scripts/voter-geocode.js"
   },
   "dependencies": {
     "@turf/turf": "^6.5.0",
@@ -19,6 +21,7 @@
     "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csv-parse": "^7.0.0",
     "d3-delaunay": "^6.0.4",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",

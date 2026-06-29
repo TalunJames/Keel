@@ -1,25 +1,26 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { PageHead, Icon, Stat, Tag, Eyebrow } from "../components/ui.jsx";
-import { api, withClient } from "../lib/api.js";
+import { PageHead, Icon, Stat, Tag } from "../components/ui.jsx";
+import { api, withClient, downloadExport } from "../lib/api.js";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { Loading } from "../components/Loading.jsx";
+import { VoterMap } from "./VoterMap.jsx";
+import { VoterFilters, DEFAULT_VOTER_FILTERS, filtersSummary } from "./voter-filters.jsx";
 
-const DEFAULT_FILTERS = { party: "All", county: "All", scoreMin: 0, turnoutOnly: false };
 const PAGE_SIZE = 50;
-const COUNTIES = [
-  "Franklin", "Cuyahoga", "Hamilton", "Montgomery", "Summit", "Lucas",
-  "Butler", "Stark", "Lorain", "Mahoning", "Lake", "Warren", "Clermont",
-];
 
 export function VoterView({ role, clientId, client }) {
   const [tab, setTab] = useState("file");
-  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
+  const [filters, setFilters] = useState({ ...DEFAULT_VOTER_FILTERS });
   const [query, setQuery] = useState("");
+  const [mapBbox, setMapBbox] = useState(null);
   const [cuts, setCuts] = useState([]);
   const [file, setFile] = useState(null);
+  const [meta, setMeta] = useState(null);
   const [notice, setNotice] = useState(null);
   const [modal, setModal] = useState(null);
-  const [exportJob, setExportJob] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportCount, setExportCount] = useState(null);
+  const [mapExportCount, setMapExportCount] = useState(null);
 
   const flash = (msg) => {
     setNotice(msg);
@@ -29,47 +30,78 @@ export function VoterView({ role, clientId, client }) {
   const loadMeta = useCallback(() => {
     if (!clientId || clientId === "all") {
       setFile(null);
+      setMeta(null);
       setCuts([]);
       return;
     }
     api(withClient("/voter/file", clientId)).then((r) => setFile(r.file));
+    api(withClient("/voter/meta", clientId)).then((r) => setMeta(r.meta));
     api(withClient("/voter/cuts", clientId)).then((r) => setCuts(r.cuts || []));
   }, [clientId]);
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
 
-  const runExport = async () => {
+  const applyCut = (c) => {
+    setFilters({ ...DEFAULT_VOTER_FILTERS, ...c.filters });
+    setQuery(c.query || "");
+    flash('Loaded cut "' + c.name + '"');
+  };
+
+  const openExport = async () => {
     setModal("export");
-    setExportJob({ status: "queued" });
+    setExportCount(null);
+    setMapExportCount(null);
     try {
-      const job = await api("/voter/export", {
-        method: "POST",
-        body: JSON.stringify({
-          name: "Current universe",
-          filters,
-          query,
-          clientId,
-          count: 0,
+      const [{ total }, mapResult] = await Promise.all([
+        api("/voter/export/count", {
+          method: "POST",
+          body: JSON.stringify({ clientId, filters, query, scope: "filters" }),
         }),
-      });
-      setExportJob(job);
-      const blob = new Blob([JSON.stringify(job.manifest, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "keel-universe-export.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      flash("Export job queued. Manifest downloaded.");
+        tab === "map" && mapBbox
+          ? api("/voter/export/count", {
+            method: "POST",
+            body: JSON.stringify({ clientId, filters, query, bbox: mapBbox, scope: "map" }),
+          })
+          : Promise.resolve({ total: null }),
+      ]);
+      setExportCount(total);
+      setMapExportCount(mapResult.total);
+    } catch {
+      setExportCount(0);
+    }
+  };
+
+  const runExport = async (scope) => {
+    setExporting(true);
+    try {
+      const slug = (client?.tag || clientId || "universe").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const label = scope === "map" ? "map-view" : "filtered";
+      const { count } = await downloadExport(
+        "/voter/export",
+        { clientId, filters, query, bbox: mapBbox, scope, name: `${slug}-${label}` },
+        `${slug}-${label}-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+      setModal(null);
+      flash(`Exported ${(count || exportCount || 0).toLocaleString()} voters to CSV.`);
     } catch (e) {
-      setExportJob({ status: "error", error: e.message });
+      flash(e.message || "Export failed");
+    } finally {
+      setExporting(false);
     }
   };
 
   const saveCut = async (name) => {
+    let count = 0;
+    try {
+      const r = await api("/voter/export/count", {
+        method: "POST",
+        body: JSON.stringify({ clientId, filters, query, scope: "filters" }),
+      });
+      count = r.total || 0;
+    } catch { /* ignore */ }
     await api("/voter/cuts", {
       method: "POST",
-      body: JSON.stringify({ name, filters, query, clientId, count: 0 }),
+      body: JSON.stringify({ name, filters, query, clientId, count }),
     });
     loadMeta();
     setModal(null);
@@ -77,6 +109,15 @@ export function VoterView({ role, clientId, client }) {
   };
 
   const needsClient = !clientId || clientId === "all";
+  const sharedFilterProps = {
+    filters,
+    setFilters,
+    query,
+    setQuery,
+    meta,
+    cuts,
+    onApplyCut: applyCut,
+  };
 
   return (
     <div>
@@ -99,8 +140,8 @@ export function VoterView({ role, clientId, client }) {
             <button type="button" className="btn secondary" disabled={needsClient} onClick={() => setModal("saved")}>
               <Icon name="filter" size={13} /> Saved cuts
             </button>
-            <button type="button" className="btn secondary" disabled={needsClient || !file} onClick={runExport}>
-              <Icon name="download" size={13} /> Export universe
+            <button type="button" className="btn secondary" disabled={needsClient || !file} onClick={openExport}>
+              <Icon name="download" size={13} /> Export CSV
             </button>
             <button type="button" className="btn primary" disabled={needsClient || !file} onClick={() => setModal("cut")}>
               <Icon name="plus" size={14} /> Cut universe
@@ -109,11 +150,20 @@ export function VoterView({ role, clientId, client }) {
         }
       />
 
+      {!needsClient && file && (
+        <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-fg-muted)" }}>
+          <span style={{ color: "var(--fs-navy)", fontWeight: 600 }}>Active filters</span>
+          {" · "}{filtersSummary(filters)}
+          {query ? ` · search "${query}"` : ""}
+          {tab === "map" && mapBbox ? " · map view scoped" : ""}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--fs-border)", marginBottom: 20 }}>
         {[
           { id: "file", label: "Voter File", icon: "users" },
+          { id: "map", label: "Map", icon: "map" },
           { id: "crosstabs", label: "Polling Crosstabs", icon: "trend-up" },
-          { id: "map", label: "Precinct Map", icon: "map" },
         ].map((t) => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)} style={{
             padding: "10px 18px", background: "transparent", border: "none",
@@ -129,18 +179,20 @@ export function VoterView({ role, clientId, client }) {
       {needsClient && (
         <EmptyState title="Select a client" description="Choose a specific client (not All Clients) to load their voter file." icon="users" />
       )}
-      {!needsClient && !file && tab === "file" && (
+      {!needsClient && !file && (tab === "file" || tab === "map") && (
         <EmptyState
           title="No voter file on record"
-          description="Register an ingested TargetSmart (or vendor) file in Admin Console → Voter files before querying."
+          description="Ingest a TargetSmart CSV via Admin Console → Voter, or run npm run voter:ingest."
           icon="users"
         />
       )}
       {!needsClient && file && tab === "file" && (
-        <VoterFileQuery clientId={clientId} file={file} filters={filters} setFilters={setFilters} query={query} setQuery={setQuery} cuts={cuts} onApplyCut={(c) => { setFilters({ ...DEFAULT_FILTERS, ...c.filters }); setQuery(c.query || ""); flash('Loaded "' + c.name + '"'); }} onFlash={flash} />
+        <VoterFileQuery clientId={clientId} file={file} {...sharedFilterProps} />
+      )}
+      {!needsClient && file && tab === "map" && (
+        <VoterMap clientId={clientId} meta={meta} {...sharedFilterProps} onBboxChange={setMapBbox} />
       )}
       {tab === "crosstabs" && <EmptyState title="Polling crosstabs" description="Link poll crosstabs from the Polling module when field data is published." icon="trend-up" />}
-      {tab === "map" && <EmptyState title="Precinct map" description="Map layers render from ingested precinct geometries after the voter warehouse is connected." icon="map" />}
 
       {modal === "cut" && (
         <VoterModal title="Cut universe" onClose={() => setModal(null)}>
@@ -153,7 +205,7 @@ export function VoterView({ role, clientId, client }) {
             <div className="col" style={{ gap: 8 }}>
               {cuts.map((c) => (
                 <button key={c.id} type="button" className="btn secondary" style={{ justifyContent: "space-between" }}
-                  onClick={() => { setFilters({ ...DEFAULT_FILTERS, ...c.filters }); setQuery(c.query || ""); setModal(null); }}>
+                  onClick={() => { applyCut(c); setModal(null); }}>
                   {c.name} <span className="num mut">{(c.count || 0).toLocaleString()}</span>
                 </button>
               ))}
@@ -163,15 +215,43 @@ export function VoterView({ role, clientId, client }) {
       )}
       {modal === "export" && (
         <VoterModal title="Export universe" onClose={() => setModal(null)}>
-          <p className="mut" style={{ fontSize: 13 }}>Job status: {exportJob?.status || "…"}</p>
-          {exportJob?.manifest && <pre style={{ fontSize: 11, overflow: "auto", maxHeight: 200 }}>{JSON.stringify(exportJob.manifest, null, 2)}</pre>}
+          <p className="mut" style={{ fontSize: 13, marginTop: 0 }}>
+            {filtersSummary(filters)}
+            {query ? ` · "${query}"` : ""}
+          </p>
+          {exportCount == null ? (
+            <p className="mut" style={{ fontSize: 13 }}>Counting matching records…</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 14, color: "var(--fs-navy)", margin: "12px 0" }}>
+                <strong>{exportCount.toLocaleString()}</strong> voters match the full filter set.
+                {mapExportCount != null && (
+                  <span className="mut" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+                    {mapExportCount.toLocaleString()} in the current map view.
+                  </span>
+                )}
+              </p>
+              <div className="col" style={{ gap: 8 }}>
+                <button type="button" className="btn primary" disabled={exporting || exportCount === 0}
+                  onClick={() => runExport("filters")}>
+                  Export full filtered universe (CSV)
+                </button>
+                {tab === "map" && mapBbox && (
+                  <button type="button" className="btn secondary" disabled={exporting || mapExportCount === 0}
+                    onClick={() => runExport("map")}>
+                    Export current map view ({mapExportCount?.toLocaleString() || 0} voters)
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </VoterModal>
       )}
     </div>
   );
 }
 
-function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, cuts, onApplyCut, onFlash }) {
+function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, meta, cuts, onApplyCut }) {
   const [page, setPage] = useState(1);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -193,61 +273,40 @@ function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, 
   const rows = result?.rows || [];
   const totalPages = Math.max(1, Math.ceil((total || recordCount) / PAGE_SIZE));
   const message = result?.message;
+  const avgScore = result?.stats?.avgScore ?? 0;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 24 }}>
       <aside className="card">
         <div className="card-head"><h3>Filters</h3></div>
-        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
-            <div className="lbl">Search</div>
-            <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name or VAN ID" />
-          </div>
-          <div className="lbl">Party</div>
-          <div className="row" style={{ gap: 4 }}>
-            {["All", "D", "R", "I"].map((p) => (
-              <button key={p} type="button" className={"btn " + (filters.party === p ? "primary" : "secondary")} style={{ flex: 1, fontSize: 12 }}
-                onClick={() => setFilters((f) => ({ ...f, party: p }))}>{p}</button>
-            ))}
-          </div>
-          <div>
-            <div className="lbl">County</div>
-            <select className="input" value={filters.county} onChange={(e) => setFilters((f) => ({ ...f, county: e.target.value }))}>
-              <option>All</option>
-              {COUNTIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <div className="lbl">Score min · {filters.scoreMin}</div>
-            <input type="range" min={0} max={100} step={5} value={filters.scoreMin}
-              onChange={(e) => setFilters((f) => ({ ...f, scoreMin: +e.target.value }))} style={{ width: "100%" }} />
-          </div>
-          {cuts.length > 0 && (
-            <>
-              <div className="divider" style={{ margin: 0 }} />
-              <div className="lbl">Saved cuts</div>
-              {cuts.slice(0, 5).map((s) => (
-                <button key={s.id} type="button" className="btn ghost sm" onClick={() => onApplyCut(s)}>{s.name}</button>
-              ))}
-            </>
-          )}
-        </div>
+        <VoterFilters
+          filters={filters}
+          setFilters={setFilters}
+          query={query}
+          setQuery={setQuery}
+          meta={meta}
+          cuts={cuts}
+          onApplyCut={onApplyCut}
+        />
       </aside>
       <div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
           <div className="card card-pad"><Stat figure={recordCount.toLocaleString()} label="File records" /></div>
           <div className="card card-pad"><Stat figure={total.toLocaleString()} label="Matching universe" /></div>
+          <div className="card card-pad"><Stat figure={avgScore ? String(avgScore) : "—"} label="Avg turnout score" /></div>
           <div className="card card-pad"><Stat figure={String(page) + " / " + totalPages} label="Page" /></div>
         </div>
         {message && (
           <div className="card card-pad" style={{ marginBottom: 12, fontSize: 13, color: "var(--fs-fg-muted)" }}>{message}</div>
         )}
-        {loading ? <Loading /> : rows.length === 0 ? (
-          <EmptyState title="No rows in this page" description="Complete warehouse ingest to query individual records. Universe counts use the registered file metadata until then." icon="users" />
+        {loading ? <Loading /> : rows.length === 0 && !message ? (
+          <EmptyState title="No matching voters" description="Try widening your filters or clearing the search box." icon="users" />
+        ) : rows.length === 0 ? (
+          <EmptyState title="No rows loaded" description="Run voter:ingest to load the warehouse for this client." icon="users" />
         ) : (
           <div className="card">
             <table className="tbl">
-              <thead><tr><th>Voter</th><th>Party</th><th>County</th><th>Score</th></tr></thead>
+              <thead><tr><th>Voter</th><th>Party</th><th>County</th><th>Score</th><th>Address</th></tr></thead>
               <tbody>
                 {rows.map((v) => (
                   <tr key={v.id}>
@@ -255,6 +314,7 @@ function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, 
                     <td><Tag>{v.party}</Tag></td>
                     <td>{v.county}</td>
                     <td className="num">{v.score}</td>
+                    <td className="mut" style={{ fontSize: 12 }}>{v.address || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -289,7 +349,7 @@ function CutForm({ onSave, onCancel, filters }) {
   return (
     <>
       <input className="input" placeholder="Cut name" value={name} onChange={(e) => setName(e.target.value)} style={{ marginBottom: 12 }} />
-      <p className="mut" style={{ fontSize: 12 }}>Saves filter predicate for server-side export — party {filters.party}, county {filters.county}, score ≥ {filters.scoreMin}</p>
+      <p className="mut" style={{ fontSize: 12 }}>{filtersSummary(filters)}</p>
       <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
         <button type="button" className="btn secondary" onClick={onCancel}>Cancel</button>
         <button type="button" className="btn primary" disabled={!name.trim()} onClick={() => onSave(name.trim())}>Save</button>
