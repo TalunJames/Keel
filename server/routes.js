@@ -176,7 +176,7 @@ export function registerRoutes(app, db) {
   app.put("/api/login-announcement", auth, requireSystemAdmin, (req, res) => {
     const { enabled, title, body, tone } = req.body || {};
     const next = {
-      enabled: enabled !== false,
+      enabled: !!enabled,
       title: (title || "").toString().slice(0, 120),
       body: (body || "").toString().slice(0, 600),
       tone: ["info", "warning", "success"].includes(tone) ? tone : "info",

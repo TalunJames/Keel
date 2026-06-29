@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Icon, Eyebrow } from "../components/ui.jsx";
+import { Icon } from "../components/ui.jsx";
 import { authApi, loginAnnouncementApi, ApiError } from "../lib/api.js";
 
 const TONE_STYLES = {
@@ -61,12 +61,11 @@ export function LoginView({ onLogin }) {
             style={{ height: 56, width: "auto", display: "block" }} />
         </div>
         <div style={{ position: "relative", maxWidth: 480 }}>
-          <Eyebrow>Sign in</Eyebrow>
-          <h1 style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 48, lineHeight: 1.1, color: "var(--ks-on-ink)", margin: "16px 0 18px" }}>
+          <h1 style={{ fontFamily: "var(--fs-font-display)", fontWeight: 700, fontSize: 48, lineHeight: 1.1, color: "var(--ks-on-ink)", margin: "0 0 18px" }}>
             A steady signal<br />through noisy weeks.
           </h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-            Keel is the internal portal for Fog Signal staff and retained clients — design jobs, election night, the voter file, and everything in between.
+            Keel is the internal portal for Fog Signal staff and retained clients.
           </p>
         </div>
         <div style={{ position: "relative", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
@@ -104,7 +103,7 @@ export function LoginView({ onLogin }) {
           <div className="field">
             <label htmlFor="email">Email</label>
             <input id="email" className="input" type="email" autoComplete="username" required
-              placeholder="name@fogsignal.co" value={email} onChange={(e) => setEmail(e.target.value)} />
+              placeholder="name@fogsignal.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="password">Password</label>
