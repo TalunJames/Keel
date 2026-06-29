@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { ensureBootstrapAdmin } from "./bootstrap.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -223,6 +224,7 @@ function migrate(db) {
   ensureUserColumns(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
+  ensureBootstrapAdmin(db);
 }
 
 function ensureUserColumns(db) {

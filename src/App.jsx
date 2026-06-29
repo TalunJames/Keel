@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { authApi, clientsApi, modulesApi, badgesApi, api, withClient } from "./lib/api.js";
+import { authApi, clientsApi, modulesApi, badgesApi, api, withClient, setupApi } from "./lib/api.js";
 import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
+import { SetupView } from "./views/setup.jsx";
 import { HomeView } from "./views/home.jsx";
 import { CalendarView } from "./views/calendar.jsx";
 import { DesignView } from "./views/design.jsx";
@@ -39,6 +40,7 @@ function ClientLockOut() {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [setup, setSetup] = useState(null);
   const [booting, setBooting] = useState(true);
   const [clients, setClients] = useState([]);
   const [modules, setModules] = useState(DEFAULT_MODULES_FALLBACK.staff);
@@ -53,10 +55,13 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    authApi.me()
-      .then(({ user: u }) => setUser(u))
-      .catch(() => setUser(null))
-      .finally(() => setBooting(false));
+    Promise.all([
+      setupApi.status().catch(() => ({ needsSetup: false })),
+      authApi.me().catch(() => null),
+    ]).then(([status, session]) => {
+      setSetup(status);
+      if (session?.user) setUser(session.user);
+    }).finally(() => setBooting(false));
   }, []);
 
   useEffect(() => {
@@ -79,6 +84,7 @@ export default function App() {
 
   const handleLogin = (u) => {
     setUser(u);
+    setSetup({ needsSetup: false });
     setSection("home");
   };
 
@@ -89,6 +95,10 @@ export default function App() {
 
   if (booting) {
     return <div style={{ display: "grid", placeItems: "center", height: "100vh", color: "var(--fs-fg-muted)" }}>Loading…</div>;
+  }
+
+  if (setup?.needsSetup) {
+    return <SetupView setup={setup} onComplete={handleLogin} />;
   }
 
   if (!user) return <LoginView onLogin={handleLogin} />;

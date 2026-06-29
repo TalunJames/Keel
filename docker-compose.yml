@@ -16,8 +16,10 @@
 #        mkdir -p /mnt/<pool>/apps/keel/{data,uploads}
 #        chown -R 568:568 /mnt/<pool>/apps/keel
 #      Adjust the bind-mount source paths below to match your pool.
-#   3. Fill in the env vars (JWT_SECRET, ADMIN_PASSWORD, TUNNEL_TOKEN) in TrueNAS's
+#   3. Fill in the env vars (JWT_SECRET, TUNNEL_TOKEN) in TrueNAS's
 #      "Environment Variables" UI — do NOT commit real secrets to this file.
+#      On first boot, open the app URL and set the administrator password
+#      for BOOTSTRAP_ADMIN_EMAIL (default cjames@fogsignal.co).
 
 services:
   keel:
@@ -45,9 +47,8 @@ services:
       ELECTION_CONTEST_PATTERNS: ${ELECTION_CONTEST_PATTERNS:-Governor,United States Senator,Congress District 5,State Representative District,State Senator District,County Commissioner}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: 8h
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@fogsignal.co}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required for first boot}
-      ADMIN_NAME: ${ADMIN_NAME:-Keel Administrator}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-cjames@fogsignal.co}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Carter James}
       # Comma-separated allowlist. Add every public hostname that fronts Keel
       # (e.g. cloudflared tunnels for portal.fogsignalstrategies.com and
       # keel.fogsignalstrategies.com). No spaces around commas.

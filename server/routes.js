@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
+import { getSetupStatus, isBootstrapPending } from "./bootstrap.js";
 import {
   getElectionLiveStatus,
   listElectionContests,
@@ -58,6 +59,54 @@ function rowToClient(row) {
 export function registerRoutes(app, db) {
   const auth = requireAuth(db);
 
+  app.get("/api/setup/status", (_req, res) => {
+    res.json(getSetupStatus(db));
+  });
+
+  app.post("/api/setup/complete", async (req, res) => {
+    const status = getSetupStatus(db);
+    if (!status.needsSetup) {
+      return res.status(400).json({ error: "Setup already completed" });
+    }
+    const { password, name } = req.body || {};
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+
+    const row = db.prepare(
+      `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
+              system_admin AS systemAdmin, title, location, about, phone, photo
+       FROM users WHERE email = ? COLLATE NOCASE`
+    ).get(status.email);
+
+    if (!row || !isBootstrapPending(row.password_hash)) {
+      return res.status(400).json({ error: "Setup already completed" });
+    }
+
+    const displayName = (name || row.name || status.name || "").trim();
+    if (!displayName) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    db.prepare("UPDATE users SET password_hash = ?, name = ? WHERE id = ?").run(
+      await hashPassword(password),
+      displayName,
+      row.id
+    );
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      status.email,
+      "Completed first-boot setup and set admin password",
+      "System"
+    );
+
+    const user = { ...row, name: displayName };
+    delete user.password_hash;
+    user.systemAdmin = !!user.systemAdmin;
+    const token = signToken(user, { remember: true });
+    setAuthCookie(res, token, { remember: true });
+    res.json({ user, token });
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     const { email, password, remember } = req.body || {};
     if (!email || !password) {
@@ -68,7 +117,16 @@ export function registerRoutes(app, db) {
               system_admin AS systemAdmin, title, location, about, phone, photo
        FROM users WHERE email = ? COLLATE NOCASE`
     ).get(email.trim());
-    if (!user || !(await comparePassword(password, user.password_hash))) {
+    if (!user) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+    if (isBootstrapPending(user.password_hash)) {
+      return res.status(403).json({
+        error: "Complete first-time setup to create your password",
+        needsSetup: true,
+      });
+    }
+    if (!(await comparePassword(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
     delete user.password_hash;
