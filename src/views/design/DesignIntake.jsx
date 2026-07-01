@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PageHead, Icon, Eyebrow } from "../../components/ui.jsx";
 import { designApi, clientsApi } from "../../lib/api.js";
 import { ASSET_TYPES, PRIORITIES } from "../../lib/design-status.js";
@@ -23,6 +23,8 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
   const [designers, setDesigners] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const attachInputRef = useRef(null);
 
   useEffect(() => {
     clientsApi.list().then((r) => {
@@ -77,8 +79,34 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
     }
   };
 
-  const addAttachment = () => {
-    upd("attachments", [...form.attachments, { name: `reference-${form.attachments.length + 1}.pdf`, size: "—" }]);
+  const handleFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setUploading(true);
+    setError("");
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const r = await designApi.upload(file);
+        uploaded.push({ name: r.name, size: r.size, url: r.url, mimeType: r.mimeType });
+      }
+      setForm((f) => ({ ...f, attachments: [...f.attachments, ...uploaded] }));
+    } catch (e) {
+      setError(e.message || "Could not upload file.");
+    } finally {
+      setUploading(false);
+      if (attachInputRef.current) attachInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (idx) => {
+    setForm((f) => ({ ...f, attachments: f.attachments.filter((_, i) => i !== idx) }));
+  };
+
+  const formatSize = (bytes) => {
+    if (typeof bytes !== "number") return "";
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return Math.max(1, Math.round(bytes / 1024)) + " KB";
   };
 
   return (
@@ -166,21 +194,52 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
 
           <div className="field">
             <label>Reference files</label>
+            <input
+              ref={attachInputRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+              onChange={(e) => handleFiles(e.target.files)}
+              style={{ display: "none" }}
+            />
             <div
               style={{
                 border: "1.5px dashed var(--fs-border-strong)", borderRadius: 4,
-                padding: "26px 20px", textAlign: "center", background: "var(--fs-bone-50)", cursor: "pointer",
+                padding: "26px 20px", textAlign: "center", background: "var(--fs-bone-50)",
+                cursor: uploading ? "wait" : "pointer", opacity: uploading ? 0.6 : 1,
               }}
-              onClick={addAttachment}
+              onClick={() => !uploading && attachInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); if (!uploading) handleFiles(e.dataTransfer.files); }}
             >
               <Icon name="upload" size={22} color="var(--fs-navy)" />
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--fs-navy)", marginTop: 8 }}>
-                Drop scripts, scratch tracks, or prior creative
+                {uploading ? "Uploading…" : "Drop scripts, scratch tracks, or prior creative"}
               </div>
               <div style={{ fontSize: 12, color: "var(--fs-fg-muted)", marginTop: 4 }}>
-                Metadata only in v1 · {form.attachments.length} file{form.attachments.length === 1 ? "" : "s"} attached
+                PNG, JPG, GIF, WebP, or PDF up to 15 MB each
               </div>
             </div>
+            {form.attachments.length > 0 && (
+              <div className="col" style={{ gap: 6, marginTop: 10 }}>
+                {form.attachments.map((a, i) => (
+                  <div key={a.url || i} className="row between" style={{ fontSize: 13, padding: "6px 10px", background: "var(--fs-bone-50)", borderRadius: 4 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <Icon name="folder" size={13} color="var(--fs-navy)" />
+                      {a.url ? (
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--fs-navy)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</a>
+                      ) : (
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                      )}
+                      <span className="mut" style={{ fontSize: 11, flexShrink: 0 }}>{formatSize(a.size)}</span>
+                    </span>
+                    <button type="button" className="btn ghost sm" onClick={() => removeAttachment(i)} aria-label={`Remove ${a.name}`}>
+                      <Icon name="x" size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="divider" />

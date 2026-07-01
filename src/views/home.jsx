@@ -87,7 +87,7 @@ function HomeStatsCustomizer({ stats, onChange, onClose }) {
 }
 
 export function HomeView({ user, role, onNavigate, client, clientId }) {
-  const { data, loading, reload } = useApi(withClient("/home", clientId), [clientId]);
+  const { data, loading, error, reload } = useApi(withClient("/home", clientId), [clientId]);
   const [rawHomeStats, setRawHomeStats] = usePref("homeStats", DEFAULT_HOME_STATS);
   const [customizing, setCustomizing] = useState(false);
   const links = QUICK_LINKS[role] || QUICK_LINKS.staff;
@@ -100,10 +100,22 @@ export function HomeView({ user, role, onNavigate, client, clientId }) {
   );
 
   const toggleTask = (id, done) => {
-    api("/home/tasks/" + id, { method: "PATCH", body: JSON.stringify({ done: !done }) }).then(reload);
+    api("/home/tasks/" + id, { method: "PATCH", body: JSON.stringify({ done: !done }) })
+      .then(reload)
+      .catch(() => {});
   };
 
   if (loading) return <Loading label="Loading workspace…" />;
+  if (error) {
+    return (
+      <div className="card card-pad" style={{ maxWidth: 480 }}>
+        <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--fs-navy)" }}>
+          Couldn't load your workspace{error.message ? ` — ${error.message}` : ""}.
+        </p>
+        <button type="button" className="btn secondary" onClick={reload}>Retry</button>
+      </div>
+    );
+  }
 
   const announcements = data?.announcements || [];
   const tasks = data?.tasks || [];

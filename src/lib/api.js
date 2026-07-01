@@ -182,6 +182,18 @@ export const designApi = {
   designers: () => api("/design/designers"),
   addProof: (id, body) => api(`/design/requests/${id}/proofs`, { method: "POST", body: JSON.stringify(body) }),
   addComment: (id, body) => api(`/design/requests/${id}/comments`, { method: "POST", body: JSON.stringify(body) }),
+  upload: async (file) => {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Could not read file"));
+      reader.readAsDataURL(file);
+    });
+    return api("/design/uploads", {
+      method: "POST",
+      body: JSON.stringify({ name: file.name, dataUrl }),
+    });
+  },
 };
 
 export const electionLiveApi = {

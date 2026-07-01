@@ -104,13 +104,20 @@ export function VoterMap({
           map.setPaintProperty("voters-circle", "circle-stroke-width", isPoints ? 1.5 : 0);
         }
       })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [clientId, ready, reportBbox]);
 
+  // moveend is bound once at map creation; route through a ref so the handler
+  // always sees the latest loadMapData (with current ready/clientId) instead of
+  // the stale mount-time closure where ready was still false.
+  const loadMapDataRef = useRef(loadMapData);
+  useEffect(() => { loadMapDataRef.current = loadMapData; }, [loadMapData]);
+
   const scheduleLoad = useCallback(() => {
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
-    fetchTimer.current = setTimeout(loadMapData, 250);
-  }, [loadMapData]);
+    fetchTimer.current = setTimeout(() => loadMapDataRef.current(), 250);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -219,7 +226,7 @@ export function VoterMap({
     };
   }, []);
 
-  useEffect(() => { scheduleLoad(); }, [filters, query, ready, scheduleLoad]);
+  useEffect(() => { scheduleLoad(); }, [filters, query, ready, clientId, scheduleLoad]);
 
   useEffect(() => {
     if (!ready || !mapRef.current) return;

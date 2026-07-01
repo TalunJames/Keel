@@ -1,29 +1,61 @@
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import { fileURLToPath } from "url";
 import {
   ACTIVE_STATUSES,
   CLIENT_VISIBLE_STATUSES,
+  DESIGN_STATUSES,
   POOL_STATUSES,
   RUSH_PRIORITIES,
   isDesigner,
   isStaffOrAdmin,
 } from "./design-status.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const UPLOAD_DIR = process.env.DESIGN_UPLOAD_DIR
+  || path.join(__dirname, "..", "data", "uploads", "design");
+
+const UPLOAD_MIME_EXT = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "application/pdf": "pdf",
+};
+
+const UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 import {
   sendDesignMail,
   notifyDesigners,
   notifyClientUsers,
 } from "./mail.js";
 
-function mapRequestRow(db, r) {
+function mapRequestRow(db, r, cache) {
   const payload = r.payload_json ? JSON.parse(r.payload_json) : {};
   let assigneeName = r.assignee || null;
   let assigneeEmail = null;
   if (r.assignee_id) {
-    const u = db.prepare("SELECT name, email FROM users WHERE id = ?").get(r.assignee_id);
+    let u;
+    if (cache?.users.has(r.assignee_id)) {
+      u = cache.users.get(r.assignee_id);
+    } else {
+      u = db.prepare("SELECT name, email FROM users WHERE id = ?").get(r.assignee_id);
+      cache?.users.set(r.assignee_id, u);
+    }
     if (u) {
       assigneeName = u.name;
       assigneeEmail = u.email;
     }
   }
-  const client = db.prepare("SELECT name FROM clients WHERE id = ?").get(r.client_id);
+  let client;
+  if (cache?.clients.has(r.client_id)) {
+    client = cache.clients.get(r.client_id);
+  } else {
+    client = db.prepare("SELECT name FROM clients WHERE id = ?").get(r.client_id);
+    cache?.clients.set(r.client_id, client);
+  }
   return {
     id: r.id,
     title: r.title,
@@ -117,7 +149,8 @@ export function registerDesignRoutes(app, db, auth) {
     }
     if (clauses.length) sql += " WHERE " + clauses.join(" AND ");
     sql += " ORDER BY created_at DESC LIMIT 500";
-    res.json({ items: db.prepare(sql).all(...args).map((r) => mapRequestRow(db, r)) });
+    const cache = { users: new Map(), clients: new Map() };
+    res.json({ items: db.prepare(sql).all(...args).map((r) => mapRequestRow(db, r, cache)) });
   });
 
   app.get("/api/design/stats", auth, (req, res) => {
@@ -173,7 +206,8 @@ export function registerDesignRoutes(app, db, auth) {
        WHERE assignee_id = ? AND status != 'Approved' AND status != 'draft'
        ORDER BY created_at DESC LIMIT 200`
     ).all(req.user.id);
-    const items = rows.map((r) => mapRequestRow(db, r));
+    const cache = { users: new Map(), clients: new Map() };
+    const items = rows.map((r) => mapRequestRow(db, r, cache));
     items.sort((a, b) => {
       const pr = { "Election critical": 0, Rush: 1, Standard: 2 };
       const pa = pr[a.priority] ?? 3;
@@ -195,7 +229,8 @@ export function registerDesignRoutes(app, db, auth) {
       args.push(scope);
     }
     sql += " ORDER BY created_at DESC LIMIT 100";
-    res.json({ items: db.prepare(sql).all(...args).map((r) => mapRequestRow(db, r)) });
+    const cache = { users: new Map(), clients: new Map() };
+    res.json({ items: db.prepare(sql).all(...args).map((r) => mapRequestRow(db, r, cache)) });
   });
 
   app.get("/api/design/desk-stats", auth, requireDesignerCapable, (req, res) => {
@@ -331,6 +366,12 @@ export function registerDesignRoutes(app, db, auth) {
     const isAssignee = row.assignee_id === req.user.id;
 
     if (req.user.role === "client") {
+      if (row.client_id !== req.user.clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      if (!CLIENT_VISIBLE_STATUSES.includes(row.status)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const { action } = req.body || {};
       if (action === "approve") {
         db.prepare("UPDATE design_requests SET status = 'Approved' WHERE id = ?").run(row.id);
@@ -377,8 +418,20 @@ export function registerDesignRoutes(app, db, auth) {
     const updates = [];
     const args = [];
 
-    if (staff && title !== undefined) { updates.push("title = ?"); args.push(title.trim()); }
-    if (status !== undefined) { updates.push("status = ?"); args.push(status); }
+    if (staff && title !== undefined) {
+      if (typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ error: "title must be a non-empty string" });
+      }
+      updates.push("title = ?");
+      args.push(title.trim());
+    }
+    if (status !== undefined) {
+      if (!DESIGN_STATUSES.includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+      updates.push("status = ?");
+      args.push(status);
+    }
     if (staff && priority !== undefined) { updates.push("priority = ?"); args.push(priority); }
     if (staff && due !== undefined) { updates.push("due = ?"); args.push(due || null); }
     if (staff && assigneeId !== undefined) {
@@ -438,7 +491,7 @@ export function registerDesignRoutes(app, db, auth) {
     res.json({ ok: true });
   });
 
-  app.post("/api/design/requests/:id/claim", auth, (req, res) => {
+  app.post("/api/design/requests/:id/claim", auth, async (req, res) => {
     if (!isDesigner(req.user)) return res.status(403).json({ error: "Designers only" });
     const row = getRequest(db, req.params.id);
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -455,13 +508,55 @@ export function registerDesignRoutes(app, db, auth) {
       `Claimed design request #${row.id}`,
       "Design"
     );
-    sendDesignMail(db, {
+    await sendDesignMail(db, {
       requestId: row.id,
       eventType: "claimed",
       to: req.user.email,
       data: { title: row.title },
     });
     res.json({ ok: true });
+  });
+
+  // Accepts a base64 data URL, stores the decoded file under UPLOAD_DIR, and
+  // returns a portal-relative URL served by GET /api/design/files/:name below.
+  app.post("/api/design/uploads", auth, requireDesignerCapable, (req, res) => {
+    const { name, dataUrl } = req.body || {};
+    if (typeof dataUrl !== "string") {
+      return res.status(400).json({ error: "dataUrl required" });
+    }
+    const match = dataUrl.match(/^data:([\w.+/-]+);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return res.status(400).json({ error: "Malformed data URL" });
+    const mimeType = match[1].toLowerCase();
+    const ext = UPLOAD_MIME_EXT[mimeType];
+    if (!ext) {
+      return res.status(400).json({
+        error: `Unsupported file type. Allowed: ${Object.keys(UPLOAD_MIME_EXT).join(", ")}`,
+      });
+    }
+    const buf = Buffer.from(match[2], "base64");
+    if (!buf.length) return res.status(400).json({ error: "Empty file" });
+    if (buf.length > UPLOAD_MAX_BYTES) {
+      return res.status(413).json({ error: "File exceeds 15 MB limit" });
+    }
+    const filename = `${crypto.randomBytes(10).toString("hex")}.${ext}`;
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), buf);
+    res.status(201).json({
+      url: `/api/design/files/${filename}`,
+      name: typeof name === "string" && name.trim() ? name.trim().slice(0, 200) : filename,
+      size: buf.length,
+      mimeType,
+    });
+  });
+
+  app.get("/api/design/files/:name", auth, (req, res) => {
+    const { name } = req.params;
+    if (!/^[a-f0-9]+\.[a-z0-9]+$/.test(name)) {
+      return res.status(400).json({ error: "Bad filename" });
+    }
+    res.sendFile(name, { root: UPLOAD_DIR, maxAge: "365d", immutable: true }, (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: "Not found" });
+    });
   });
 
   app.post("/api/design/requests/:id/proofs", auth, requireDesignerCapable, (req, res) => {
