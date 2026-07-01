@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PageHead, Icon, Tag, Avatar, Eyebrow } from "../../components/ui.jsx";
 import { designApi } from "../../lib/api.js";
 import { statusTone, DESIGNER_TRANSITIONS, DESIGN_STATUSES } from "../../lib/design-status.js";
@@ -18,7 +18,10 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
   const [draft, setDraft] = useState("");
   const [proofVersion, setProofVersion] = useState("");
   const [proofLabel, setProofLabel] = useState("");
+  const [proofFile, setProofFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const fileInputRef = useRef(null);
 
   const isClient = role === "client";
   const isStaff = role === "staff" || role === "admin";
@@ -53,12 +56,23 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
   const canDesign = isStaff || (isDesigner && isAssignee);
   const designerTransitions = DESIGNER_TRANSITIONS[request.status] || [];
 
-  const postComment = async (marker = null) => {
+  const runAction = async (fn) => {
+    setActionError("");
+    try {
+      await fn();
+      load();
+      onUpdated?.();
+    } catch (e) {
+      setActionError(e.message || "Something went wrong. Try again.");
+    }
+  };
+
+  const postComment = (marker = null) => {
     if (!draft.trim()) return;
-    await designApi.addComment(requestId, { text: draft, proofId: currentProof?.id, marker });
-    setDraft("");
-    load();
-    onUpdated?.();
+    runAction(async () => {
+      await designApi.addComment(requestId, { text: draft, proofId: currentProof?.id, marker });
+      setDraft("");
+    });
   };
 
   const handleFrameClick = (e) => {
@@ -72,34 +86,37 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
   const uploadProof = async () => {
     if (!proofVersion.trim()) return;
     setSaving(true);
+    setActionError("");
     try {
-      await designApi.addProof(requestId, { version: proofVersion, label: proofLabel || proofVersion });
+      let fileUrl = "";
+      let mimeType = "";
+      if (proofFile) {
+        const uploaded = await designApi.upload(proofFile);
+        fileUrl = uploaded.url;
+        mimeType = uploaded.mimeType;
+      }
+      await designApi.addProof(requestId, {
+        version: proofVersion,
+        label: proofLabel || proofVersion,
+        fileUrl,
+        mimeType,
+      });
       setProofVersion("");
       setProofLabel("");
+      setProofFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       load();
       onUpdated?.();
+    } catch (e) {
+      setActionError(e.message || "Could not upload proof.");
     } finally {
       setSaving(false);
     }
   };
 
-  const setStatus = async (status) => {
-    await designApi.update(requestId, { status });
-    load();
-    onUpdated?.();
-  };
-
-  const readyForReview = async () => {
-    await designApi.update(requestId, { action: "ready_for_review" });
-    load();
-    onUpdated?.();
-  };
-
-  const clientAction = async (action) => {
-    await designApi.update(requestId, { action });
-    load();
-    onUpdated?.();
-  };
+  const setStatus = (status) => runAction(() => designApi.update(requestId, { status }));
+  const readyForReview = () => runAction(() => designApi.update(requestId, { action: "ready_for_review" }));
+  const clientAction = (action) => runAction(() => designApi.update(requestId, { action }));
 
   return (
     <div>
@@ -143,6 +160,10 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
         }
       />
 
+      {actionError && (
+        <div className="flash danger" style={{ marginBottom: 16 }}>{actionError}</div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "flex-start" }}>
         <div>
           <div className="card" style={{ padding: 24 }}>
@@ -171,12 +192,26 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
               }}
               onClick={draft.trim() ? handleFrameClick : undefined}
             >
-              <div style={{
-                position: "absolute", inset: 0, display: "grid", placeItems: "center",
-                color: "rgba(255,255,255,0.7)", fontSize: 14,
-              }}>
-                {currentProof ? `${currentProof.label || currentProof.version} preview` : "No proof uploaded yet"}
-              </div>
+              {currentProof?.fileUrl && currentProof.mimeType?.startsWith("image/") ? (
+                <img
+                  src={currentProof.fileUrl}
+                  alt={currentProof.label || currentProof.version}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "var(--fs-paper)", pointerEvents: "none" }}
+                />
+              ) : currentProof?.fileUrl && currentProof.mimeType === "application/pdf" ? (
+                <embed
+                  src={currentProof.fileUrl}
+                  type="application/pdf"
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: draft.trim() ? "none" : "auto" }}
+                />
+              ) : (
+                <div style={{
+                  position: "absolute", inset: 0, display: "grid", placeItems: "center",
+                  color: "rgba(255,255,255,0.7)", fontSize: 14,
+                }}>
+                  {currentProof ? `${currentProof.label || currentProof.version} — no file attached` : "No proof uploaded yet"}
+                </div>
+              )}
               {(comments || []).filter((c) => c.marker).map((c, i) => (
                 <div
                   key={c.id}
@@ -205,9 +240,21 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
                   onChange={(e) => setProofVersion(e.target.value)} style={{ maxWidth: 120 }} />
                 <input className="input" placeholder="Label" value={proofLabel}
                   onChange={(e) => setProofLabel(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
-                <button type="button" className="btn primary" disabled={saving} onClick={uploadProof}>Add version</button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+                  onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                  style={{ display: "none" }}
+                />
+                <button type="button" className="btn secondary" disabled={saving} onClick={() => fileInputRef.current?.click()}>
+                  <Icon name="upload" size={13} /> {proofFile ? proofFile.name : "Choose file"}
+                </button>
+                <button type="button" className="btn primary" disabled={saving || !proofVersion.trim()} onClick={uploadProof}>
+                  {saving ? "Uploading…" : "Add version"}
+                </button>
               </div>
-              <div className="help" style={{ marginTop: 8 }}>Stores version metadata; file hosting is manual in v1.</div>
+              <div className="help" style={{ marginTop: 8 }}>PNG, JPG, GIF, WebP, or PDF up to 15 MB. File is optional — versions can track metadata only.</div>
             </div>
           )}
 
@@ -215,6 +262,24 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
             <div className="card card-pad" style={{ marginTop: 16 }}>
               <Eyebrow>Creative direction</Eyebrow>
               <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 10, whiteSpace: "pre-wrap" }}>{request.spec}</p>
+            </div>
+          )}
+
+          {Array.isArray(request.attachments) && request.attachments.length > 0 && (
+            <div className="card card-pad" style={{ marginTop: 16 }}>
+              <Eyebrow>Reference files</Eyebrow>
+              <div className="col" style={{ gap: 6, marginTop: 10 }}>
+                {request.attachments.map((a, i) => (
+                  <div key={a.url || i} className="row" style={{ gap: 8, fontSize: 13 }}>
+                    <Icon name="folder" size={13} color="var(--fs-navy)" />
+                    {a.url ? (
+                      <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--fs-navy)" }}>{a.name}</a>
+                    ) : (
+                      <span>{a.name}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

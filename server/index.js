@@ -44,7 +44,8 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "2mb" }));
+// 25mb accommodates base64-encoded design uploads (15 MB binary ≈ 20 MB base64).
+app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 
 registerRoutes(app, db);

@@ -276,7 +276,8 @@ export async function ingestVoterFile({
   const partyMix = { D: 0, R: 0, I: 0 };
   const addressIndex = new Map();
 
-  await new Promise((resolve, reject) => {
+  try {
+    await new Promise((resolve, reject) => {
     const parser = createReadStream(sourceCsvPath(clientId)).pipe(
       parse({
         columns: true,
@@ -330,10 +331,18 @@ export async function ingestVoterFile({
 
     parser.on("error", reject);
     parser.on("end", () => {
+      if (!vendor) {
+        reject(new Error("CSV file has no data rows — nothing to ingest."));
+        return;
+      }
       if (batch.length) insertMany(batch);
       resolve();
     });
-  });
+    });
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 
   db.close();
 

@@ -7,6 +7,7 @@
  *   npm run poll:ingest -- --dir portal/polling/clients/d11-colorado-springs
  */
 import "dotenv/config";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { openDb } from "../server/db.js";
@@ -51,6 +52,11 @@ function main() {
 
   if (!portalDir) {
     usage();
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(portalDir)) {
+    console.error(`Portal directory not found: ${portalDir}`);
     process.exit(1);
   }
 

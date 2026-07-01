@@ -236,11 +236,24 @@ function migrate(db) {
   ensureClientColumns(db);
   ensureDesignColumns(db);
   ensureDesignTables(db);
+  ensureIndexes(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
   seedDesignData(db);
   ensureBootstrapAdmin(db);
   syncPortalPolls(db, root);
+}
+
+function ensureIndexes(db) {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_design_requests_client ON design_requests(client_id, status);
+    CREATE INDEX IF NOT EXISTS idx_design_requests_assignee ON design_requests(assignee_id, status);
+    CREATE INDEX IF NOT EXISTS idx_design_proofs_request ON design_proofs(request_id);
+    CREATE INDEX IF NOT EXISTS idx_design_comments_request ON design_comments(request_id);
+    CREATE INDEX IF NOT EXISTS idx_voter_cuts_client ON voter_cuts(client_id);
+    CREATE INDEX IF NOT EXISTS idx_voter_files_client ON voter_files(client_id, active);
+  `);
 }
 
 function ensureUserColumns(db) {

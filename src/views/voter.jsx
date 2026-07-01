@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Suspense, lazy } from "react";
 import { PageHead, Icon, Stat, Tag } from "../components/ui.jsx";
 import { api, withClient, downloadExport } from "../lib/api.js";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { Loading } from "../components/Loading.jsx";
-import { VoterMap } from "./VoterMap.jsx";
+
+const VoterMap = lazy(() =>
+  import("./VoterMap.jsx").then((m) => ({ default: m.VoterMap }))
+);
 import { VoterFilters, DEFAULT_VOTER_FILTERS, filtersSummary } from "./voter-filters.jsx";
 
 const PAGE_SIZE = 50;
@@ -212,7 +215,9 @@ export function VoterView({ role, clientId, client }) {
         <VoterFileQuery clientId={clientId} file={file} {...sharedFilterProps} />
       )}
       {!needsClient && warehouseReady && tab === "map" && (
-        <VoterMap clientId={clientId} meta={meta} {...sharedFilterProps} onBboxChange={setMapBbox} />
+        <Suspense fallback={<Loading />}>
+          <VoterMap clientId={clientId} meta={meta} {...sharedFilterProps} onBboxChange={setMapBbox} />
+        </Suspense>
       )}
       {tab === "crosstabs" && <EmptyState title="Polling crosstabs" description="Link poll crosstabs from the Polling module when field data is published." icon="trend-up" />}
 

@@ -1,7 +1,10 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
-import { RaceDetailApp } from "../election/RaceDetailApp.jsx";
 import { RaceDetailErrorBoundary } from "../election/RaceDetailErrorBoundary.jsx";
+
+const RaceDetailApp = lazy(() =>
+  import("../election/RaceDetailApp.jsx").then((m) => ({ default: m.RaceDetailApp }))
+);
 
 export function ElectionView({ role }) {
   if (role === "client") {
@@ -21,7 +24,9 @@ export function ElectionView({ role }) {
 
   return (
     <RaceDetailErrorBoundary>
-      <RaceDetailApp />
+      <Suspense fallback={<div style={{ display: "grid", placeItems: "center", height: "60vh", color: "var(--fs-fg-muted)" }}>Loading election monitor…</div>}>
+        <RaceDetailApp />
+      </Suspense>
     </RaceDetailErrorBoundary>
   );
 }
