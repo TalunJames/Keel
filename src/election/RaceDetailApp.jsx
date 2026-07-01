@@ -28,27 +28,6 @@ import {
 import "./race-detail.css";
 
 
-    // ========================================================================
-    // SEEDED RNG — mock data must be stable across renders
-    // ========================================================================
-    function hashSeed(str) {
-      let h = 1779033703;
-      for (let i = 0; i < str.length; i++) {
-        h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-        h = (h << 13) | (h >>> 19);
-      }
-      return h >>> 0;
-    }
-    function mulberry32(seed) {
-      let a = seed;
-      return function () {
-        a |= 0; a = (a + 0x6D2B79F5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
-    }
-
     const SETTINGS_STORAGE_KEY = "fs-race-detail-settings";
     const SETTINGS_DEFAULTS = {
       mapColorMode: "gradient",
@@ -121,15 +100,10 @@ import "./race-detail.css";
     }
 
     function computeReportingStats(stats) {
-      const { reportedCount, totalCount, ballots, precinctProps } = stats;
+      const { reportedCount, totalCount } = stats;
       const pctInPrecincts = totalCount > 0 ? (reportedCount / totalCount) * 100 : 0;
       const pctOutPrecincts = totalCount > 0 ? ((totalCount - reportedCount) / totalCount) * 100 : 0;
-      const estTotalBallots = precinctProps.reduce(
-        (s, p) => s + Math.round(p.registered * p.turnoutRate / 100), 0,
-      );
-      const pctInBallots = estTotalBallots > 0 ? (ballots / estTotalBallots) * 100 : 0;
-      const pctOutBallots = estTotalBallots > 0 ? ((estTotalBallots - ballots) / estTotalBallots) * 100 : 0;
-      return { pctInPrecincts, pctOutPrecincts, pctInBallots, pctOutBallots, estTotalBallots };
+      return { pctInPrecincts, pctOutPrecincts };
     }
 
     function statusFor(yesPct, threshold, band) {
@@ -152,8 +126,6 @@ import "./race-detail.css";
       jurisdiction: "Colorado Springs, CO · School District 11",
       electionDate: "Jun 30, 2026",
       pollsClose: "7:00 PM MT",
-      consultant: "D. Whitfield",
-      estimatedVoters: 95000,
       boundaryUrl: "/election-data/d11-boundary.geojson",
       precinctsUrl: "/election-data/overlay-precincts.geojson",
       ballotRacesUrl: "/election-data/ballot-races-2026-primary.json",
@@ -477,11 +449,6 @@ import "./race-detail.css";
               reported: rep.length > 0,
               reportedCount: rep.length,
               totalCount: members.length,
-              registered: sum(members, p => p.registered),
-              turnoutRate: rep.length ? +(sum(rep, p => p.turnoutRate) / rep.length).toFixed(1) : 0,
-              priorYes: members.length ? +(sum(members, p => p.priorYes) / members.length).toFixed(1) : 0,
-              doorsKnocked: members.length ? Math.round(sum(members, p => p.doorsKnocked) / members.length) : 0,
-              doorsTotal: sum(members, p => p.doorsKnocked),
               yesPct: yes + no > 0 ? +((yes / (yes + no)) * 100).toFixed(1) : -1,
               yesVotes: yes, noVotes: no, ballots: yes + no,
               councilDist: districtId,
@@ -524,11 +491,6 @@ import "./race-detail.css";
               reported: rep.length > 0,
               reportedCount: rep.length,
               totalCount: members.length,
-              registered: sum(members, p => p.registered),
-              turnoutRate: rep.length ? +(sum(rep, p => p.turnoutRate) / rep.length).toFixed(1) : 0,
-              priorYes: members.length ? +(sum(members, p => p.priorYes) / members.length).toFixed(1) : 0,
-              doorsKnocked: members.length ? Math.round(sum(members, p => p.doorsKnocked) / members.length) : 0,
-              doorsTotal: sum(members, p => p.doorsKnocked),
               yesPct: yes + no > 0 ? +((yes / (yes + no)) * 100).toFixed(1) : -1,
               yesVotes: yes, noVotes: no, ballots: yes + no,
               zip,
@@ -570,11 +532,6 @@ import "./race-detail.css";
             reported: rep.length > 0,
             reportedCount: rep.length,
             totalCount: members.length,
-            registered: sum(members, p => p.registered),
-            turnoutRate: rep.length ? +(sum(rep, p => p.turnoutRate) / rep.length).toFixed(1) : 0,
-            priorYes: +(sum(members, p => p.priorYes) / members.length).toFixed(1),
-            doorsKnocked: Math.round(sum(members, p => p.doorsKnocked) / members.length),
-            doorsTotal: sum(members, p => p.doorsKnocked),
             yesPct: yes + no > 0 ? +((yes / (yes + no)) * 100).toFixed(1) : -1,
             yesVotes: yes, noVotes: no, ballots: yes + no,
             comDist: members[0].properties.comDist,
@@ -647,11 +604,6 @@ import "./race-detail.css";
             reported: rep.length > 0,
             reportedCount: rep.length,
             totalCount: members.length,
-            registered: sum(members, p => p.registered),
-            turnoutRate: rep.length ? +(sum(rep, p => p.turnoutRate) / rep.length).toFixed(1) : 0,
-            priorYes: +(sum(members, p => p.priorYes) / members.length).toFixed(1),
-            doorsKnocked: Math.round(sum(members, p => p.doorsKnocked) / members.length),
-            doorsTotal: sum(members, p => p.doorsKnocked),
             yesPct: yes + no > 0 ? +((yes / (yes + no)) * 100).toFixed(1) : -1,
             yesVotes: yes, noVotes: no, ballots: yes + no,
             ...rollupPriorProps(members, priorElection),
@@ -666,9 +618,9 @@ import "./race-detail.css";
     }
 
     // Build the full race dataset on REAL precinct geography. Shapes and IDs
-    // come from the county GIS file. When liveResults is present, public ENR
-    // totals replace mock reporting; field metrics (doors, prior wave) stay seeded.
-    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC, liveResults = null, pollingWaves = [], raceContext = null) {
+    // come from the county GIS file. Reporting comes only from public ENR
+    // totals; precincts without live data stay in an explicit awaiting state.
+    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC, liveResults = null, raceContext = null) {
       const liveByPrecinct = liveResults?.precincts || null;
       const isUnopposed = !!(liveResults?.totals?.isUnopposed)
         || isContestUnopposed({ race: raceContext, totals: liveResults?.totals });
@@ -677,16 +629,14 @@ import "./race-detail.css";
       const estRegisteredPerPrecinct = contestRegistered && inContestOnMap
         ? contestRegistered / inContestOnMap
         : null;
-      const rand = mulberry32(hashSeed(client.id));
-      const anchor = pollingWaves.length ? pollingWaves[pollingWaves.length - 1].support : 52;
       const [minX, minY, maxX, maxY] = turf.bbox(boundary);
       const bbox = [minX, minY, maxX, maxY];
 
       // Area rollups: coarse 4-seed Voronoi; precincts roll up to the area
       // their centroid falls in, so the two levels stay consistent.
       const areaSeeds = AREA_NAMES.map((_, q) => [
-        minX + (q % 2 ? 0.72 : 0.28) * (maxX - minX) + (rand() - 0.5) * (maxX - minX) * 0.18,
-        minY + (q >= 2 ? 0.72 : 0.28) * (maxY - minY) + (rand() - 0.5) * (maxY - minY) * 0.18,
+        minX + (q % 2 ? 0.72 : 0.28) * (maxX - minX),
+        minY + (q >= 2 ? 0.72 : 0.28) * (maxY - minY),
       ]);
       const areaDelaunay = Delaunay.from(areaSeeds);
       const areaVoronoi = areaDelaunay.voronoi(bbox);
@@ -723,15 +673,9 @@ import "./race-detail.css";
         });
       });
 
-      // Pass 2 — live ENR when a contest is wired; mock only in simulated mode
+      // Pass 2 — live ENR when a contest is wired; awaiting state otherwise
       const liveActive = !!(liveResults?.contest && liveResults?.totals);
       const precinctFeatures = inDistrict.map((p) => {
-        const prand = mulberry32(hashSeed(`${client.id}:precinct:${p.num}`));
-        const priorYes = +(anchor - 9 + prand() * 18).toFixed(1);
-        const doorsKnocked = Math.round(200 + prand() * 800);
-        const registered = Math.round(client.estimatedVoters / inDistrict.length * (0.7 + prand() * 0.6));
-        const turnoutRate = +(40 + prand() * 45).toFixed(1);
-
         if (liveActive) {
           const liveP = liveByPrecinct?.[String(p.num)] ?? {
             inContest: false,
@@ -778,7 +722,6 @@ import "./race-detail.css";
               yesVotes: liveP.yesVotes || 0,
               noVotes: liveP.noVotes || 0,
               ballots: liveP.ballots || 0,
-              reportMin: 0,
               live: true,
             },
             geometry: p.geometry,
@@ -794,10 +737,9 @@ import "./race-detail.css";
             name: `Precinct ${p.num}`,
             county: AREA_NAMES[p.quad],
             senate: p.senate, rep: p.rep, comDist: p.comDist,
-            quad: p.quad, reported: false, registered,
-            turnoutRate, priorYes, doorsKnocked,
+            quad: p.quad, reported: false, registered: null,
             yesPct: -1,
-            yesVotes: 0, noVotes: 0, ballots: 0, reportMin: 0,
+            yesVotes: 0, noVotes: 0, ballots: 0,
             inContest: true, protected: false, live: false,
           },
           geometry: p.geometry,
@@ -827,11 +769,6 @@ import "./race-detail.css";
             id: 1000 + q, name, county: name, isCounty: true,
             reported: rep.length > 0,
             reportedCount: rep.length, totalCount: members.length,
-            registered: sum(members, p => p.registered),
-            turnoutRate: rep.length ? +(sum(rep, p => p.turnoutRate) / rep.length).toFixed(1) : 0,
-            priorYes: +(sum(members, p => p.priorYes) / members.length).toFixed(1),
-            doorsKnocked: Math.round(sum(members, p => p.doorsKnocked) / members.length),
-            doorsTotal: sum(members, p => p.doorsKnocked),
             yesPct: yes + no > 0 ? +((yes / (yes + no)) * 100).toFixed(1) : -1,
             yesVotes: yes, noVotes: no, ballots: yes + no,
           },
@@ -854,11 +791,9 @@ import "./race-detail.css";
     }
 
     // ========================================================================
-    // MAP METRICS — choropleth (reporting) or dot-density (field data).
+    // MAP METRICS — choropleth layers only: live reporting + prior elections.
     // Election-night map never uses per-ballot dots; only public rollups.
     // ========================================================================
-    const dk = (p) => p.doorsTotal || p.doorsKnocked; // county carries the sum
-
     function resultsFillColorExpr(threshold, settings, isUnopposed = false) {
       const c = settings.colors;
       if (isUnopposed) {
@@ -931,8 +866,6 @@ import "./race-detail.css";
       return ["case", ["==", ["get", field], null], 0.5, 0.72];
     }
 
-    const MAP_METRIC_KEYS = ["results", "priorElections", "turnout", "doors"];
-
     function visibleMapMetrics() {
       return ["results", "priorElections"];
     }
@@ -940,59 +873,14 @@ import "./race-detail.css";
     const METRICS = {
       results: {
         label: "Reporting",
-        mode: "choropleth",
         choroplethKind: "reporting",
         format: (p, threshold, isUnopposed) => formatReporting(p, threshold, isUnopposed),
       },
       priorElections: {
         label: "Prior Elections",
-        mode: "choropleth",
         choroplethKind: "prior",
       },
-      turnout: {
-        label: "Turnout",
-        mode: "dots",
-        dots: {
-          per: 60, unit: "voters",
-          categories: [
-            { key: "voted",  label: "Voted",          color: "#1A3A5C", count: (p) => Math.round(p.registered * p.turnoutRate / 100) },
-            { key: "novote", label: "Didn't vote",    color: "#C8C7C1", count: (p) => p.registered - Math.round(p.registered * p.turnoutRate / 100) },
-          ],
-        },
-        format: (p) => `${p.turnoutRate}% turnout`,
-      },
-      doors: {
-        label: "Doors Knocked",
-        mode: "dots",
-        dots: {
-          per: 12, unit: "doors",
-          categories: [
-            { key: "dfor",     label: "ID'd supporter", color: "#2F6B4F", count: (p) => Math.round(dk(p) * (p.priorYes / 100) * 0.65) },
-            { key: "dagainst", label: "ID'd opposed",   color: "#A8341E", count: (p) => Math.round(dk(p) * ((100 - p.priorYes) / 100) * 0.5) },
-            { key: "dnone",    label: "No answer",      color: "#C8C7C1", count: (p) => dk(p) - Math.round(dk(p) * (p.priorYes / 100) * 0.65) - Math.round(dk(p) * ((100 - p.priorYes) / 100) * 0.5) },
-          ],
-        },
-        format: (p) => `${dk(p).toLocaleString()} doors`,
-      },
     };
-
-    // Ray-cast point-in-polygon test against a single ring
-    function pointInRing(x, y, ring) {
-      let inside = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = ring[i], [xj, yj] = ring[j];
-        if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
-      }
-      return inside;
-    }
-
-    // Point-in-geometry for Polygon / MultiPolygon (outer ring minus holes)
-    function pointInGeometry(x, y, geom) {
-      const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
-      return polys.some(rings =>
-        pointInRing(x, y, rings[0]) && rings.slice(1).every(h => !pointInRing(x, y, h))
-      );
-    }
 
     function geomBBox(geom) {
       const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
@@ -1004,48 +892,10 @@ import "./race-detail.css";
       return [minX, minY, maxX, maxY];
     }
 
-    // Scatter dots inside each area polygon — seeded, so positions are stable.
-    // Rejection-sampled against the polygon so dots respect irregular shapes.
-    function makeDots(geojson, metricKey, seedStr) {
-      const m = METRICS[metricKey];
-      if (m.mode === "choropleth") return { type: "FeatureCollection", features: [] };
-      const features = [];
-      geojson.features.forEach((f) => {
-        const rand = mulberry32(hashSeed(`${seedStr}:${metricKey}:${f.properties.id}`));
-        const geom = f.geometry;
-        const [lngMin, latMin, lngMax, latMax] = geomBBox(geom);
-        m.dots.categories.forEach((cat) => {
-          const n = Math.round(cat.count(f.properties) / m.dots.per);
-          for (let i = 0; i < n; i++) {
-            let x, y, tries = 0;
-            do {
-              x = lngMin + rand() * (lngMax - lngMin);
-              y = latMin + rand() * (latMax - latMin);
-              tries++;
-            } while (!pointInGeometry(x, y, geom) && tries < 30);
-            if (!pointInGeometry(x, y, geom)) continue;
-            features.push({
-              type: "Feature",
-              properties: { cat: cat.key },
-              geometry: { type: "Point", coordinates: [x, y] },
-            });
-          }
-        });
-      });
-      return { type: "FeatureCollection", features };
-    }
-
-    const fmtTime = (min) => {
-      const t = 20 * 60 + min; // 8:00 PM close
-      const h = Math.floor(t / 60), m = t % 60;
-      const h12 = h > 12 ? h - 12 : h;
-      return `${h12}:${String(m).padStart(2, "0")} PM`;
-    };
-
     // ========================================================================
     // MAP — 70% canvas, precinct/county zoom, layered heatmap
     // ========================================================================
-    function MapView({ geojson, dots, boundary, metric, threshold, level, fitKey, overlays, schoolFilters, priorCtx, settings, onSelect, isUnopposed }) {
+    function MapView({ geojson, boundary, metric, threshold, level, fitKey, overlays, schoolFilters, priorCtx, settings, onSelect, isUnopposed }) {
       const containerRef = useRef(null);
       const mapRef = useRef(null);
       const popupRef = useRef(null);
@@ -1102,7 +952,6 @@ import "./race-detail.css";
 
         map.once("load", () => {
           map.addSource("areas", { type: "geojson", data: { type: "FeatureCollection", features: [] }, promoteId: "id" });
-          map.addSource("dots", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
           map.addSource("mask", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
           map.addSource("boundary", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
           // Fade out everything outside the jurisdiction so it pops
@@ -1121,14 +970,6 @@ import "./race-detail.css";
               "line-color": "#8B9AAB",
               "line-width": 1.5,
               "line-opacity": 0.22,
-            },
-          });
-          map.addLayer({
-            id: "dots-circle", type: "circle", source: "dots",
-            paint: {
-              "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 1.1, 10, 1.9, 12, 3, 14, 4.6],
-              "circle-color": "#999",
-              "circle-opacity": 0.82,
             },
           });
           map.addLayer({
@@ -1165,13 +1006,11 @@ import "./race-detail.css";
               const ctx = priorCtxRef.current;
               fmt = ctx?.metricDef ? formatPriorMetric(p, ctx.metricDef) : "Prior election data not loaded";
               if (ctx?.election) sub = `<div style="color:#7A7975;font-size:11px">${ctx.election.label} · ${ctx.election.date}</div>`;
-            } else if (m.mode === "choropleth") {
+            } else {
               fmt = m.format(p, thresholdRef.current, isUnopposedRef.current);
               sub = p.reported && p.yesPct >= 0
-                ? `<div style="color:#7A7975;font-size:11px">Public precinct total${p.live ? "" : ` · ${fmtTime(p.reportMin)}`}</div>`
+                ? `<div style="color:#7A7975;font-size:11px">Public precinct total</div>`
                 : `<div style="color:#7A7975;font-size:11px">No totals released yet</div>`;
-            } else {
-              fmt = m.format(p);
             }
             popup.setLngLat(e.lngLat).setHTML(
               `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${p.name}</div>` +
@@ -1204,11 +1043,6 @@ import "./race-detail.css";
         if (!ready || !mapRef.current) return;
         mapRef.current.getSource("areas").setData(geojson);
       }, [ready, geojson]);
-
-      useEffect(() => {
-        if (!ready || !mapRef.current) return;
-        mapRef.current.getSource("dots").setData(dots);
-      }, [ready, dots]);
 
       // Reference overlays — schools, polling, drop boxes
       useEffect(() => {
@@ -1323,38 +1157,27 @@ import "./race-detail.css";
         map.fitBounds(bounds, { padding: 48, duration: 900 });
       }, [ready, fitKey]);
 
-      // Paint updates — reporting uses area choropleth; field metrics use dots
+      // Paint updates — both metrics are area choropleths
       useEffect(() => {
         if (!ready || !mapRef.current) return;
         const map = mapRef.current;
         const m = METRICS[metric];
-        if (m.mode === "choropleth") {
-          map.setLayoutProperty("dots-circle", "visibility", "none");
-          if (m.choroplethKind === "prior") {
-            if (priorCtx?.metricDef) {
-              map.setPaintProperty("areas-fill", "fill-color", priorFillColorExpr(priorCtx.metricDef));
-              map.setPaintProperty("areas-fill", "fill-opacity", priorFillOpacityExpr(priorCtx.metricDef.field));
-            } else {
-              map.setPaintProperty("areas-fill", "fill-color", "#E6E5DA");
-              map.setPaintProperty("areas-fill", "fill-opacity", 0.5);
-            }
+        if (m.choroplethKind === "prior") {
+          if (priorCtx?.metricDef) {
+            map.setPaintProperty("areas-fill", "fill-color", priorFillColorExpr(priorCtx.metricDef));
+            map.setPaintProperty("areas-fill", "fill-opacity", priorFillOpacityExpr(priorCtx.metricDef.field));
           } else {
-            map.setPaintProperty("areas-fill", "fill-color", resultsFillColorExpr(threshold, settingsRef.current, isUnopposed));
-            map.setPaintProperty("areas-fill", "fill-opacity", [
-              "case",
-              ["any", ["!", ["get", "reported"]], ["<", ["get", "yesPct"], 0]], 0.5,
-              0.72,
-            ]);
+            map.setPaintProperty("areas-fill", "fill-color", "#E6E5DA");
+            map.setPaintProperty("areas-fill", "fill-opacity", 0.5);
           }
-          return;
+        } else {
+          map.setPaintProperty("areas-fill", "fill-color", resultsFillColorExpr(threshold, settingsRef.current, isUnopposed));
+          map.setPaintProperty("areas-fill", "fill-opacity", [
+            "case",
+            ["any", ["!", ["get", "reported"]], ["<", ["get", "yesPct"], 0]], 0.5,
+            0.72,
+          ]);
         }
-        map.setLayoutProperty("dots-circle", "visibility", "visible");
-        map.setPaintProperty("areas-fill", "fill-color", settingsRef.current.colors.neutral);
-        map.setPaintProperty("areas-fill", "fill-opacity", 0.04);
-        const matchExpr = ["match", ["get", "cat"]];
-        m.dots.categories.forEach(c => matchExpr.push(c.key, c.color));
-        matchExpr.push("#999999");
-        map.setPaintProperty("dots-circle", "circle-color", matchExpr);
       }, [ready, metric, threshold, level, priorCtx, settings, isUnopposed]);
 
       return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
@@ -1622,7 +1445,7 @@ import "./race-detail.css";
                 <span><b style={{ color: "var(--fs-navy)" }}>{rep.pctOutPrecincts.toFixed(1)}%</b> precincts outstanding</span>
               )}
               {settings.showBallotCount && (
-                <span><b style={{ color: "var(--fs-navy)" }}>{ballots.toLocaleString()}</b> ballots counted{settings.showPercentIn ? ` · ${rep.pctInBallots.toFixed(1)}% in` : ""}{settings.showPercentOutstanding ? ` · ${rep.pctOutBallots.toFixed(1)}% outstanding` : ""}</span>
+                <span><b style={{ color: "var(--fs-navy)" }}>{ballots.toLocaleString()}</b> ballots counted</span>
               )}
             </div>
           )}
@@ -1679,7 +1502,6 @@ import "./race-detail.css";
       const c = settings.colors;
       const feed = precincts
         .filter(p => p.reported)
-        .sort((a, b) => b.reportMin - a.reportMin)
         .slice(0, embedded ? 24 : 8);
       return (
         <div style={embedded ? { height: "100%" } : { ...cardStyle, padding: 0 }}>
@@ -1701,7 +1523,7 @@ import "./race-detail.css";
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, color: "var(--fs-navy)" }}>{p.name}</div>
                       <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>
-                        {p.county}{p.live ? " · Public total" : ` · In at ${fmtTime(p.reportMin)}`}
+                        {p.county}{p.live ? " · Public total" : ""}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -1724,7 +1546,7 @@ import "./race-detail.css";
                     <div style={{ fontWeight: 600, color: "var(--fs-navy)" }}>{p.name}</div>
                     <div style={{ fontSize: 10, color: "var(--fs-fg-subtle)" }}>
                       {p.county}
-                      {p.live ? " · Public total" : ` · In at ${fmtTime(p.reportMin)}`}
+                      {p.live ? " · Public total" : ""}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -1827,11 +1649,6 @@ import "./race-detail.css";
       const priorRows = priorCtx ? priorDetailRows(area, priorCtx) : [];
       const areaUnopposed = isUnopposed || area.isUnopposed;
       const turnoutVal = area.turnoutPct ?? (area.yesPct <= 100 ? area.yesPct : null);
-      const fieldRows = (accurateOnly || area.live)
-        ? []
-        : isCounty
-          ? [["Avg turnout", `${area.turnoutRate}%`], ["Doors knocked", Number(area.doorsTotal).toLocaleString()]]
-          : [["Turnout", `${area.turnoutRate}%`], ["Doors knocked", Number(area.doorsKnocked).toLocaleString()]];
       const countyStatus = `${area.reportedCount} of ${area.totalCount} precincts in`;
       const resultLabel = areaUnopposed
         ? (turnoutVal != null ? `${turnoutVal}% turnout` : `${Number(area.ballots || 0).toLocaleString()} ballots`)
@@ -1844,18 +1661,16 @@ import "./race-detail.css";
             ["Status", certified && area.reportedCount > 0 ? "Certified" : "Reporting"],
             ["Reporting", countyStatus],
             ["Running total", resultLabel],
-            ...fieldRows,
             ...priorRows,
           ]
         : [
             ["Status", area.live
               ? liveAreaStatus(area, resultsPhase)
-              : (area.reported ? `In at ${fmtTime(area.reportMin)}` : "Awaiting results")],
+              : (area.reported ? "Reported" : "Awaiting results")],
             ...(area.zip ? [["ZIP code", area.zip]] : []),
             [areaUnopposed ? "Precinct turnout" : "Precinct total", area.reported && area.yesPct >= 0 ? resultLabel : "—"],
             ...(area.live && area.reported ? [["Ballots", Number(area.ballots).toLocaleString()]] : []),
             ...(areaUnopposed && area.leaderName ? [["Nominee", area.leaderName]] : []),
-            ...fieldRows,
             ...priorRows,
             ...(area.senate || area.comDist ? [["Districts", [
               area.comDist != null ? `CC ${area.comDist}` : null,
@@ -1905,8 +1720,7 @@ import "./race-detail.css";
     function Legend({ metric, threshold, priorCtx, settings, isUnopposed }) {
       const m = METRICS[metric];
       const c = settings.colors;
-      if (m.mode === "choropleth") {
-        const legendBox = (title, gradient, labels, footer, swatches) => (
+      const legendBox = (title, gradient, labels, footer, swatches) => (
           <div style={{
             position: "absolute", left: 14, bottom: 26, zIndex: 5,
             background: "rgba(255,255,255,0.94)", border: "1px solid var(--fs-border)",
@@ -1988,27 +1802,6 @@ import "./race-detail.css";
           stops.map(s => <span key={s.label}>{s.label}</span>),
           "Public precinct totals only — no ballot dots",
         );
-      }
-      return (
-        <div style={{
-          position: "absolute", left: 14, bottom: 26, zIndex: 5,
-          background: "rgba(255,255,255,0.94)", border: "1px solid var(--fs-border)",
-          borderRadius: "var(--fs-radius-md)", padding: "10px 12px", boxShadow: "var(--fs-shadow-sm)", minWidth: 170,
-        }}>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fs-ink-500)", marginBottom: 6 }}>
-            {m.label}
-          </div>
-          {m.dots.categories.map((c) => (
-            <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10, color: "var(--fs-ink-500)", marginTop: 3 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: c.color, flexShrink: 0 }} />
-              {c.label}
-            </div>
-          ))}
-          <div style={{ fontSize: 9, color: "var(--fs-ink-400)", marginTop: 7, paddingTop: 6, borderTop: "1px solid var(--fs-border)" }}>
-            1 dot ≈ {m.dots.per} {m.dots.unit}
-          </div>
-        </div>
-      );
     }
 
     function MapToolbar({
@@ -2776,11 +2569,11 @@ import "./race-detail.css";
         if (!geo) return null;
         const r = makeRaceData(
           client, geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts,
-          liveResultsForMap, pollingWaves, raceContext,
+          liveResultsForMap, raceContext,
         );
         const withPrior = priorData ? { ...r, priorData } : r;
         return liveResultsForMap ? { ...withPrior, liveResults: liveResultsForMap } : withPrior;
-      }, [geo, priorData, liveResultsForMap, pollingWaves, raceContext]);
+      }, [geo, priorData, liveResultsForMap, raceContext]);
 
       const filteredView = useMemo(() => {
         if (!race) return { geojson: EMPTY_FC, yesPct: null, reportedCount: 0, totalCount: 0, ballots: 0, precinctProps: [] };
@@ -2789,7 +2582,6 @@ import "./race-detail.css";
       }, [race, level, districtType, metric, priorCtx]);
 
       const geojson = filteredView.geojson;
-      const dots = useMemo(() => race ? makeDots(geojson, metric, client.id) : EMPTY_FC, [geojson, metric, race]);
       const polls = pollingWaves;
       const isUnopposed = liveOnMap
         ? isContestUnopposed({ race: raceContext, totals: liveResults?.totals })
@@ -2815,7 +2607,6 @@ import "./race-detail.css";
 
       useEffect(() => {
         if (!accurateOnly) return;
-        if (metric === "turnout" || metric === "doors") setMetric("results");
         if (sidebarTab === "polling") setSidebarTab("live");
       }, [accurateOnly, metric, sidebarTab]);
 
@@ -2949,7 +2740,6 @@ import "./race-detail.css";
                   <div style={{ position: "absolute", inset: 0, overflow: "hidden", borderRadius: "var(--fs-radius-md)" }}>
                     <MapView
                       geojson={geojson}
-                      dots={dots}
                       boundary={boundary}
                       metric={metric}
                       threshold={displayThreshold}

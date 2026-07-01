@@ -196,6 +196,20 @@ export const designApi = {
   },
 };
 
+const crudApi = (base) => ({
+  list: (clientId) => api(withClient(base, clientId)),
+  create: (body) => api(base, { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) => api(`${base}/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id) => api(`${base}/${id}`, { method: "DELETE" }),
+});
+
+export const calendarApi = crudApi("/calendar/events");
+export const proposalsApi = crudApi("/proposals");
+export const mediaApi = crudApi("/media/mentions");
+export const stakeholdersApi = crudApi("/stakeholders");
+export const resourcesApi = crudApi("/resources");
+export const onboardingApi = crudApi("/onboarding/programs");
+
 export const electionLiveApi = {
   status: () => api("/election/live/status"),
   contests: (patterns) => {

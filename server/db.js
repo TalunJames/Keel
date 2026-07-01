@@ -190,16 +190,6 @@ function migrate(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS election_races (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      client_id TEXT,
-      state TEXT,
-      status TEXT NOT NULL DEFAULT 'scheduled',
-      payload_json TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS voter_files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       client_id TEXT NOT NULL,
@@ -239,7 +229,7 @@ function migrate(db) {
   ensureIndexes(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
-  seedDesignData(db);
+  purgeDemoDesignData(db);
   ensureBootstrapAdmin(db);
   syncPortalPolls(db, root);
 }
@@ -318,99 +308,15 @@ function ensureDesignTables(db) {
   `);
 }
 
-function seedDesignData(db) {
-  const n = db.prepare("SELECT COUNT(*) AS n FROM design_requests").get().n;
-  if (n > 0) return;
-
-  const clients = db.prepare("SELECT id, name FROM clients WHERE active = 1 LIMIT 3").all();
-  const clientId = clients[0]?.id || "demo";
-  const clientName = clients[0]?.name || "Demo Client";
-
-  const designers = db.prepare(
-    `SELECT id, name FROM users WHERE role IN ('staff', 'admin') ORDER BY name LIMIT 2`
-  ).all();
-  if (designers.length) {
-    const mark = db.prepare("UPDATE users SET is_designer = 1 WHERE id = ?");
-    for (const d of designers.slice(0, 2)) mark.run(d.id);
-  }
-
-  const insert = db.prepare(
-    `INSERT INTO design_requests (title, client_id, status, priority, due, assignee_id, submitted_by, payload_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-
-  const samples = [
-    {
-      title: "Coalition launch one-pager",
-      status: "In Design",
-      priority: "Standard",
-      due: "2026-07-05",
-      assigneeId: designers[0]?.id || null,
-      payload: { assetType: "Print — one-pager / leave-behind", audience: "Suburban voters 35–54", cta: "Renewal starts locally." },
-    },
-    {
-      title: "30s TV spot — lighthouse concept",
-      status: "Proofing",
-      priority: "Rush",
-      due: "2026-07-02",
-      assigneeId: designers[1]?.id || designers[0]?.id || null,
-      payload: { assetType: "Video — broadcast TV", audience: "OH suburban women 35–54", cta: "Steady leadership for Ohio." },
-    },
-    {
-      title: "Direct mail piece #4",
-      status: "Brief Review",
-      priority: "Standard",
-      due: "2026-07-10",
-      assigneeId: null,
-      payload: { assetType: "Print — direct mail", audience: "Likely voters", cta: "Vote early." },
-    },
-    {
-      title: "Social cut-downs (6 assets)",
-      status: "Intake",
-      priority: "Election critical",
-      due: "2026-07-01",
-      assigneeId: null,
-      payload: { assetType: "Social — static", audience: "Digital persuasion", cta: "Join the movement." },
-    },
-    {
-      title: "Memo cover series — June batch",
-      status: "Approved",
-      priority: "Standard",
-      due: "2026-06-20",
-      assigneeId: designers[0]?.id || null,
-      payload: { assetType: "Print — one-pager / leave-behind" },
-    },
-  ];
-
-  for (const s of samples) {
-    insert.run(
-      s.title,
-      clientId,
-      s.status,
-      s.priority,
-      s.due,
-      s.assigneeId,
-      null,
-      JSON.stringify(s.payload),
-    );
-  }
-
-  const reqIds = db.prepare("SELECT id FROM design_requests ORDER BY id").all();
-  const proofing = reqIds.find((_, i) => samples[i]?.status === "Proofing");
-  if (proofing) {
-    db.prepare(
-      `INSERT INTO design_proofs (request_id, version, label, file_url, mime_type, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(proofing.id, "v1", "First cut", "", "video/mp4", designers[1]?.id || designers[0]?.id || null);
-    db.prepare(
-      `INSERT INTO design_proofs (request_id, version, label, file_url, mime_type, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(proofing.id, "v3", "Final mix", "", "video/mp4", designers[1]?.id || designers[0]?.id || null);
-    db.prepare(
-      `INSERT INTO design_comments (request_id, author_name, role, text, marker_x, marker_y)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(proofing.id, "Strategy lead", "staff", "Beam needs to read at thumbnail size.", 31, 24);
-  }
+// Older builds seeded sample design requests under a placeholder "demo"
+// client, and created an election_races table nothing ever wrote to (live
+// races now come from the ENR collector DB). Clean both up once.
+function purgeDemoDesignData(db) {
+  db.prepare("DELETE FROM design_requests WHERE client_id = 'demo'").run();
+  const hasRows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'election_races'").get()
+    ? db.prepare("SELECT COUNT(*) AS n FROM election_races").get().n
+    : null;
+  if (hasRows === 0) db.exec("DROP TABLE election_races");
 }
 
 function ensureClientColumns(db) {

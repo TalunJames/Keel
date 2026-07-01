@@ -361,10 +361,16 @@ export function registerRoutes(app, db) {
     ).get(...designArgs)?.n || 0;
     const mediaWhere = scope ? " WHERE client_id = ?" : "";
     const mediaN = db.prepare(`SELECT COUNT(*) AS n FROM media_mentions${mediaWhere}`).get(...(scope ? [scope] : []))?.n || 0;
-    const liveRaces = db.prepare(
-      "SELECT COUNT(*) AS n FROM election_races WHERE status = 'live'"
-    ).get().n || 0;
-    res.json({ design: openDesign, media: mediaN, election: liveRaces ? "LIVE" : null });
+    // Election badge lights up when the ENR collector has a live, recent heartbeat
+    let electionLive = false;
+    try {
+      const live = getElectionLiveStatus();
+      const lastUpdate = live?.heartbeat?.lastUpdateAt ? Date.parse(live.heartbeat.lastUpdateAt) : null;
+      electionLive = !!(live?.available && live.mode === "live" && lastUpdate && Date.now() - lastUpdate < 30 * 60 * 1000);
+    } catch {
+      electionLive = false;
+    }
+    res.json({ design: openDesign, media: mediaN, election: electionLive ? "LIVE" : null });
   });
 
   // ---------- Home ----------
@@ -399,16 +405,23 @@ export function registerRoutes(app, db) {
       kind: t.kind,
     }));
 
-    let raceSql = "SELECT name, payload_json FROM election_races ORDER BY created_at DESC LIMIT 20";
-    const raceArgs = [];
-    if (scope) {
-      raceSql = "SELECT name, payload_json FROM election_races WHERE client_id = ? ORDER BY created_at DESC LIMIT 20";
-      raceArgs.push(scope);
+    // Live races come straight from the ENR collector DB (staff/admin only)
+    let races = [];
+    if (role !== "client") {
+      try {
+        const live = getElectionLiveStatus();
+        if (live?.available) {
+          races = (listElectionContests() || []).slice(0, 20).map((c) => ({
+            name: c.name,
+            next: c.precinctsReported != null && c.totalPrecincts
+              ? `${c.precinctsReported}/${c.totalPrecincts} precincts in`
+              : null,
+          }));
+        }
+      } catch {
+        races = [];
+      }
     }
-    const races = db.prepare(raceSql).all(...raceArgs).map((r) => {
-      const p = r.payload_json ? JSON.parse(r.payload_json) : {};
-      return { name: r.name, ...p };
-    });
 
     const ph = ACTIVE_STATUSES.map(() => "?").join(", ");
     const openDesign = db.prepare(
@@ -422,7 +435,7 @@ export function registerRoutes(app, db) {
       stats: {
         openProofs: openDesign,
         tasksDue: tasks.filter((t) => !t.done).length,
-        racesTonight: db.prepare("SELECT COUNT(*) AS n FROM election_races WHERE status = 'live'").get().n || 0,
+        racesTonight: races.length,
       },
     });
   });
@@ -448,7 +461,7 @@ export function registerRoutes(app, db) {
     res.json({ items: db.prepare(sql).all(...args).map(mapRow) });
   };
 
-  app.get("/api/calendar/events", auth, list("calendar_events", (r) => ({
+  const mapCalendarEvent = (r) => ({
     id: r.id,
     title: r.title,
     startsAt: r.starts_at,
@@ -457,20 +470,18 @@ export function registerRoutes(app, db) {
     kind: r.kind,
     location: r.location,
     ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-  })));
+  });
 
-  registerDesignRoutes(app, db, auth);
-
-  app.get("/api/proposals", auth, list("proposals", (r) => ({
+  const mapProposal = (r) => ({
     id: r.id,
     title: r.title,
     clientId: r.client_id,
     status: r.status,
     amount: r.amount,
     ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-  })));
+  });
 
-  app.get("/api/media/mentions", auth, list("media_mentions", (r) => ({
+  const mapMediaMention = (r) => ({
     id: r.id,
     outlet: r.outlet,
     headline: r.headline,
@@ -479,9 +490,9 @@ export function registerRoutes(app, db) {
     publishedAt: r.published_at,
     url: r.url,
     excerpt: r.excerpt,
-  })));
+  });
 
-  app.get("/api/stakeholders", auth, list("stakeholders", (r) => ({
+  const mapStakeholder = (r) => ({
     id: r.id,
     name: r.name,
     org: r.org,
@@ -493,9 +504,9 @@ export function registerRoutes(app, db) {
     phone: r.phone,
     owner: r.owner,
     ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-  })));
+  });
 
-  app.get("/api/resources", auth, list("resources", (r) => ({
+  const mapResource = (r) => ({
     id: r.id,
     title: r.title,
     category: r.category,
@@ -505,15 +516,224 @@ export function registerRoutes(app, db) {
     kind: r.kind,
     tags: r.tags_json ? JSON.parse(r.tags_json) : [],
     url: r.url,
-  })));
+  });
 
-  app.get("/api/onboarding/programs", auth, list("onboarding_programs", (r) => ({
+  const mapOnboardingProgram = (r) => ({
     id: r.id,
     clientId: r.client_id,
     name: r.name,
     status: r.status,
     ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-  })));
+  });
+
+  app.get("/api/calendar/events", auth, list("calendar_events", mapCalendarEvent));
+
+  registerDesignRoutes(app, db, auth);
+
+  app.get("/api/proposals", auth, list("proposals", mapProposal));
+
+  app.get("/api/media/mentions", auth, list("media_mentions", mapMediaMention));
+
+  app.get("/api/stakeholders", auth, list("stakeholders", mapStakeholder));
+
+  app.get("/api/resources", auth, list("resources", mapResource));
+
+  app.get("/api/onboarding/programs", auth, list("onboarding_programs", mapOnboardingProgram));
+
+  // ---------- Generic module CRUD (staff/admin writes; clients keep read-only GETs) ----------
+  const clientExists = (id) => !!db.prepare("SELECT id FROM clients WHERE id = ?").get(id);
+
+  const crud = (base, { table, label, nameColumn = "title", fields, mapRow }) => {
+    const staffOnly = requireRole("staff", "admin");
+    const getRow = (id) => db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+
+    // Turns an API body into a column map. `partial` skips missing fields (PATCH);
+    // otherwise required fields must be present and non-empty.
+    const buildRow = (body, { partial = false, existing = null } = {}) => {
+      const row = {};
+      for (const f of fields) {
+        const value = body[f.api];
+        if (value === undefined) {
+          if (f.required && !partial) return { error: `${f.api} is required` };
+          continue;
+        }
+        if (f.type === "number") {
+          if (value === null || value === "") {
+            if (!f.defaulted) row[f.column] = null;
+            continue;
+          }
+          const n = Number(value);
+          if (!Number.isFinite(n)) return { error: `${f.api} must be a number` };
+          row[f.column] = n;
+          continue;
+        }
+        if (f.type === "json") {
+          if (value === null) {
+            row[f.column] = null;
+            continue;
+          }
+          if (typeof value !== "object" || Array.isArray(value)) {
+            return { error: `${f.api} must be an object` };
+          }
+          const prev = partial && existing?.[f.column] ? JSON.parse(existing[f.column]) : {};
+          row[f.column] = JSON.stringify({ ...prev, ...value });
+          continue;
+        }
+        if (f.type === "tags") {
+          const tags = Array.isArray(value)
+            ? value.map((t) => String(t).trim()).filter(Boolean)
+            : String(value || "").split(",").map((t) => t.trim()).filter(Boolean);
+          row[f.column] = tags.length ? JSON.stringify(tags) : null;
+          continue;
+        }
+        const s = value == null ? "" : String(value).trim();
+        if (!s || (f.client && s === "all")) {
+          if (f.required) return { error: `${f.api} is required` };
+          if (f.defaulted) continue;
+          row[f.column] = f.notNull ? "" : null;
+          continue;
+        }
+        if (f.client && !clientExists(s)) return { error: `Unknown client: ${s}` };
+        row[f.column] = s;
+      }
+      return { row };
+    };
+
+    const logAction = (who, verb, row) => {
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        who,
+        `${verb} ${label} "${row[nameColumn]}"`,
+        "Data",
+      );
+    };
+
+    app.post(base, auth, staffOnly, (req, res) => {
+      const { row, error } = buildRow(req.body || {});
+      if (error) return res.status(400).json({ error });
+      const cols = Object.keys(row);
+      const info = db.prepare(
+        `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`
+      ).run(...cols.map((c) => row[c]));
+      const created = getRow(info.lastInsertRowid);
+      logAction(req.user.email, "Created", created);
+      res.status(201).json({ item: mapRow(created) });
+    });
+
+    app.patch(`${base}/:id`, auth, staffOnly, (req, res) => {
+      const existing = getRow(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      const { row, error } = buildRow(req.body || {}, { partial: true, existing });
+      if (error) return res.status(400).json({ error });
+      const cols = Object.keys(row);
+      if (!cols.length) return res.status(400).json({ error: "No fields" });
+      db.prepare(
+        `UPDATE ${table} SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`
+      ).run(...cols.map((c) => row[c]), req.params.id);
+      const updated = getRow(req.params.id);
+      logAction(req.user.email, "Updated", updated);
+      res.json({ item: mapRow(updated) });
+    });
+
+    app.delete(`${base}/:id`, auth, staffOnly, (req, res) => {
+      const existing = getRow(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(req.params.id);
+      logAction(req.user.email, "Deleted", existing);
+      res.json({ ok: true });
+    });
+  };
+
+  crud("/api/calendar/events", {
+    table: "calendar_events",
+    label: "calendar event",
+    mapRow: mapCalendarEvent,
+    fields: [
+      { api: "title", column: "title", required: true },
+      { api: "startsAt", column: "starts_at", required: true },
+      { api: "endsAt", column: "ends_at" },
+      { api: "clientId", column: "client_id", client: true },
+      { api: "kind", column: "kind", defaulted: true },
+      { api: "location", column: "location" },
+      { api: "payload", column: "payload_json", type: "json" },
+    ],
+  });
+
+  crud("/api/proposals", {
+    table: "proposals",
+    label: "proposal",
+    mapRow: mapProposal,
+    fields: [
+      { api: "title", column: "title", required: true },
+      { api: "clientId", column: "client_id", required: true, client: true },
+      { api: "status", column: "status", defaulted: true },
+      { api: "amount", column: "amount", type: "number" },
+      { api: "payload", column: "payload_json", type: "json" },
+    ],
+  });
+
+  crud("/api/media/mentions", {
+    table: "media_mentions",
+    label: "media mention",
+    nameColumn: "headline",
+    mapRow: mapMediaMention,
+    fields: [
+      { api: "outlet", column: "outlet", required: true },
+      { api: "headline", column: "headline", required: true },
+      { api: "clientId", column: "client_id", client: true },
+      { api: "sentiment", column: "sentiment" },
+      { api: "publishedAt", column: "published_at" },
+      { api: "url", column: "url" },
+      { api: "excerpt", column: "excerpt" },
+    ],
+  });
+
+  crud("/api/stakeholders", {
+    table: "stakeholders",
+    label: "stakeholder",
+    nameColumn: "name",
+    mapRow: mapStakeholder,
+    fields: [
+      { api: "name", column: "name", required: true },
+      { api: "org", column: "org", notNull: true },
+      { api: "title", column: "title", notNull: true },
+      { api: "clientId", column: "client_id", required: true, client: true },
+      { api: "tier", column: "tier", type: "number", defaulted: true },
+      { api: "status", column: "status", defaulted: true },
+      { api: "email", column: "email" },
+      { api: "phone", column: "phone" },
+      { api: "owner", column: "owner" },
+      { api: "payload", column: "payload_json", type: "json" },
+    ],
+  });
+
+  crud("/api/resources", {
+    table: "resources",
+    label: "resource",
+    mapRow: mapResource,
+    fields: [
+      { api: "title", column: "title", required: true },
+      { api: "category", column: "category", required: true },
+      { api: "clientId", column: "client_id", client: true },
+      { api: "account", column: "account" },
+      { api: "author", column: "author" },
+      { api: "kind", column: "kind" },
+      { api: "tags", column: "tags_json", type: "tags" },
+      { api: "url", column: "url" },
+    ],
+  });
+
+  crud("/api/onboarding/programs", {
+    table: "onboarding_programs",
+    label: "onboarding program",
+    nameColumn: "name",
+    mapRow: mapOnboardingProgram,
+    fields: [
+      { api: "clientId", column: "client_id", required: true, client: true },
+      { api: "name", column: "name", required: true },
+      { api: "status", column: "status", defaulted: true },
+      { api: "payload", column: "payload_json", type: "json" },
+    ],
+  });
 
   app.get("/api/polling/polls", auth, (req, res) => {
     const scope = clientScope(req.user, req.query.clientId);
@@ -561,25 +781,6 @@ export function registerRoutes(app, db) {
       "Data",
     );
     res.json({ ok: true });
-  });
-
-  app.get("/api/election/races", auth, (req, res) => {
-    const scope = clientScope(req.user, req.query.clientId);
-    let sql = "SELECT * FROM election_races";
-    const args = [];
-    if (scope) {
-      sql += " WHERE client_id = ?";
-      args.push(scope);
-    }
-    const races = db.prepare(sql + " ORDER BY created_at DESC").all(...args).map((r) => ({
-      id: r.id,
-      name: r.name,
-      clientId: r.client_id,
-      state: r.state,
-      status: r.status,
-      ...(r.payload_json ? JSON.parse(r.payload_json) : {}),
-    }));
-    res.json({ races });
   });
 
   app.get("/api/election/live/status", auth, requireRole("staff", "admin"), (_req, res) => {

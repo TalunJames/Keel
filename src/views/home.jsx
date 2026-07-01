@@ -240,7 +240,7 @@ export function HomeView({ user, role, onNavigate, client, clientId }) {
             <h3 style={{ margin: "0 0 12px", fontSize: 14, color: "var(--fs-navy)" }}>Quick links</h3>
             <div className="col" style={{ gap: 6 }}>
               {links.map((l) => (
-                <button key={l.to} type="button" className="btn secondary" style={{ justifyContent: "flex-start" }}
+                <button key={l.label} type="button" className="btn secondary" style={{ justifyContent: "flex-start" }}
                   onClick={() => onNavigate(l.to)}>
                   <Icon name={l.icon} size={14} /> {l.label}
                 </button>
