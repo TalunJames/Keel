@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { parsePreferences } from "./user-prefs.js";
 
 const COOKIE = "keel_token";
 const SHORT_TTL_SECONDS = 8 * 60 * 60;            // 8h
@@ -100,7 +101,8 @@ export function requireAuth(db) {
         `SELECT id, email, name, team, role, client_id AS clientId,
                 system_admin AS systemAdmin, is_designer AS isDesigner,
                 token_version AS tokenVersion,
-                title, location, about, phone, photo
+                title, location, about, phone, photo,
+                preferences_json AS preferencesJson
          FROM users WHERE id = ?`
       ).get(payload.sub);
       if (!user) return res.status(401).json({ error: "Unauthorized" });
@@ -111,7 +113,9 @@ export function requireAuth(db) {
       }
       user.systemAdmin = !!user.systemAdmin;
       user.isDesigner = !!user.isDesigner;
+      user.preferences = parsePreferences(user.preferencesJson);
       delete user.tokenVersion;
+      delete user.preferencesJson;
       req.user = user;
       next();
     } catch {

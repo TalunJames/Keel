@@ -1,37 +1,37 @@
 export const DESIGN_STATUSES = [
   "draft",
-  "Intake",
-  "Brief Review",
+  "Submitted",
+  "Assigned",
   "In Design",
-  "Proofing",
+  "Final Proof",
   "Revisions",
-  "Approved",
+  "Closed",
 ];
 
 export const STATUS_TONES = {
   draft: "outline",
-  Intake: "outline",
-  "Brief Review": "navy",
+  Submitted: "outline",
+  Assigned: "navy",
   "In Design": "warning",
-  Proofing: "gold",
+  "Final Proof": "gold",
   Revisions: "danger",
-  Approved: "success",
+  Closed: "success",
 };
 
-export const CLIENT_VISIBLE_STATUSES = ["Proofing", "Revisions", "Approved"];
+export const CLIENT_VISIBLE_STATUSES = ["Final Proof", "Revisions", "Closed"];
 
-export const POOL_STATUSES = ["Intake", "Brief Review"];
+export const POOL_STATUSES = ["Submitted"];
 
-export const ACTIVE_STATUSES = DESIGN_STATUSES.filter((s) => s !== "Approved" && s !== "draft");
+export const ACTIVE_STATUSES = DESIGN_STATUSES.filter((s) => s !== "Closed" && s !== "draft");
 
 export const DESIGNER_TRANSITIONS = {
-  "Brief Review": ["In Design"],
-  "In Design": ["Proofing"],
-  Proofing: ["Revisions", "Approved"],
-  Revisions: ["In Design", "Proofing"],
+  Assigned: ["In Design"],
+  "In Design": ["Final Proof"],
+  "Final Proof": ["Revisions"],
+  Revisions: ["In Design"],
 };
 
-export const PRIORITIES = ["Standard", "Rush", "Election critical"];
+export const PRIORITIES = ["Urgent", "Important", "Normal", "Backburner"];
 
 export const ASSET_TYPES = [
   "Print — direct mail",
@@ -49,9 +49,9 @@ export function statusTone(status) {
 }
 
 export function prioritySort(a, b) {
-  const rank = { "Election critical": 0, Rush: 1, Standard: 2, normal: 2 };
-  const ra = rank[a] ?? 3;
-  const rb = rank[b] ?? 3;
+  const rank = { Urgent: 0, Important: 1, Normal: 2, Backburner: 3 };
+  const ra = rank[a] ?? 2;
+  const rb = rank[b] ?? 2;
   if (ra !== rb) return ra - rb;
   return 0;
 }

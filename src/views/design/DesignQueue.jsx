@@ -5,6 +5,7 @@ import { useApi } from "../../lib/useApi.js";
 import { withClient } from "../../lib/api.js";
 import { Loading } from "../../components/Loading.jsx";
 import { StatusStrip, RequestTable } from "./shared.jsx";
+import { PRIORITIES } from "../../lib/design-status.js";
 
 export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter }) {
   const [statusFilter, setStatusFilter] = useState(initialFilter || null);
@@ -24,7 +25,7 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
     if (statusFilter && statusFilter !== "approvedWeek") {
       rows = rows.filter((r) => r.status === statusFilter);
     } else if (statusFilter === "approvedWeek") {
-      rows = rows.filter((r) => r.status === "Approved");
+      rows = rows.filter((r) => r.status === "Closed");
     }
     if (priorityFilter) rows = rows.filter((r) => r.priority === priorityFilter);
     if (unassignedOnly) rows = rows.filter((r) => !r.assigneeId);
@@ -53,10 +54,7 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
   return (
     <div>
       <PageHead
-        title={isClient ? "Your Active Proofs" : "Design Queue"}
-        sub={isClient
-          ? "Active and recently approved creative for your campaign. Click any item to review and comment."
-          : "Every brief lives here. Submit a new request to route work to the design team."}
+        title={isClient ? "Design" : "Design Queue"}
         actions={isStaff && (
           <>
             <button type="button" className="btn secondary" onClick={() => setShowFilters((v) => !v)}>
@@ -83,9 +81,9 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
             <label>Priority</label>
             <select className="input" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
               <option value="">All</option>
-              <option>Standard</option>
-              <option>Rush</option>
-              <option>Election critical</option>
+              {PRIORITIES.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
             </select>
           </div>
           <label className="row" style={{ gap: 8, fontSize: 13, alignSelf: "flex-end", paddingBottom: 8 }}>

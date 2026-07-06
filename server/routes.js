@@ -53,6 +53,7 @@ import { registerPeriscopeRoutes } from "./periscope-routes.js";
 import { registerProposalRoutes } from "./proposal-routes.js";
 import { registerCleatusRoutes } from "./cleatus-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
+import { loadUserPreferences, parsePreferences, serializePreferences } from "./user-prefs.js";
 
 const ALL_CLIENT = {
   id: "all",
@@ -166,6 +167,7 @@ export function registerRoutes(app, db) {
       phone: row.phone || "",
       photo: row.photo ?? null,
       isDesigner: false,
+      preferences: {},
     };
     const token = signToken(user, { remember: true });
     setAuthCookie(res, token, { remember: true, req });
@@ -188,7 +190,8 @@ export function registerRoutes(app, db) {
     const user = db.prepare(
       `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
               system_admin AS systemAdmin, is_designer AS isDesigner,
-              title, location, about, phone, photo
+              title, location, about, phone, photo,
+              preferences_json AS preferencesJson
        FROM users WHERE email = ? COLLATE NOCASE`
     ).get(email.trim());
     if (!user) {
@@ -206,6 +209,8 @@ export function registerRoutes(app, db) {
     delete user.password_hash;
     user.systemAdmin = !!user.systemAdmin;
     user.isDesigner = !!user.isDesigner;
+    user.preferences = parsePreferences(user.preferencesJson);
+    delete user.preferencesJson;
     const token = signToken(user, { remember: !!remember });
     setAuthCookie(res, token, { remember: !!remember, req });
     res.json({ user, token });
@@ -250,11 +255,23 @@ export function registerRoutes(app, db) {
       `SELECT id, name, tag, initials, color, type
        FROM clients WHERE active = 1 ORDER BY name`
     ).all();
+    const visible = u.role === "client"
+      ? clientList.filter((c) => c.id === u.clientId)
+      : clientList;
+    const order = u.preferences?.clientOrder || [];
+    const byId = new Map(visible.map((c) => [c.id, c]));
+    const ordered = [];
+    const seen = new Set();
+    for (const id of order) {
+      const c = byId.get(id);
+      if (c) { ordered.push(c); seen.add(id); }
+    }
+    for (const c of visible) {
+      if (!seen.has(c.id)) ordered.push(c);
+    }
     res.json({
       user: u,
-      clients: u.role === "client"
-        ? clientList.filter((c) => c.id === u.clientId)
-        : clientList,
+      clients: ordered,
     });
   });
 
@@ -277,17 +294,46 @@ export function registerRoutes(app, db) {
         args.push(val);
       }
     }
+
+    let nextPreferences = null;
+    if (req.body.clientOrder !== undefined) {
+      if (!Array.isArray(req.body.clientOrder)) {
+        return res.status(400).json({ error: "clientOrder must be an array" });
+      }
+      if (req.body.clientOrder.length > 500) {
+        return res.status(400).json({ error: "clientOrder is too long" });
+      }
+      const ids = req.body.clientOrder.filter((id) => typeof id === "string" && id && id !== "all");
+      const allowed = db.prepare(
+        req.user.role === "client"
+          ? "SELECT id FROM clients WHERE active = 1 AND id = ?"
+          : "SELECT id FROM clients WHERE active = 1"
+      ).all(...(req.user.role === "client" ? [req.user.clientId] : [])).map((r) => r.id);
+      const allowedSet = new Set(allowed);
+      if (ids.some((id) => !allowedSet.has(id))) {
+        return res.status(400).json({ error: "Invalid client in order" });
+      }
+      const prefs = loadUserPreferences(db, req.user.id);
+      prefs.clientOrder = ids;
+      nextPreferences = prefs;
+      sets.push("preferences_json = ?");
+      args.push(serializePreferences(prefs));
+    }
+
     if (!sets.length) return res.status(400).json({ error: "No fields" });
     args.push(req.user.id);
     db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...args);
     const user = db.prepare(
       `SELECT id, email, name, team, role, client_id AS clientId,
               system_admin AS systemAdmin, is_designer AS isDesigner,
-              title, location, about, phone, photo
+              title, location, about, phone, photo,
+              preferences_json AS preferencesJson
        FROM users WHERE id = ?`
     ).get(req.user.id);
     user.systemAdmin = !!user.systemAdmin;
     user.isDesigner = !!user.isDesigner;
+    user.preferences = nextPreferences ?? parsePreferences(user.preferencesJson);
+    delete user.preferencesJson;
     res.json({ user });
   });
 

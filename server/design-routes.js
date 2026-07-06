@@ -8,7 +8,7 @@ import {
   DESIGN_STATUSES,
   DESIGNER_SETTABLE_STATUSES,
   POOL_STATUSES,
-  RUSH_PRIORITIES,
+  HIGH_PRIORITIES,
   isDesigner,
   isStaffOrAdmin,
 } from "./design-status.js";
@@ -32,6 +32,7 @@ import {
   notifyDesigners,
   notifyClientUsers,
 } from "./mail.js";
+import { provisionDesignIntegrations, queueDesignIntegrationEvent } from "./design-integrations.js";
 
 // Fire-and-forget a single notification email so a hung SMTP server can't stall
 // the HTTP response. sendDesignMail records success/failure in
@@ -99,7 +100,7 @@ function assertRequestAccess(req, row) {
   if (!row) return { ok: false, status: 404, error: "Not found" };
   if (req.user.role === "client") {
     if (row.client_id !== req.user.clientId) return { ok: false, status: 403, error: "Forbidden" };
-    if (!CLIENT_VISIBLE_STATUSES.includes(row.status) && row.status !== "Approved") {
+    if (!CLIENT_VISIBLE_STATUSES.includes(row.status) && row.status !== "Closed") {
       return { ok: false, status: 403, error: "Forbidden" };
     }
   }
@@ -121,6 +122,38 @@ function activeDesignCountSql(scope) {
     args.push(scope);
   }
   return { sql, args };
+}
+
+function tryMatchUserByName(db, name) {
+  if (!name) return null;
+  const user = db.prepare(
+    `SELECT id, name, email FROM users WHERE name = ? AND role IN ('staff', 'admin') LIMIT 1`
+  ).get(name);
+  return user || null;
+}
+
+function resolveReviewerIds(db, clientPayload, explicitIds) {
+  const ids = new Set((explicitIds || []).filter(Boolean));
+  const leadName = clientPayload?.team?.lead;
+  const lead = tryMatchUserByName(db, leadName);
+  if (lead) ids.add(lead.id);
+  return [...ids];
+}
+
+function loadApprovals(db, requestId) {
+  return db.prepare(
+    "SELECT user_id AS userId, user_name AS userName, note, created_at AS createdAt FROM design_approvals WHERE request_id = ? ORDER BY created_at ASC"
+  ).all(requestId);
+}
+
+function isReviewer(db, row, userId) {
+  const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+  return (payload.reviewerIds || []).includes(userId);
+}
+
+function canProofOrClose(user, row, db) {
+  if (isStaffOrAdmin(user)) return true;
+  return isReviewer(db, row, user.id);
 }
 
 function tryMatchLeadDesigner(db, clientId) {
@@ -189,15 +222,15 @@ export function registerDesignRoutes(app, db, auth) {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     const approvedWeek = db.prepare(
-      `SELECT COUNT(*) AS n FROM design_requests WHERE status = 'Approved' AND created_at >= ?${base}`
+      `SELECT COUNT(*) AS n FROM design_requests WHERE status = 'Closed' AND created_at >= ?${base}`
     ).get(weekAgo.toISOString().slice(0, 10), ...baseArgs)?.n || 0;
 
     res.json({
-      intake: count("Intake"),
-      briefReview: count("Brief Review"),
+      intake: count("Submitted"),
+      briefReview: count("Assigned"),
       inDesign: count("In Design"),
-      proofing: count("Proofing"),
-      approvedWeek,
+      proofing: count("Final Proof"),
+      approvedWeek: approvedWeek,
       pool: count(POOL_STATUSES),
     });
   });
@@ -221,13 +254,13 @@ export function registerDesignRoutes(app, db, auth) {
     if (!isDesigner(req.user)) return res.json({ items: [] });
     const rows = db.prepare(
       `SELECT * FROM design_requests
-       WHERE assignee_id = ? AND status != 'Approved' AND status != 'draft'
+       WHERE assignee_id = ? AND status != 'Closed' AND status != 'draft'
        ORDER BY created_at DESC LIMIT 200`
     ).all(req.user.id);
     const cache = { users: new Map(), clients: new Map() };
     const items = rows.map((r) => mapRequestRow(db, r, cache));
     items.sort((a, b) => {
-      const pr = { "Election critical": 0, Rush: 1, Standard: 2 };
+      const pr = { Urgent: 0, Important: 1, Normal: 2, Backburner: 3 };
       const pa = pr[a.priority] ?? 3;
       const pb = pr[b.priority] ?? 3;
       if (pa !== pb) return pa - pb;
@@ -258,11 +291,11 @@ export function registerDesignRoutes(app, db, auth) {
     const row = (sql, ...a) => db.prepare(sql).get(...a)?.n || 0;
     res.json({
       dueToday: row(
-        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND due = ? AND status != 'Approved'`,
+        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND due = ? AND status != 'Closed'`,
         uid, today
       ),
       overdue: row(
-        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND due < ? AND status NOT IN ('Approved', 'draft')`,
+        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND due < ? AND status NOT IN ('Closed', 'draft')`,
         uid, today
       ),
       inDesign: row(
@@ -270,11 +303,11 @@ export function registerDesignRoutes(app, db, auth) {
         uid
       ),
       awaitingUpload: row(
-        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND status IN ('Brief Review', 'In Design')`,
+        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND status IN ('Assigned', 'In Design')`,
         uid
       ),
       inProofing: row(
-        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND status IN ('Proofing', 'Revisions')`,
+        `SELECT COUNT(*) AS n FROM design_requests WHERE assignee_id = ? AND status IN ('Final Proof', 'Revisions')`,
         uid
       ),
     });
@@ -308,29 +341,44 @@ export function registerDesignRoutes(app, db, auth) {
       marker: c.marker_x != null ? { x: c.marker_x, y: c.marker_y } : null,
       createdAt: c.created_at,
     }));
-    res.json({ request: mapRequestRow(db, row), proofs, comments });
+    const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+    const reviewerIds = payload.reviewerIds || [];
+    const reviewers = reviewerIds.map((id) => {
+      const u = db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(id);
+      return u ? { id: u.id, name: u.name, email: u.email } : { id, name: id };
+    });
+    const approvals = loadApprovals(db, row.id);
+    res.json({
+      request: mapRequestRow(db, row),
+      proofs,
+      comments,
+      reviewers,
+      approvals,
+    });
   });
 
   app.post("/api/design/requests", auth, requireStaff, async (req, res) => {
     const {
       title, clientId, priority, due, assigneeId, draft,
-      assetType, audience, cta, spec, budgetCode, attachments,
+      assetType, audience, cta, spec, attachments, reviewerIds,
     } = req.body || {};
     if (!title?.trim() || !clientId) {
       return res.status(400).json({ error: "title and clientId required" });
     }
     const client = db.prepare("SELECT id, name, payload_json FROM clients WHERE id = ?").get(clientId);
     if (!client) return res.status(400).json({ error: "Invalid client" });
+    const clientPayload = client.payload_json ? JSON.parse(client.payload_json) : {};
 
     let resolvedAssignee = assigneeId || tryMatchLeadDesigner(db, clientId);
-    const status = draft ? "draft" : "Intake";
+    const status = draft ? "draft" : (resolvedAssignee ? "Assigned" : "Submitted");
+    const resolvedReviewers = resolveReviewerIds(db, clientPayload, reviewerIds);
     const payload = {
       assetType: assetType || "",
       audience: audience || "",
       cta: cta || "",
       spec: spec || "",
-      budgetCode: budgetCode || "",
       attachments: attachments || [],
+      reviewerIds: resolvedReviewers,
       draft: !!draft,
     };
 
@@ -341,7 +389,7 @@ export function registerDesignRoutes(app, db, auth) {
       title.trim(),
       clientId,
       status,
-      priority || "Standard",
+      priority || "Normal",
       due || null,
       resolvedAssignee || null,
       req.user.id,
@@ -349,6 +397,37 @@ export function registerDesignRoutes(app, db, auth) {
     );
 
     const requestId = result.lastInsertRowid;
+
+    if (!draft) {
+      try {
+        const provisioned = await provisionDesignIntegrations({
+          requestId,
+          clientId,
+          clientName: client.name,
+          clientDriveFolderUrl: clientPayload.driveFolderUrl,
+          title: title.trim(),
+          assetType: payload.assetType,
+          audience: payload.audience,
+          cta: payload.cta,
+          spec: payload.spec,
+          priority: priority || "Normal",
+          due: due || null,
+        });
+        payload.integrations = provisioned.integrations;
+        if (provisioned.driveFolderUrl) {
+          payload.driveFolderUrl = provisioned.driveFolderUrl;
+          payload.driveFolderId = provisioned.driveFolderId;
+          payload.briefDocUrl = provisioned.briefDocUrl;
+        }
+        db.prepare("UPDATE design_requests SET payload_json = ? WHERE id = ?").run(
+          JSON.stringify(payload),
+          requestId
+        );
+      } catch (e) {
+        console.error(`[integrations] DR-${requestId}:`, e?.message || e);
+      }
+    }
+
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
       req.user.email,
       `Created design request ${title.trim()} (#${requestId})`,
@@ -365,7 +444,7 @@ export function registerDesignRoutes(app, db, auth) {
           data: { title: title.trim(), clientName: client.name, due: due || "" },
         });
       }
-    } else if (!draft && !resolvedAssignee && RUSH_PRIORITIES.includes(priority)) {
+    } else if (!draft && !resolvedAssignee && HIGH_PRIORITIES.includes(priority)) {
       notifyDesigners(db, {
         requestId,
         eventType: "rush_pool",
@@ -373,7 +452,11 @@ export function registerDesignRoutes(app, db, auth) {
       });
     }
 
-    res.status(201).json({ id: requestId });
+    res.status(201).json({
+      id: requestId,
+      driveFolderUrl: payload.driveFolderUrl || null,
+      briefDocUrl: payload.briefDocUrl || null,
+    });
   });
 
   app.patch("/api/design/requests/:id", auth, async (req, res) => {
@@ -393,7 +476,7 @@ export function registerDesignRoutes(app, db, auth) {
       }
       const { action } = req.body || {};
       if (action === "approve") {
-        db.prepare("UPDATE design_requests SET status = 'Approved' WHERE id = ?").run(row.id);
+        db.prepare("UPDATE design_requests SET status = 'Closed' WHERE id = ?").run(row.id);
         db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
           req.user.email, `Client approved design #${row.id}`, "Design"
         );
@@ -417,14 +500,65 @@ export function registerDesignRoutes(app, db, auth) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    if (!staff && !(designer && isAssignee)) {
+    if (!staff && !(designer && isAssignee) && !canProofOrClose(req.user, row, db)) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
     const {
       title, status, priority, due, assigneeId,
-      assetType, audience, cta, spec, budgetCode, action,
+      assetType, audience, cta, spec, action, reviewerIds, approvalNote,
     } = req.body || {};
+
+    // Consultant / reviewer actions (Final Proof stage)
+    if (action === "approve_proof") {
+      if (!canProofOrClose(req.user, row, db)) {
+        return res.status(403).json({ error: "Not assigned as a reviewer" });
+      }
+      db.prepare(
+        `INSERT INTO design_approvals (request_id, user_id, user_name, note)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(request_id, user_id) DO UPDATE SET note = excluded.note, created_at = datetime('now')`
+      ).run(row.id, req.user.id, req.user.name, (approvalNote || "").trim() || null);
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email, `Proofed design #${row.id}`, "Design"
+      );
+      return res.json({ ok: true });
+    }
+
+    if (action === "close") {
+      if (!canProofOrClose(req.user, row, db)) {
+        return res.status(403).json({ error: "Only consultants can close a request" });
+      }
+      db.prepare("UPDATE design_requests SET status = 'Closed' WHERE id = ?").run(row.id);
+      queueDesignIntegrationEvent("design.closed", { requestId: row.id, clientId: row.client_id, title: row.title });
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email, `Closed design request #${row.id}`, "Design"
+      );
+      return res.json({ ok: true });
+    }
+
+    if (action === "send_to_design") {
+      if (!canProofOrClose(req.user, row, db) && !(designer && isAssignee)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      db.prepare("UPDATE design_requests SET status = 'Revisions' WHERE id = ?").run(row.id);
+      if (row.assignee_id) {
+        const assignee = db.prepare("SELECT email FROM users WHERE id = ?").get(row.assignee_id);
+        if (assignee?.email) {
+          queueDesignMail(db, {
+            requestId: row.id,
+            eventType: "comment",
+            to: assignee.email,
+            data: { title: row.title, authorName: req.user.name, clientName: "", excerpt: "Sent back to design" },
+          });
+        }
+      }
+      return res.json({ ok: true });
+    }
+
+    if (!staff && !(designer && isAssignee)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     if (!staff) {
       const allowed = ["status", "action"];
@@ -461,23 +595,41 @@ export function registerDesignRoutes(app, db, auth) {
     if (staff && assigneeId !== undefined) {
       updates.push("assignee_id = ?");
       args.push(assigneeId || null);
+      if (assigneeId && row.status === "Submitted") {
+        updates.push("status = ?");
+        args.push("Assigned");
+      }
+      if (!assigneeId && row.status === "Assigned") {
+        updates.push("status = ?");
+        args.push("Submitted");
+      }
     }
 
-    if (assetType !== undefined || audience !== undefined || cta !== undefined || spec !== undefined || budgetCode !== undefined) {
+    let payloadDirty = false;
+    let payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+
+    if (staff && reviewerIds !== undefined) {
+      payload.reviewerIds = Array.isArray(reviewerIds) ? reviewerIds.filter(Boolean) : [];
+      payloadDirty = true;
+    }
+
+    if (assetType !== undefined || audience !== undefined || cta !== undefined || spec !== undefined) {
       if (!staff) return res.status(403).json({ error: "Forbidden" });
-      const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
       if (assetType !== undefined) payload.assetType = assetType;
       if (audience !== undefined) payload.audience = audience;
       if (cta !== undefined) payload.cta = cta;
       if (spec !== undefined) payload.spec = spec;
-      if (budgetCode !== undefined) payload.budgetCode = budgetCode;
+      payloadDirty = true;
+    }
+
+    if (payloadDirty) {
       updates.push("payload_json = ?");
       args.push(JSON.stringify(payload));
     }
 
     if (action === "ready_for_review") {
       updates.push("status = ?");
-      args.push("Proofing");
+      args.push("Final Proof");
     }
 
     if (!updates.length) return res.status(400).json({ error: "No changes" });
@@ -523,7 +675,7 @@ export function registerDesignRoutes(app, db, auth) {
     if (!POOL_STATUSES.includes(row.status)) {
       return res.status(400).json({ error: "Not available to claim" });
     }
-    const newStatus = row.status === "Intake" ? "Brief Review" : row.status;
+    const newStatus = row.status === "Submitted" ? "Assigned" : row.status;
     db.prepare("UPDATE design_requests SET assignee_id = ?, status = ? WHERE id = ?").run(
       req.user.id, newStatus, row.id
     );
@@ -608,7 +760,7 @@ export function registerDesignRoutes(app, db, auth) {
     ).run(row.id, version, label || version, fileUrl || "", mimeType || "", req.user.id);
 
     if (row.status === "In Design") {
-      db.prepare("UPDATE design_requests SET status = 'Proofing' WHERE id = ?").run(row.id);
+      db.prepare("UPDATE design_requests SET status = 'Final Proof' WHERE id = ?").run(row.id);
     }
 
     res.status(201).json({ id: result.lastInsertRowid });

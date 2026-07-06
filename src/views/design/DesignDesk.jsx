@@ -35,10 +35,7 @@ export function DesignDesk({ clientId, onOpen, onReload }) {
 
   return (
     <div>
-      <PageHead
-        title="Designer Desk"
-        sub="Your assigned work and the unassigned pool. Claim jobs from the pool or work from your queue."
-      />
+      <PageHead title="Designer Desk" />
 
       {actionError && (
         <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>

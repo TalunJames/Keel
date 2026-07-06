@@ -26,7 +26,7 @@ function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked 
   const saveShare = async () => {
     const id = parsePeriscopeShareId(draft);
     if (!id) {
-      setError("Paste a Periscope share link or id (e.g. abc123def4).");
+      setError("Paste a Periscope share link or id.");
       return;
     }
     setSaving(true);
@@ -53,7 +53,7 @@ function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked 
           <div className="card-pad" style={{ borderTop: "1px solid var(--fs-border)" }}>
             <div className="row between" style={{ gap: 12, flexWrap: "wrap" }}>
               <span className="mut" style={{ fontSize: 12 }}>Share id: {shareId}</span>
-              <a className="btn ghost sm" href={`/periscope/app`} target="_blank" rel="noopener noreferrer">
+              <a className="btn ghost sm" href="/periscope/app" target="_blank" rel="noopener noreferrer">
                 Open Periscope editor
               </a>
             </div>
@@ -66,9 +66,6 @@ function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked 
   return (
     <div className="card card-pad">
       <Eyebrow>Periscope mailer proof</Eyebrow>
-      <p className="mut" style={{ fontSize: 13, lineHeight: 1.55, marginTop: 10 }}>
-        Configure fold geometry and annotations in Periscope, then paste the share link here so clients see the interactive 3D mailer.
-      </p>
       {canDesign ? (
         <div style={{ marginTop: 16 }}>
           <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
@@ -79,7 +76,6 @@ function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <input
               className="input"
-              placeholder="Share link or id"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               style={{ flex: 1, minWidth: 200 }}
@@ -90,8 +86,89 @@ function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked 
           </div>
           {error && <div className="flash danger" style={{ marginTop: 10 }}>{error}</div>}
         </div>
-      ) : (
-        <p className="mut" style={{ fontSize: 13, marginTop: 12 }}>Waiting for the design team to publish a Periscope proof.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function DrivePanel({ driveFolderUrl, briefDocUrl }) {
+  if (!driveFolderUrl && !briefDocUrl) return null;
+  return (
+    <div className="card card-pad" style={{ marginBottom: 16 }}>
+      <Eyebrow>Google Drive</Eyebrow>
+      <div className="row" style={{ gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+        {driveFolderUrl && (
+          <a className="btn primary" href={driveFolderUrl} target="_blank" rel={BLANK_REL}>
+            <Icon name="folder" size={13} /> Project folder
+          </a>
+        )}
+        {briefDocUrl && (
+          <a className="btn secondary" href={briefDocUrl} target="_blank" rel={BLANK_REL}>
+            <Icon name="book" size={13} /> Brief
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConsultantReviewPanel({
+  request, reviewers, approvals, user, isStaff, canReview,
+  onApprove, onClose, onSendBack, saving,
+}) {
+  if (request.status !== "Final Proof" && request.status !== "Closed") return null;
+
+  const approvedIds = new Set((approvals || []).map((a) => a.userId));
+  const allApproved = (reviewers || []).length > 0
+    && reviewers.every((r) => approvedIds.has(r.id));
+
+  return (
+    <div className="card card-pad" style={{ marginBottom: 16 }}>
+      <Eyebrow>Consultant review</Eyebrow>
+
+      {(reviewers || []).length > 0 && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          {reviewers.map((r) => {
+            const approval = (approvals || []).find((a) => a.userId === r.id);
+            return (
+              <div key={r.id} className="row between" style={{ fontSize: 13, padding: "8px 10px", background: "var(--fs-bone-50)", borderRadius: 4 }}>
+                <span className="row" style={{ gap: 8 }}>
+                  <Avatar name={r.name} size={22} />
+                  {r.name}
+                </span>
+                {approval ? (
+                  <Tag tone="success">Proofed</Tag>
+                ) : (
+                  <Tag tone="outline">Pending</Tag>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {canReview && request.status === "Final Proof" && (
+        <div className="row" style={{ gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+          {!approvedIds.has(user?.id) && (
+            <button type="button" className="btn secondary" disabled={saving} onClick={onApprove}>
+              Mark as proofed
+            </button>
+          )}
+          <button type="button" className="btn ghost" disabled={saving} onClick={onSendBack}>
+            Send back to design
+          </button>
+          {(isStaff || allApproved) && (
+            <button type="button" className="btn primary" disabled={saving} onClick={onClose}>
+              Close request
+            </button>
+          )}
+        </div>
+      )}
+
+      {request.status === "Closed" && (
+        <div style={{ marginTop: 12 }}>
+          <Tag tone="success">Closed</Tag>
+        </div>
       )}
     </div>
   );
@@ -143,22 +220,27 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
     );
   }
 
-  const { request, proofs, comments } = data;
+  const { request, proofs, comments, reviewers, approvals } = data;
   const currentProof = proofs.find((p) => p.id === activeProof) || proofs[proofs.length - 1];
   const isMailerProof = request.assetType === MAIL_PROOF_ASSET;
   const periscopeShareId = currentProof?.periscopeShareId || null;
 
   const canDesign = isStaff || (isDesigner && isAssignee);
+  const isReviewer = (reviewers || []).some((r) => r.id === user?.id);
+  const canReview = isStaff || isReviewer;
   const designerTransitions = DESIGNER_TRANSITIONS[request.status] || [];
 
   const runAction = async (fn) => {
     setActionError("");
+    setSaving(true);
     try {
       await fn();
       load();
       onUpdated?.();
     } catch (e) {
       setActionError(e.message || "Something went wrong. Try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -212,6 +294,9 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
   const setStatus = (status) => runAction(() => designApi.update(requestId, { status }));
   const readyForReview = () => runAction(() => designApi.update(requestId, { action: "ready_for_review" }));
   const clientAction = (action) => runAction(() => designApi.update(requestId, { action }));
+  const approveProof = () => runAction(() => designApi.update(requestId, { action: "approve_proof" }));
+  const closeRequest = () => runAction(() => designApi.update(requestId, { action: "close" }));
+  const sendToDesign = () => runAction(() => designApi.update(requestId, { action: "send_to_design" }));
 
   return (
     <div>
@@ -225,10 +310,10 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
             </button>
             {canDesign && request.status === "In Design" && (
               <button type="button" className="btn secondary" onClick={readyForReview}>
-                <Icon name="check" size={13} /> Ready for review
+                <Icon name="check" size={13} /> Send to final proof
               </button>
             )}
-            {isClient && request.status === "Proofing" && (
+            {isClient && request.status === "Final Proof" && (
               <>
                 <button type="button" className="btn secondary" onClick={() => clientAction("revisions")}>Request revisions</button>
                 <button type="button" className="btn primary" onClick={() => clientAction("approve")}>
@@ -258,6 +343,21 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
       {actionError && (
         <div className="flash danger" style={{ marginBottom: 16 }}>{actionError}</div>
       )}
+
+      <DrivePanel driveFolderUrl={request.driveFolderUrl} briefDocUrl={request.briefDocUrl} />
+
+      <ConsultantReviewPanel
+        request={request}
+        reviewers={reviewers}
+        approvals={approvals}
+        user={user}
+        isStaff={isStaff}
+        canReview={canReview}
+        onApprove={approveProof}
+        onClose={closeRequest}
+        onSendBack={sendToDesign}
+        saving={saving}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "flex-start" }}>
         <div>
@@ -291,8 +391,10 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
             <div
               style={{
                 position: "relative", aspectRatio: "16/9",
-                background: "linear-gradient(180deg, #0e2238 0%, #1A3A5C 60%, #2A527F 100%)",
-                borderRadius: 2, overflow: "hidden", cursor: draft.trim() ? "crosshair" : "default",
+                background: "var(--fs-bone-50)",
+                border: "1px solid var(--fs-border)",
+                borderRadius: 2, overflow: "hidden",
+                cursor: draft.trim() ? "crosshair" : "default",
               }}
               onClick={draft.trim() ? handleFrameClick : undefined}
             >
@@ -311,9 +413,9 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
               ) : (
                 <div style={{
                   position: "absolute", inset: 0, display: "grid", placeItems: "center",
-                  color: "rgba(255,255,255,0.7)", fontSize: 14,
+                  color: "var(--fs-fg-muted)", fontSize: 14,
                 }}>
-                  {currentProof ? `${currentProof.label || currentProof.version} — no file attached` : "No proof uploaded yet"}
+                  {currentProof ? (currentProof.label || currentProof.version) : "No proof"}
                 </div>
               )}
               {(comments || []).filter((c) => c.marker).map((c, i) => (
@@ -332,21 +434,20 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
               ))}
             </div>
             )}
-            {!isMailerProof && (
-            <div className="mut" style={{ fontSize: 12, marginTop: 10 }}>
-              {draft.trim() ? "Click the frame to place a comment marker." : "Type a comment below to enable click-to-place markers."}
-            </div>
-            )}
           </div>
 
-          {canDesign && (
+          {canDesign && request.status !== "Closed" && (
             <div className="card card-pad" style={{ marginTop: 16 }}>
               <Eyebrow>Upload proof version</Eyebrow>
               <div className="row" style={{ gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-                <input className="input" placeholder="Version (e.g. v3)" value={proofVersion}
-                  onChange={(e) => setProofVersion(e.target.value)} style={{ maxWidth: 120 }} />
-                <input className="input" placeholder="Label" value={proofLabel}
-                  onChange={(e) => setProofLabel(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+                <div className="field" style={{ margin: 0, minWidth: 100 }}>
+                  <label>Version</label>
+                  <input className="input" value={proofVersion} onChange={(e) => setProofVersion(e.target.value)} />
+                </div>
+                <div className="field" style={{ margin: 0, flex: 1, minWidth: 160 }}>
+                  <label>Label</label>
+                  <input className="input" value={proofLabel} onChange={(e) => setProofLabel(e.target.value)} />
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -354,14 +455,19 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
                   onChange={(e) => setProofFile(e.target.files?.[0] || null)}
                   style={{ display: "none" }}
                 />
-                <button type="button" className="btn secondary" disabled={saving} onClick={() => fileInputRef.current?.click()}>
-                  <Icon name="upload" size={13} /> {proofFile ? proofFile.name : "Choose file"}
-                </button>
-                <button type="button" className="btn primary" disabled={saving || !proofVersion.trim()} onClick={uploadProof}>
-                  {saving ? "Uploading…" : "Add version"}
-                </button>
+                <div className="field" style={{ margin: 0, alignSelf: "flex-end" }}>
+                  <label>&nbsp;</label>
+                  <button type="button" className="btn secondary" disabled={saving} onClick={() => fileInputRef.current?.click()}>
+                    <Icon name="upload" size={13} /> {proofFile ? proofFile.name : "Choose file"}
+                  </button>
+                </div>
+                <div className="field" style={{ margin: 0, alignSelf: "flex-end" }}>
+                  <label>&nbsp;</label>
+                  <button type="button" className="btn primary" disabled={saving || !proofVersion.trim()} onClick={uploadProof}>
+                    {saving ? "Uploading…" : "Add version"}
+                  </button>
+                </div>
               </div>
-              <div className="help" style={{ marginTop: 8 }}>PNG, JPG, GIF, WebP, or PDF up to 15 MB. File is optional — versions can track metadata only.</div>
             </div>
           )}
 
@@ -396,8 +502,7 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
 
         <div className="card" style={{ display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 220px)" }}>
           <div className="card-head">
-            <h3>Comments · {(comments || []).length}</h3>
-            {isClient && <Tag tone="navy">Client view</Tag>}
+            <h3>Notes · {(comments || []).length}</h3>
           </div>
           <div style={{ overflowY: "auto", flex: 1 }}>
             {(comments || []).map((c) => (
@@ -414,10 +519,8 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
             ))}
           </div>
           <div style={{ padding: 14, borderTop: "1px solid var(--fs-border)" }}>
-            <textarea className="input" rows={2} placeholder="Add a comment…" value={draft}
-              onChange={(e) => setDraft(e.target.value)} />
-            <div className="row between" style={{ marginTop: 8 }}>
-              <span className="mut" style={{ fontSize: 11 }}>Client comments email the assignee</span>
+            <textarea className="input" rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
               <button type="button" className="btn primary sm" onClick={() => postComment()}>Post</button>
             </div>
           </div>

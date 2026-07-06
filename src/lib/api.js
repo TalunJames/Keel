@@ -77,6 +77,8 @@ export const setupApi = {
 export const accountApi = {
   me: () => api("/account/me"),
   update: (patch) => api("/account/me", { method: "PATCH", body: JSON.stringify(patch) }),
+  updateClientOrder: (clientOrder) =>
+    api("/account/me", { method: "PATCH", body: JSON.stringify({ clientOrder }) }),
   calendar: (start, days = 42) =>
     api(`/account/calendar?start=${encodeURIComponent(start)}&days=${days}`),
 };
