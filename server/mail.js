@@ -24,6 +24,17 @@ function isGoogleSmtpRelay(host) {
   return /smtp-relay\.gmail\.com$/i.test(String(host || "").trim());
 }
 
+/** Google SMTP relay rejects Docker's default EHLO hostname (container id). */
+function smtpEhloName() {
+  const explicit = (process.env.SMTP_NAME || "").trim();
+  if (explicit) return explicit;
+  try {
+    const primary = appUrls()[0];
+    if (primary) return new URL(primary).hostname;
+  } catch { /* ignore */ }
+  return "keel.fogsignalstrategies.com";
+}
+
 async function getTransporter() {
   if (transporter) return transporter;
   if (process.env.MAIL_ENABLED !== "1") return null;
@@ -32,13 +43,15 @@ async function getTransporter() {
 
   const relay = isGoogleSmtpRelay(host);
   const useAuth = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+  const ehloName = smtpEhloName();
   if (relay && !useAuth) {
-    console.log("[mail] Google Workspace SMTP relay (no SMTP auth — IP allowlist must match server egress)");
+    console.log(`[mail] Google Workspace SMTP relay (EHLO ${ehloName}, IP allowlist must match egress)`);
   }
 
   const nodemailer = await import("nodemailer");
   const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS) || 10000;
   transporter = nodemailer.createTransport({
+    name: ehloName,
     host,
     port: Number(process.env.SMTP_PORT) || 587,
     secure: process.env.SMTP_SECURE === "1",
@@ -84,26 +97,46 @@ function inviteAlternateUrls(token) {
   return appUrls().slice(1).map((base) => inviteLink(base, token));
 }
 
+/** SMTP envelope MAIL FROM (Google relay rejects empty/mismatched envelope). */
+function smtpEnvelopeFrom(fromHeader) {
+  const explicit = (process.env.SMTP_ENVELOPE_FROM || "").trim();
+  if (explicit) return explicit;
+  const raw = String(fromHeader || "").trim();
+  const bracketed = raw.match(/<([^>]+)>/);
+  return (bracketed ? bracketed[1] : raw).trim();
+}
+
 export async function sendMail({ to, subject, text, eventType = "general" }) {
   const from = process.env.SMTP_FROM || "keel@localhost";
+  const envelopeFrom = smtpEnvelopeFrom(from);
   let error = null;
   let sent = false;
 
   try {
     const tx = await getTransporter();
     if (tx) {
-      await tx.sendMail({ from, to, subject, text });
+      await tx.sendMail({
+        from,
+        to,
+        subject,
+        text,
+        envelope: { from: envelopeFrom, to },
+      });
       sent = true;
-      console.log(`[mail] ${eventType} → ${to}`);
+      console.log(`[mail] ${eventType} → ${to} (from ${from}, envelope ${envelopeFrom})`);
     } else {
-      console.log(`[mail:dev] ${eventType} → ${to}\n${text}`);
+      error = "SMTP not configured (MAIL_ENABLED=1 but transporter unavailable)";
+      console.error(`[mail] ${error}`);
     }
   } catch (e) {
-    error = e.message;
-    console.error(`[mail] failed ${eventType} → ${to}:`, e.message);
+    error = [e.message, e.response].filter(Boolean).join(" | ");
+    console.error(`[mail] failed ${eventType} → ${to} (EHLO ${smtpEhloName()}):`, error);
   }
 
-  return { sent: sent || process.env.MAIL_ENABLED !== "1", error };
+  if (process.env.MAIL_ENABLED !== "1") {
+    return { sent: true, error: null };
+  }
+  return { sent: sent && !error, error };
 }
 
 export async function sendInviteMail({ to, data }) {

@@ -1260,7 +1260,7 @@ export function registerRoutes(app, db) {
     res.status(201).json({
       id: result.user.id,
       emailSent: mail.sent,
-      mailError: mail.error || null,
+      mailError: mail.error || (!mail.sent ? "SMTP send failed — check server logs" : null),
     });
   });
 
@@ -1286,7 +1286,11 @@ export function registerRoutes(app, db) {
       "Users"
     );
 
-    res.json({ ok: true, emailSent: mail.sent, mailError: mail.error || null });
+    res.json({
+      ok: true,
+      emailSent: mail.sent,
+      mailError: mail.error || (!mail.sent ? "SMTP send failed — check server logs" : null),
+    });
   });
 
   app.post("/api/admin/users", auth, requireRole("admin"), async (req, res) => {
