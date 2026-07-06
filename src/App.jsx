@@ -4,6 +4,7 @@ import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
 import { computeEffectiveModules, visibleModuleList, canAccessModule } from "./lib/access.js";
 import { resolveClientSelection, sortClientsByOrder } from "./lib/clients.js";
+import { useSectionHistory } from "./lib/useSectionHistory.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
@@ -66,7 +67,7 @@ export default function App() {
   const [theme, setTheme] = usePref("theme", "light");
   const [clientId, setClientId] = usePref("client", "all");
   const [sidebarCollapsed, setSidebarCollapsed] = usePref("sidebarCollapsed", false);
-  const [section, setSection] = useState("home");
+  const [section, setSection] = useSectionHistory("home");
   const [designInitialTab, setDesignInitialTab] = useState(null);
 
   useEffect(() => {
