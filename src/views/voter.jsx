@@ -3,6 +3,7 @@ import { PageHead, Icon, Stat, Tag } from "../components/ui.jsx";
 import { api, withClient, downloadExport } from "../lib/api.js";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { Loading } from "../components/Loading.jsx";
+import { useModalA11y } from "../lib/useModalA11y.js";
 
 const VoterMap = lazy(() =>
   import("./VoterMap.jsx").then((m) => ({ default: m.VoterMap }))
@@ -113,14 +114,18 @@ export function VoterView({ role, clientId, client }) {
         body: JSON.stringify({ clientId, filters, query, scope: "filters" }),
       });
       count = r.total || 0;
-    } catch { /* ignore */ }
-    await api("/voter/cuts", {
-      method: "POST",
-      body: JSON.stringify({ name, filters, query, clientId, count }),
-    });
-    loadMeta();
-    setModal(null);
-    flash('Saved cut "' + name + '"');
+    } catch { /* ignore — count is best-effort */ }
+    try {
+      await api("/voter/cuts", {
+        method: "POST",
+        body: JSON.stringify({ name, filters, query, clientId, count }),
+      });
+      loadMeta();
+      setModal(null);
+      flash('Saved cut "' + name + '"');
+    } catch (e) {
+      flash(e?.message || "Could not save cut");
+    }
   };
 
   const needsClient = !clientId || clientId === "all";
@@ -286,14 +291,23 @@ function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, 
   useEffect(() => { setPage(1); }, [filters, query, clientId]);
 
   useEffect(() => {
+    // Abort a prior request so a slow older query can't overwrite fresher rows
+    // when filters/query/page change rapidly.
+    const controller = new AbortController();
     setLoading(true);
     api("/voter/query", {
       method: "POST",
+      signal: controller.signal,
       body: JSON.stringify({ clientId, filters, query, page, pageSize: PAGE_SIZE }),
     })
-      .then(setResult)
-      .catch(() => setResult({ total: 0, rows: [], message: "Could not load voters. Check that the warehouse is ingested for this client." }))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!controller.signal.aborted) setResult(r); })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setResult({ total: 0, rows: [], message: "Could not load voters. Check that the warehouse is ingested for this client." });
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [clientId, filters, query, page]);
 
   const total = result?.total ?? 0;
@@ -359,12 +373,21 @@ function VoterFileQuery({ clientId, file, filters, setFilters, query, setQuery, 
 }
 
 function VoterModal({ title, children, onClose }) {
+  const dialogRef = useModalA11y(onClose);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "rgba(26,58,92,0.45)", display: "grid", placeItems: "center", padding: 24 }} onClick={onClose}>
-      <div className="card" style={{ maxWidth: 480, width: "100%", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        style={{ maxWidth: 480, width: "100%", padding: 24 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="row between" style={{ marginBottom: 12 }}>
           <h3 style={{ margin: 0, color: "var(--fs-navy)" }}>{title}</h3>
-          <button type="button" className="btn ghost sm" onClick={onClose}><Icon name="x" size={16} /></button>
+          <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
         </div>
         {children}
       </div>

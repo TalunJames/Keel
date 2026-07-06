@@ -22,7 +22,17 @@ const RESOURCE_UPSERT = `
   )
 `;
 
+const CLIENT_ID_RE = /^[a-z0-9-]+$/;
+
+function assertValidClientId(clientId) {
+  if (typeof clientId !== "string" || !CLIENT_ID_RE.test(clientId)) {
+    throw new Error(`Invalid client id: ${JSON.stringify(clientId)} (expected /^[a-z0-9-]+$/)`);
+  }
+  return clientId;
+}
+
 export function pollingManifestPublicPath(clientId, publicRoot) {
+  assertValidClientId(clientId);
   return path.join(publicRoot, "election-data", "clients", clientId, "polling-manifest.json");
 }
 
@@ -50,6 +60,7 @@ export function loadPortalDir(portalDir) {
 
   const clientId = manifest.clientId || polls.find((p) => p.client_id)?.client_id;
   if (!clientId) throw new Error("Could not determine client id from portal files");
+  assertValidClientId(clientId);
 
   return { clientId, manifest, polls };
 }

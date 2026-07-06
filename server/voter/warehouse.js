@@ -35,6 +35,14 @@ function sourceCsvPath(clientId) {
   return path.join(clientDir(clientId), "voters.csv");
 }
 
+// Remove a SQLite db file together with its -wal and -shm sidecars, so a stale
+// WAL can't be recovered into a freshly written db (data corruption / mixing).
+function removeDbFiles(dbPath) {
+  for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  }
+}
+
 export function hasWarehouse(clientId) {
   return fs.existsSync(warehousePath(clientId));
 }
@@ -94,6 +102,11 @@ function mapRow(vendor, row) {
 
 function stageSourceFile(sourcePath, destPath, { link = false } = {}) {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  // If the source IS the staged destination, don't unlink+copy — that would
+  // delete the source and then fail the copy, destroying the voter file.
+  if (path.resolve(sourcePath) === path.resolve(destPath)) {
+    return "in-place";
+  }
   if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
   if (link) {
     fs.symlinkSync(path.resolve(sourcePath), destPath);
@@ -145,13 +158,13 @@ function buildWhere(filters = {}, query = "", { bbox } = {}) {
   const q = String(query || "").trim();
   if (q) {
     clauses.push(`(
-      first_name LIKE @qLike OR
-      last_name LIKE @qLike OR
-      state_voter_id LIKE @qLike OR
-      id LIKE @qLike OR
-      address_line LIKE @qLike
+      first_name LIKE @qLike ESCAPE '\\' OR
+      last_name LIKE @qLike ESCAPE '\\' OR
+      state_voter_id LIKE @qLike ESCAPE '\\' OR
+      id LIKE @qLike ESCAPE '\\' OR
+      address_line LIKE @qLike ESCAPE '\\'
     )`);
-    params.qLike = `%${q}%`;
+    params.qLike = `%${escapeLike(q)}%`;
   }
 
   if (bbox && bbox.length === 4) {
@@ -168,9 +181,18 @@ function buildWhere(filters = {}, query = "", { bbox } = {}) {
 }
 
 function csvCell(value) {
-  const s = String(value ?? "");
+  let s = String(value ?? "");
+  // Neutralize spreadsheet formula injection: a cell beginning with one of
+  // = + - @ (or a leading tab/CR) is treated as a formula by Excel/Sheets.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
+}
+
+// Escape LIKE wildcards (% and _) and the escape char so user input can't
+// inject wildcards / force full-table scans. Pair with ESCAPE '\' in the SQL.
+function escapeLike(s) {
+  return String(s).replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 const EXPORT_COLUMNS = [
@@ -245,12 +267,19 @@ export async function ingestVoterFile({
 
   const staged = stageSourceFile(absSource, sourceCsvPath(clientId), { link });
   const dbPath = warehousePath(clientId);
-  if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  // Build into a temp db and atomically rename over the live warehouse only
+  // after a successful ingest, so a mid-ingest crash can never leave a
+  // truncated warehouse.db that hasWarehouse()/resolveVoterFile() trust.
+  const tmpDbPath = `${dbPath}.tmp`;
+  removeDbFiles(tmpDbPath);
 
-  const db = new Database(dbPath);
+  const db = new Database(tmpDbPath);
   db.pragma("journal_mode = WAL");
   initWarehouseSchema(db);
 
+  // Upsert on duplicate id so a repeated voter id updates rather than throwing
+  // a UNIQUE-constraint error inside the stream handler (which would crash the
+  // process and leave a partial warehouse).
   const insert = db.prepare(`
     INSERT INTO voters (
       id, state_voter_id, first_name, last_name, party, raw_party,
@@ -261,6 +290,23 @@ export async function ingestVoterFile({
       @county, @score, @precinct, @zip, @voter_status, @age_range, @household_id,
       @address_line, @address_city, @address_state, @address_key
     )
+    ON CONFLICT(id) DO UPDATE SET
+      state_voter_id = excluded.state_voter_id,
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      party = excluded.party,
+      raw_party = excluded.raw_party,
+      county = excluded.county,
+      score = excluded.score,
+      precinct = excluded.precinct,
+      zip = excluded.zip,
+      voter_status = excluded.voter_status,
+      age_range = excluded.age_range,
+      household_id = excluded.household_id,
+      address_line = excluded.address_line,
+      address_city = excluded.address_city,
+      address_state = excluded.address_state,
+      address_key = excluded.address_key
   `);
   const insertMany = db.transaction((rows) => {
     for (const row of rows) insert.run(row);
@@ -274,7 +320,6 @@ export async function ingestVoterFile({
   const precincts = new Set();
   const ageRanges = new Set();
   const partyMix = { D: 0, R: 0, I: 0 };
-  const addressIndex = new Map();
 
   try {
     await new Promise((resolve, reject) => {
@@ -289,62 +334,79 @@ export async function ingestVoterFile({
     );
 
     parser.on("data", (row) => {
-      if (!headers) {
-        headers = Object.keys(row);
-        vendor = detectVendor(headers);
-        if (!vendor) {
-          parser.destroy();
-          reject(new Error("Unrecognized voter file format — expected TargetSmart/RNC export headers."));
-          return;
+      // Any error thrown per-row (mapping, UNIQUE, disk) must abort the stream
+      // cleanly via reject() instead of crashing the process.
+      try {
+        if (!headers) {
+          headers = Object.keys(row);
+          vendor = detectVendor(headers);
+          if (!vendor) {
+            const err = new Error("Unrecognized voter file format — expected TargetSmart/RNC export headers.");
+            parser.destroy(err);
+            reject(err);
+            return;
+          }
         }
-      }
 
-      const mapped = mapRow(vendor, row);
-      if (!mapped.id) return;
+        const mapped = mapRow(vendor, row);
+        if (!mapped.id) return;
 
-      counties.add(mapped.county);
-      if (mapped.precinct) precincts.add(mapped.precinct);
-      if (mapped.age_range) ageRanges.add(mapped.age_range);
-      partyMix[mapped.party] = (partyMix[mapped.party] || 0) + 1;
+        counties.add(mapped.county);
+        if (mapped.precinct) precincts.add(mapped.precinct);
+        if (mapped.age_range) ageRanges.add(mapped.age_range);
+        partyMix[mapped.party] = (partyMix[mapped.party] || 0) + 1;
 
-      if (mapped.address_key && !addressIndex.has(mapped.address_key)) {
-        addressIndex.set(mapped.address_key, {
-          address_key: mapped.address_key,
-          address_line: mapped.address_line,
-          address_city: mapped.address_city,
-          address_state: mapped.address_state,
-          zip: mapped.zip,
-        });
-      }
+        batch.push(mapped);
+        recordCount += 1;
 
-      batch.push(mapped);
-      recordCount += 1;
-
-      if (batch.length >= BATCH_SIZE) {
-        parser.pause();
-        insertMany(batch);
-        batch = [];
-        if (onProgress) onProgress(recordCount);
-        parser.resume();
+        if (batch.length >= BATCH_SIZE) {
+          parser.pause();
+          insertMany(batch);
+          batch = [];
+          if (onProgress) onProgress(recordCount);
+          parser.resume();
+        }
+      } catch (err) {
+        parser.destroy(err);
+        reject(err);
       }
     });
 
     parser.on("error", reject);
     parser.on("end", () => {
-      if (!vendor) {
-        reject(new Error("CSV file has no data rows — nothing to ingest."));
-        return;
+      try {
+        if (!vendor) {
+          reject(new Error("CSV file has no data rows — nothing to ingest."));
+          return;
+        }
+        if (batch.length) insertMany(batch);
+        resolve();
+      } catch (err) {
+        reject(err);
       }
-      if (batch.length) insertMany(batch);
-      resolve();
     });
     });
   } catch (err) {
     db.close();
+    removeDbFiles(tmpDbPath);
     throw err;
   }
 
-  db.close();
+  // Compute distinct address count from the db instead of holding a Map of
+  // every unique address in memory (OOM territory on statewide files).
+  let uniqueAddresses = 0;
+  try {
+    uniqueAddresses = db.prepare(
+      "SELECT COUNT(DISTINCT address_key) AS n FROM voters WHERE address_key != ''"
+    ).get().n;
+  } finally {
+    // Fully close the tmp db (checkpointing/removing its WAL/SHM) before rename.
+    db.close();
+  }
+
+  // Atomically swap the freshly built db over the live one; clear stale WAL/SHM.
+  removeDbFiles(dbPath);
+  fs.renameSync(tmpDbPath, dbPath);
 
   const manifest = {
     clientId,
@@ -357,7 +419,7 @@ export async function ingestVoterFile({
     precincts: [...precincts].filter(Boolean).sort(),
     ageRanges: [...ageRanges].filter(Boolean).sort(),
     partyMix,
-    uniqueAddresses: addressIndex.size,
+    uniqueAddresses,
     geocodedCount: 0,
     ingestedAt: new Date().toISOString(),
     columns: headers,
@@ -368,23 +430,11 @@ export async function ingestVoterFile({
   return manifest;
 }
 
+const GEOCODE_CHUNK = 5000;
+
 export async function geocodeClientVoters(clientId, { onProgress } = {}) {
   const db = openWarehouse(clientId, { readonly: false });
   if (!db) throw new Error("No warehouse found for client");
-
-  const unique = db.prepare(`
-    SELECT DISTINCT address_key, address_line, address_city, address_state, zip
-    FROM voters
-    WHERE address_key != '' AND (lat IS NULL OR lng IS NULL)
-  `).all();
-
-  if (!unique.length) {
-    const geocodedCount = db.prepare("SELECT COUNT(*) AS n FROM voters WHERE lat IS NOT NULL").get().n;
-    db.close();
-    return { geocodedCount, uniqueAddresses: 0 };
-  }
-
-  const geocoded = await geocodeUniqueAddresses(unique, { onProgress });
 
   const update = db.prepare("UPDATE voters SET lat = ?, lng = ? WHERE address_key = ? AND (lat IS NULL OR lng IS NULL)");
   const apply = db.transaction((rows) => {
@@ -394,7 +444,30 @@ export async function geocodeClientVoters(clientId, { onProgress } = {}) {
       }
     }
   });
-  apply(geocoded);
+
+  // Stream ungeocoded distinct addresses in chunks via .iterate() instead of
+  // loading the entire result set (statewide files are OOM territory).
+  const iter = db.prepare(`
+    SELECT DISTINCT address_key, address_line, address_city, address_state, zip
+    FROM voters
+    WHERE address_key != '' AND (lat IS NULL OR lng IS NULL)
+  `).iterate();
+
+  let uniqueAddresses = 0;
+  let chunk = [];
+  for (const row of iter) {
+    chunk.push(row);
+    uniqueAddresses += 1;
+    if (chunk.length >= GEOCODE_CHUNK) {
+      const geocoded = await geocodeUniqueAddresses(chunk, { clientId, onProgress });
+      apply(geocoded);
+      chunk = [];
+    }
+  }
+  if (chunk.length) {
+    const geocoded = await geocodeUniqueAddresses(chunk, { clientId, onProgress });
+    apply(geocoded);
+  }
 
   const geocodedCount = db.prepare("SELECT COUNT(*) AS n FROM voters WHERE lat IS NOT NULL").get().n;
   db.close();
@@ -406,7 +479,7 @@ export async function geocodeClientVoters(clientId, { onProgress } = {}) {
     fs.writeFileSync(manifestPath(clientId), JSON.stringify(manifest, null, 2));
   }
 
-  return { geocodedCount, uniqueAddresses: unique.length };
+  return { geocodedCount, uniqueAddresses };
 }
 
 export function queryVoters(clientId, { filters = {}, query = "", page = 1, pageSize = 50 } = {}) {

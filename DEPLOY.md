@@ -50,10 +50,12 @@ ghcr.io/talunjames/keel:sha-abc1234   # immutable per-commit tag (recommended fo
 If the package is private, TrueNAS needs credentials.
 
 1. On GitHub, create a **classic personal access token** (Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)) with the single scope `read:packages`. Save the token.
-2. SSH into TrueNAS Scale and run:
+2. SSH into TrueNAS Scale and log in, passing the token on stdin so it never
+   lands in your shell history or a `ps` listing:
    ```bash
-   docker login ghcr.io -u YOUR_GITHUB_USERNAME -p ghp_xxxxxxxxxxxxxxxxxxxx
+   echo "$PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
    ```
+   (Set `PAT` first, e.g. `read -rs PAT` then paste the token.)
 3. Verify with `docker pull ghcr.io/talunjames/keel:latest`.
 
 Alternative: in the TrueNAS UI, **Apps → Discover Apps → Manage Container Images → Add → Registry Credentials**, then add a credential entry with `ghcr.io`, your GitHub username, and the PAT. The Custom App UI will then offer this credential when you reference the image.
@@ -107,20 +109,27 @@ In recent TrueNAS Scale (Electric Eel / Fangtooth), the Custom App form takes a 
 - Replace `/mnt/tank/apps/keel/` with your actual dataset path.
 - Set `CORS_ORIGIN` to your public URL (`https://keel.yourdomain.com`).
 
-Then in the **Environment Variables** section, set the required secrets:
+Then in the **Environment Variables** section, set the required values:
 
-| Variable          | Value                                                     |
-| ----------------- | --------------------------------------------------------- |
-| `JWT_SECRET`      | output of `openssl rand -hex 32`                          |
-| `ADMIN_PASSWORD`  | a strong password — used only for the first-boot seed     |
-| `ADMIN_EMAIL`     | (optional) override the default admin email               |
-| `TUNNEL_TOKEN`    | the Cloudflare tunnel token from step 4                   |
+| Variable               | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| `JWT_SECRET`           | **Required.** Output of `openssl rand -hex 32`. In production the app refuses to start without it. |
+| `BOOTSTRAP_ADMIN_EMAIL`| **Required.** Email of the initial administrator (no default).     |
+| `BOOTSTRAP_ADMIN_NAME` | (optional) Display name for the bootstrap admin.                   |
+| `TUNNEL_TOKEN`         | The Cloudflare tunnel token from step 4.                           |
+
+There is **no** `ADMIN_PASSWORD` env var — the admin password is chosen on the
+first-boot setup screen (see step 6).
 
 Save and start the app.
 
 ---
 
-## 6. First-boot verification
+## 6. First-boot: complete the setup screen
+
+On the very first boot (empty users table) Keel enters a one-time setup mode
+and prints a **setup token** to its logs. You use that token, plus a password
+you choose, to create the administrator account for `BOOTSTRAP_ADMIN_EMAIL`.
 
 ```bash
 # On TrueNAS, watch logs:
@@ -128,15 +137,27 @@ docker logs -f keel
 docker logs -f keel-cloudflared
 ```
 
-What to look for:
+What to look for in the `keel` log:
 
-- `Keel API listening on http://localhost:3001` in the `keel` log.
-- `Created admin user: <email>` on the very first boot only. On subsequent boots: `Users already exist — skipping seed.`
+- `Keel API listening on http://localhost:3001`.
+- On the very first boot only, a line like:
+  ```
+  SETUP TOKEN: 9f3a1c...   (copy this)
+  ```
 - `Registered tunnel connection` in `keel-cloudflared`.
 
-Open `https://keel.yourdomain.com` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+Then:
 
-**Immediately after first login:** change the admin password from the Admin Console. The `ADMIN_PASSWORD` env var was only used to seed the account — rotating it in the env will not change the actual password (the seed is idempotent and skips on subsequent boots).
+1. Open `https://keel.yourdomain.com`. Because setup is still pending, you land
+   on the **first-boot setup screen**.
+2. Paste the **setup token** from the logs and **choose the admin password**
+   for `BOOTSTRAP_ADMIN_EMAIL`.
+3. Submit. The admin account is created and you're signed in.
+
+The setup token is single-use and only valid while setup is pending — once the
+admin exists, subsequent boots skip setup and go straight to the login screen.
+If you didn't catch the token, `docker logs keel` still shows it as long as
+setup hasn't completed; restart the container to have it re-printed.
 
 ---
 
@@ -205,7 +226,7 @@ If you ever need to restore: stop the app, restore the dataset from snapshot, st
 ## Known gotchas
 
 - **Don't change `JWT_SECRET` after going live without warning users** — it invalidates every active session (everyone gets logged out).
-- **`ADMIN_PASSWORD` is seed-only.** Changing it in the env after first boot does nothing. Change the password in-app instead.
+- **No `ADMIN_PASSWORD` env var.** The admin password is set once on the first-boot setup screen using the one-time setup token from the logs. To change it later, use the Admin Console in-app.
 - **Cookies are `secure: true` in production** ([server/auth.js:27](server/auth.js)). That means logins only persist over HTTPS. Cloudflare Tunnel terminates TLS for you, so this works — but if you ever bypass the tunnel and hit the container over plain HTTP on the LAN, login won't stick.
 - **`better-sqlite3` is a native module.** The Dockerfile compiles it during the build stage (Debian slim base + `python3 make g++`). If you change Node major versions, rebuild the image.
 - **First boot is slow (~30s)** while the SQLite migrations run and the admin gets seeded. Healthcheck has a 15s `start-period` to account for this.

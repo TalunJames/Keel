@@ -6,11 +6,12 @@ election today and the live primary on the night, with no edits.
 import os
 
 # --- Election identity -------------------------------------------------------
-# EID changes per election. Default is the verified Nov-2025 test election so
-# the pipeline can be exercised right now. Override with EP_EID on the night.
-EID = os.environ.get("EP_EID", "124432")
+# EID changes per election. Default is the 2026 statewide primary (126592).
+# Override with EP_EID for county-only test feeds (e.g. 124432).
+EID = os.environ.get("EP_EID", "126592")
 
-# Clarity ENR base. State/county are fixed for us.
+# Clarity ENR base. County elections use /{state}/{county}/{eid}; statewide
+# primaries use /{state}/{eid}. feed.feed_base() resolves the correct path.
 STATE = os.environ.get("EP_STATE", "CO")
 COUNTY = os.environ.get("EP_COUNTY", "El_Paso")
 BASE = f"https://results.enr.clarityelections.com/{STATE}/{COUNTY}/{EID}"

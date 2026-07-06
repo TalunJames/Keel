@@ -5,6 +5,12 @@ import Database from "better-sqlite3";
 const CENSUS_BATCH_URL = "https://geocoding.geo.census.gov/geocoder/locations/addressbatch";
 const CENSUS_SINGLE_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
 const BATCH_SIZE = 10000;
+const FETCH_TIMEOUT_MS = 30000;
+const MAX_RETRIES = 3;
+
+function backoff(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function cachePath(clientId) {
   const root = process.env.VOTER_DATA_DIR || path.join(process.cwd(), "data", "voter");
@@ -38,7 +44,7 @@ export async function geocodeOneLine(address) {
   url.searchParams.set("address", address);
   url.searchParams.set("benchmark", "Public_AR_Current");
   url.searchParams.set("format", "json");
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Geocoder HTTP ${res.status}`);
   const data = await res.json();
   const match = data?.result?.addressMatches?.[0];
@@ -57,7 +63,13 @@ function parseBatchLine(line) {
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
     if (ch === '"') {
-      inQuotes = !inQuotes;
+      // A doubled quote ("") inside a quoted field is a literal quote char.
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
     } else if (ch === "," && !inQuotes) {
       cols.push(cur);
       cur = "";
@@ -66,16 +78,34 @@ function parseBatchLine(line) {
     }
   }
   cols.push(cur);
-  return cols.map((c) => c.replace(/^"|"$/g, "").trim());
+  return cols.map((c) => c.trim());
 }
 
 export async function geocodeBatchCsv(csvBody) {
-  const form = new FormData();
-  form.append("addressFile", new Blob([csvBody], { type: "text/csv" }), "addresses.csv");
-  form.append("benchmark", "Public_AR_Current");
-  const res = await fetch(CENSUS_BATCH_URL, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`Batch geocoder HTTP ${res.status}`);
-  const text = await res.text();
+  let text;
+  let lastErr;
+  // Retry a bounded number of times with short backoff so a single hung
+  // connection or transient non-2xx doesn't abort the whole run.
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    const form = new FormData();
+    form.append("addressFile", new Blob([csvBody], { type: "text/csv" }), "addresses.csv");
+    form.append("benchmark", "Public_AR_Current");
+    try {
+      const res = await fetch(CENSUS_BATCH_URL, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`Batch geocoder HTTP ${res.status}`);
+      text = await res.text();
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_RETRIES) await backoff(1000 * attempt);
+    }
+  }
+  if (lastErr) throw lastErr;
   const results = new Map();
   for (const line of text.trim().split(/\r?\n/)) {
     if (!line.trim()) continue;
@@ -108,8 +138,9 @@ export function upsertGeocodeCache(db, rows) {
   tx(rows);
 }
 
-export async function geocodeUniqueAddresses(addresses, { onProgress } = {}) {
-  const cacheDb = openGeocodeCache("_shared");
+export async function geocodeUniqueAddresses(addresses, { onProgress, clientId } = {}) {
+  // Cache PII per client so addresses aren't pooled across clients in one db.
+  const cacheDb = openGeocodeCache(clientId || "_shared");
   const pending = [];
   const lookup = cacheDb.prepare("SELECT lat, lng, match_type FROM geocode_cache WHERE address_key = ?");
 

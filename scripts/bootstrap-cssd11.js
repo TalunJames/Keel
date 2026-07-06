@@ -9,7 +9,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { openDb } from "../server/db.js";
 import { ingestPollingPortal } from "../server/polling/ingest.js";
 
@@ -17,10 +17,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 
 const CLIENT_ID = "d11-colorado-springs";
-const DRIVE_ROOT = path.join(
-  process.env.CSSD11_POLLING_DIR ||
-    "/Users/carter/Library/CloudStorage/GoogleDrive-cjames@fogsignalstrategies.com/Shared drives/Active Clients/Colorado Springs SD/1. Public Side/Polling",
-);
+
+// Require the polling directory via env — do not hardcode a personal Drive path.
+const DRIVE_ROOT = process.env.CSSD11_POLLING_DIR;
+if (!DRIVE_ROOT) {
+  console.error(
+    "CSSD11_POLLING_DIR is not set. Set it to the polling source directory, e.g.:\n" +
+      '  CSSD11_POLLING_DIR="/path/to/Colorado Springs SD/.../Polling" node scripts/bootstrap-cssd11.js',
+  );
+  process.exit(1);
+}
 
 const PDF_SOURCES = [
   { src: "Topline/Topline_FSS_CSSD11_2a.pdf", dest: "Topline_FSS_CSSD11_2a.pdf" },
@@ -68,23 +74,22 @@ function copyAssets() {
 
 function runVoterIngest({ file, source, link }) {
   const filePath = path.join(DRIVE_ROOT, file);
+  let target = filePath;
+  let useLink = link;
   if (!fs.existsSync(filePath)) {
     const localPath = path.join(root, "data", "voter", CLIENT_ID, file);
     if (!fs.existsSync(localPath)) {
       console.warn(`  Skipping missing voter file: ${filePath}`);
       return;
     }
-    execSync(
-      `node scripts/voter-ingest.js --client ${CLIENT_ID} --file "${localPath}" --source "${source}"`,
-      { cwd: root, stdio: "inherit" },
-    );
-    return;
+    target = localPath;
+    useLink = false;
   }
-  const linkFlag = link ? " --link" : "";
-  execSync(
-    `node scripts/voter-ingest.js --client ${CLIENT_ID} --file "${filePath}" --source "${source}"${linkFlag}`,
-    { cwd: root, stdio: "inherit" },
-  );
+  // Pass args as an argv array (no shell) to avoid command injection via
+  // crafted paths / source labels / env vars.
+  const args = ["scripts/voter-ingest.js", "--client", CLIENT_ID, "--file", target, "--source", source];
+  if (useLink) args.push("--link");
+  execFileSync("node", args, { cwd: root, stdio: "inherit" });
 }
 
 function runVoterRegister({ file, source, link, supplement }) {
@@ -93,12 +98,10 @@ function runVoterRegister({ file, source, link, supplement }) {
     console.warn(`  Skipping missing voter file: ${filePath}`);
     return;
   }
-  const linkFlag = link ? " --link" : "";
-  const supplementFlag = supplement ? " --supplement" : "";
-  execSync(
-    `node scripts/voter-register.js --client ${CLIENT_ID} --file "${filePath}" --source "${source}"${linkFlag}${supplementFlag}`,
-    { cwd: root, stdio: "inherit" },
-  );
+  const args = ["scripts/voter-register.js", "--client", CLIENT_ID, "--file", filePath, "--source", source];
+  if (link) args.push("--link");
+  if (supplement) args.push("--supplement");
+  execFileSync("node", args, { cwd: root, stdio: "inherit" });
 }
 
 function main() {

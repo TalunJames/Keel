@@ -73,7 +73,7 @@ def cmd_show():
 
 def cmd_test():
     """End-to-end check: version -> summary -> details -> parse, no DB writes."""
-    print(f"BASE = {config.BASE}")
+    print(f"BASE = {feed.feed_base()}")
     v = feed.current_version()
     print(f"current_ver.txt -> {v}")
     sum_raw, contests = feed.fetch_summary(v)

@@ -82,7 +82,9 @@ export function computeEffectiveModules({ role, roleModules, client, userOverrid
 
     if (overrides && overrides[id] !== undefined) {
       if (!(STAFF_ONLY.has(id) && role === "client")) {
-        on = !!overrides[id];
+        // An override may only enable a module the role ceiling also allows —
+        // it can never grant access above the ceiling. It can still disable.
+        on = !!overrides[id] && !!ceiling[id];
       }
     }
     effective[id] = on;

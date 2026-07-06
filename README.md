@@ -6,17 +6,21 @@ Production-ready staff and client portal with a React frontend and Node API. No 
 
 ```bash
 cp .env.example .env
-# Set ADMIN_PASSWORD and JWT_SECRET in .env
+# Set JWT_SECRET (required) and BOOTSTRAP_ADMIN_EMAIL (required) in .env.
+# Generate a secret with: openssl rand -hex 32
 
 npm install
-npm run db:seed
 npm run dev
 ```
 
 - **App:** http://localhost:5173  
 - **API:** http://localhost:3001  
 
-Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
+**First run:** with no users yet, the app enters one-time setup. The server
+prints a `SETUP TOKEN: <random>` line to its console — copy it, open the app,
+and complete the setup screen: paste the token and choose the admin password
+for `BOOTSTRAP_ADMIN_EMAIL`. There is no `ADMIN_PASSWORD`. After that, sign in
+with that email and the password you chose.
 
 ## Production deploy
 

@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
+import { parse as parseCsvSync } from "csv-parse/sync";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -19,6 +20,7 @@ let statenumToPrecinct = null;
 let overlayPrecinctIds = null;
 let resultsDb = null;
 let resultsDbPath = null;
+let cachedResultsInode = null;
 let replayCache = null;
 
 function replayConfigured() {
@@ -54,20 +56,23 @@ function resolveReplayPath() {
 }
 
 function parseReplayCsv(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",");
-    if (!cols.some((c) => c.trim())) continue;
-    const row = {};
-    headers.forEach((h, j) => {
-      row[h] = (cols[j] || "").trim();
+  // Use csv-parse (RFC 4180) so quoted fields containing commas parse
+  // correctly, rather than a naive comma split.
+  let records;
+  try {
+    records = parseCsvSync(text, {
+      columns: (header) => header.map((h) => String(h).trim().toLowerCase()),
+      skip_empty_lines: true,
+      relax_column_count: true,
+      trim: true,
+      bom: true,
     });
-    rows.push(row);
+  } catch (e) {
+    console.error("[election-live] failed to parse replay CSV:", e.message);
+    return [];
   }
-  return rows;
+  // Preserve prior behaviour: drop rows whose every value is blank.
+  return records.filter((row) => Object.values(row).some((v) => v != null && String(v).trim() !== ""));
 }
 
 function loadReplayBundle() {
@@ -253,16 +258,49 @@ function resolveResultsDbPath() {
   return path.join(root, "data", "election", "results.db");
 }
 
+/**
+ * Close and drop the cached results.db handle so the next openResultsDb()
+ * reopens the (possibly recreated) file. Must be called whenever the file is
+ * unlinked/recreated on disk — otherwise the cached handle keeps pointing at
+ * the deleted inode and serves stale/frozen results until restart.
+ */
+export function invalidateResultsDb() {
+  if (resultsDb) {
+    try { resultsDb.close(); } catch { /* already closed */ }
+  }
+  resultsDb = null;
+  resultsDbPath = null;
+  cachedResultsInode = null;
+}
+
 function openResultsDb() {
   const resolved = resolveResultsDbPath();
-  if (!fs.existsSync(resolved)) return null;
-  if (resultsDb && resultsDbPath === resolved) return resultsDb;
+  if (!fs.existsSync(resolved)) {
+    // File is gone (e.g. wiped) — drop any stale handle to a deleted inode.
+    invalidateResultsDb();
+    return null;
+  }
+  if (resultsDb && resultsDbPath === resolved) {
+    // Guard against the file being replaced (unlinked + recreated) at the same
+    // path: if the inode changed, the cached handle is stale.
+    try {
+      const currentIno = fs.statSync(resolved).ino;
+      if (cachedResultsInode != null && currentIno !== cachedResultsInode) {
+        invalidateResultsDb();
+      } else {
+        return resultsDb;
+      }
+    } catch {
+      invalidateResultsDb();
+    }
+  }
   if (resultsDb) {
     resultsDb.close();
     resultsDb = null;
   }
   resultsDbPath = resolved;
   resultsDb = new Database(resolved, { readonly: true, fileMustExist: true });
+  try { cachedResultsInode = fs.statSync(resolved).ino; } catch { cachedResultsInode = null; }
   return resultsDb;
 }
 

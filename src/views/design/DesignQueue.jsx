@@ -11,6 +11,7 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
   const [priorityFilter, setPriorityFilter] = useState("");
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   const listPath = withClient("/design/requests", clientId);
   const statsPath = withClient("/design/stats", clientId);
@@ -34,8 +35,13 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
   const isStaff = role === "staff" || role === "admin";
 
   const handleAssign = async (row, assigneeId) => {
-    await designApi.update(row.id, { assigneeId });
-    reload();
+    setActionError(null);
+    try {
+      await designApi.update(row.id, { assigneeId });
+      reload();
+    } catch (e) {
+      setActionError(e?.message || "Could not update the assignment.");
+    }
   };
 
   const handleFilter = (key) => {
@@ -62,6 +68,12 @@ export function DesignQueue({ role, clientId, user, onOpen, onNew, initialFilter
           </>
         )}
       />
+
+      {actionError && (
+        <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
+          {actionError}
+        </div>
+      )}
 
       {!isClient && <StatusStrip stats={stats} onFilter={handleFilter} activeFilter={statusFilter} />}
 

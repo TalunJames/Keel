@@ -55,10 +55,10 @@ def validate(contest_rows, choice_rows, prev_state):
 
         # Sum of this contest's choice votes vs reported total (allow VF>1 races
         # where total votes legitimately exceeds ballots). Flag only gross gaps.
+        # Sum all incoming choices for this contest (contests may have >64
+        # choices), not a fixed range(64) which would under-count.
         csum = sum(
-            (incoming.get((ck, i), 0))
-            for i in range(64)
-            if (ck, i) in incoming
+            v for (ick, _idx), v in incoming.items() if ick == ck
         )
         total = r.get("total_votes") or 0
         vote_for = r.get("vote_for") or 1

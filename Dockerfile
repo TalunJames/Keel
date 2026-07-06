@@ -63,8 +63,18 @@ COPY server ./server
 COPY election-collector ./election-collector
 COPY docker-entrypoint.sh ./
 
-RUN chmod +x docker-entrypoint.sh \
- && mkdir -p /app/data /app/data/voter /app/data/election /app/uploads
+# Run as a dedicated non-root user. UID/GID 568 matches the TrueNAS Scale
+# built-in `apps` user, so the image default lines up with docker-compose.yml
+# (`user: "568:568"`) and the chown'd host bind mounts. The writable dirs are
+# created and chown'd so SQLite and uploads work whether or not compose
+# overrides the user.
+RUN groupadd --gid 568 keel \
+ && useradd --uid 568 --gid 568 --no-create-home --shell /usr/sbin/nologin keel \
+ && chmod +x docker-entrypoint.sh \
+ && mkdir -p /app/data /app/data/voter /app/data/election /app/uploads \
+ && chown -R 568:568 /app/data /app/uploads
+
+USER 568:568
 
 EXPOSE 3001
 

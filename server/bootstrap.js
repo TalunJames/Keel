@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 
 /** Sentinel stored until the owner completes first-boot setup. Never valid bcrypt. */
 export const BOOTSTRAP_PENDING_HASH = "!BOOTSTRAP_PENDING!";
@@ -6,11 +6,49 @@ export const BOOTSTRAP_PENDING_HASH = "!BOOTSTRAP_PENDING!";
 const SETUP_COMPLETE_KEY = "setup_complete";
 
 export function getBootstrapEmail() {
-  return (process.env.BOOTSTRAP_ADMIN_EMAIL || "cjames@fogsignal.co").trim().toLowerCase();
+  const env = (process.env.BOOTSTRAP_ADMIN_EMAIL || "").trim().toLowerCase();
+  if (env) return env;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("BOOTSTRAP_ADMIN_EMAIL must be set (the first-boot admin's email address).");
+  }
+  return "admin@example.com"; // dev-only placeholder; never a real person's address
 }
 
 export function getBootstrapName() {
-  return process.env.BOOTSTRAP_ADMIN_NAME || "Carter James";
+  return process.env.BOOTSTRAP_ADMIN_NAME || "Administrator";
+}
+
+// One-time token that gates first-boot setup so an anonymous visitor who reaches
+// a fresh deploy can't claim the admin account. Generated at boot when setup is
+// pending and printed to the server console (operator reads it from the logs).
+let expectedSetupToken = null;
+
+export function getExpectedSetupToken() {
+  return expectedSetupToken;
+}
+
+export function verifySetupToken(provided) {
+  return !!expectedSetupToken && typeof provided === "string" && provided === expectedSetupToken;
+}
+
+/** Call once at boot (after ensureBootstrapAdmin). Prints the token if setup is pending. */
+export function initSetupToken(db) {
+  const user = findBootstrapUser(db);
+  const pending = !!user && (!isSetupComplete(db) || isBootstrapPending(user.passwordHash));
+  if (!pending) {
+    expectedSetupToken = null;
+    return;
+  }
+  expectedSetupToken = randomBytes(24).toString("base64url");
+  console.log("\n========================================================");
+  console.log("  FIRST-BOOT SETUP TOKEN (enter this on the setup screen):");
+  console.log(`  ${expectedSetupToken}`);
+  console.log("========================================================\n");
+}
+
+/** Clears the token once setup has been completed. */
+export function clearSetupToken() {
+  expectedSetupToken = null;
 }
 
 export function isBootstrapPending(passwordHash) {
@@ -57,26 +95,19 @@ export function findBootstrapUser(db) {
   return null;
 }
 
+// Read-only: reports whether first-boot setup is still pending. It must NOT
+// mutate state — it runs on every /api/setup/status poll and every login. The
+// BOOTSTRAP_FORCE_RESET side effect lives in ensureBootstrapAdmin (boot-only).
 export function getSetupStatus(db) {
   const user = findBootstrapUser(db);
+  if (!user) return { needsSetup: false };
 
-  if (!user) {
-    return { needsSetup: false };
-  }
+  const pending = !isSetupComplete(db) || isBootstrapPending(user.passwordHash);
+  if (!pending) return { needsSetup: false };
 
-  if (process.env.BOOTSTRAP_FORCE_RESET === "1") {
-    db.prepare(
-      "UPDATE users SET password_hash = ?, role = 'admin', system_admin = 1 WHERE id = ?"
-    ).run(BOOTSTRAP_PENDING_HASH, user.id);
-    db.prepare("DELETE FROM app_settings WHERE key = ?").run(SETUP_COMPLETE_KEY);
-    return { needsSetup: true, email: user.email, name: user.name || getBootstrapName() };
-  }
-
-  if (isSetupComplete(db)) {
-    return { needsSetup: false };
-  }
-
-  return { needsSetup: true, email: user.email, name: user.name || getBootstrapName() };
+  // Note: we intentionally do NOT return the admin email to unauthenticated
+  // callers — it leaks the account identity. The setup screen collects it fresh.
+  return { needsSetup: true, requiresToken: !!expectedSetupToken };
 }
 
 export function ensureBootstrapAdmin(db) {

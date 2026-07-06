@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Icon, Avatar } from "./ui.jsx";
 import { versionApi } from "../lib/api.js";
 import { realClients } from "../lib/clients.js";
+import { safeUrl } from "../lib/safe-url.js";
 
 function VersionStamp({ show }) {
   const [v, setV] = useState(null);
@@ -36,18 +37,25 @@ const MODULE_ICONS = {
   onboarding: "flag",
 };
 
-function useClickOutside(ref, onClose) {
+// Closes the popover on an outside mousedown and (when open) on Escape, so the
+// menus are keyboard-dismissible, not just mouse-dismissible.
+function useClickOutside(ref, onClose, open = true) {
   useEffect(() => {
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [ref, onClose]);
+    const onMouseDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onKeyDown = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onMouseDown);
+    if (open) document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [ref, onClose, open]);
 }
 
 function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout, collapsed, roleLabel }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-  useClickOutside(wrapRef, () => setOpen(false));
+  useClickOutside(wrapRef, () => setOpen(false), open);
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
@@ -60,8 +68,8 @@ function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout, coll
         aria-expanded={open}
         title={collapsed ? user.name : undefined}
       >
-        {user?.photo
-          ? <img src={user.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+        {safeUrl(user?.photo)
+          ? <img src={safeUrl(user.photo)} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
           : <Avatar name={user.name} size={32} />}
         {!collapsed && (
           <>
@@ -105,19 +113,34 @@ export function Sidebar({
   active, onNavigate, role, user, onLogout, modules, badges = {}, theme, onToggleTheme,
   collapsed, onToggleCollapse,
 }) {
+  // Buttons don't inherit the <a> defaults the .sb-item class relies on, so
+  // normalize them inline (styles.css is outside the editable scope).
+  const navBtnStyle = {
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "transparent",
+    font: "inherit",
+    fontSize: 14,
+    fontWeight: 500,
+  };
+
   const renderItem = (m) => (
-    <a
+    <button
       key={m.id}
+      type="button"
       className={"sb-item " + (active === m.id ? "active" : "")}
       onClick={() => onNavigate(m.id)}
       title={collapsed ? m.label : undefined}
+      aria-current={active === m.id ? "page" : undefined}
+      style={navBtnStyle}
     >
       <span className="ic"><Icon name={MODULE_ICONS[m.id] || "circle"} size={18} /></span>
       {!collapsed && <span>{m.label}</span>}
       {!collapsed && badges[m.id] != null && badges[m.id] !== 0 && (
         <span className="badge">{badges[m.id]}</span>
       )}
-    </a>
+    </button>
   );
 
   const roleLabel = {
@@ -151,14 +174,17 @@ export function Sidebar({
         {role === "admin" && (
           <>
             {!collapsed && <div className="sb-section-label">Administration</div>}
-            <a
+            <button
+              type="button"
               className={"sb-item " + (active === "admin" ? "active" : "")}
               onClick={() => onNavigate("admin")}
               title={collapsed ? "Admin Console" : undefined}
+              aria-current={active === "admin" ? "page" : undefined}
+              style={navBtnStyle}
             >
               <span className="ic"><Icon name="shield" size={18} /></span>
               {!collapsed && <span>Admin Console</span>}
-            </a>
+            </button>
           </>
         )}
       </nav>
@@ -209,7 +235,7 @@ function ClientAvatar({ client, size = 28 }) {
 function ClientSwitcher({ clients, selected, onSelect }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-  useClickOutside(wrapRef, () => setOpen(false));
+  useClickOutside(wrapRef, () => setOpen(false), open);
 
   if (!clients.length) return null;
 
@@ -259,7 +285,7 @@ function CollapsibleSearch() {
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
 
-  useClickOutside(wrapRef, () => { if (!q) setExpanded(false); });
+  useClickOutside(wrapRef, () => { if (!q) setExpanded(false); }, expanded);
 
   const expand = () => {
     setExpanded(true);
@@ -311,7 +337,7 @@ function NewMenu({ role, onAction }) {
   const closeTimer = useRef(null);
   const isPartner = role === "admin";
 
-  useClickOutside(wrapRef, () => setOpen(false));
+  useClickOutside(wrapRef, () => setOpen(false), open);
 
   const show = () => {
     clearTimeout(closeTimer.current);
@@ -371,7 +397,7 @@ function NewMenu({ role, onAction }) {
 function AnnouncementsBell({ announcements = [], unreadCount }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-  useClickOutside(wrapRef, () => setOpen(false));
+  useClickOutside(wrapRef, () => setOpen(false), open);
   const count = unreadCount ?? announcements.length;
 
   return (

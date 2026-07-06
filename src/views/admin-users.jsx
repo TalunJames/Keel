@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Icon, Avatar, Tag } from "../components/ui.jsx";
 import { api, ApiError } from "../lib/api.js";
 import { Loading } from "../components/Loading.jsx";
+import { useModalA11y } from "../lib/useModalA11y.js";
 
 const ROLE_OPTIONS = [
   { value: "staff", label: "Staff" },
@@ -31,6 +32,7 @@ function formatDate(iso) {
 }
 
 function AdminModal({ title, children, onClose, wide }) {
+  const dialogRef = useModalA11y(onClose);
   return (
     <div
       style={{
@@ -41,7 +43,11 @@ function AdminModal({ title, children, onClose, wide }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         style={{ maxWidth: wide ? 520 : 480, width: "100%", padding: "22px 24px", maxHeight: "90vh", overflow: "auto" }}
         onClick={(e) => e.stopPropagation()}
       >

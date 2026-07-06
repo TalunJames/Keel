@@ -24,6 +24,9 @@ async function getTransporter() {
   const host = process.env.SMTP_HOST;
   if (!host) return null;
   const nodemailer = await import("nodemailer");
+  // Bound how long a hung/slow SMTP server can tie up a send. Without these,
+  // a stalled connection blocks indefinitely.
+  const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS) || 10000;
   transporter = nodemailer.createTransport({
     host,
     port: Number(process.env.SMTP_PORT) || 587,
@@ -31,6 +34,9 @@ async function getTransporter() {
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || "" }
       : undefined,
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
   });
   return transporter;
 }
@@ -76,21 +82,36 @@ export async function sendDesignMail(db, { requestId, eventType, to, data }) {
   return { sent: sent || process.env.MAIL_ENABLED !== "1", error };
 }
 
-export async function notifyDesigners(db, { requestId, eventType, data, excludeEmail }) {
+/**
+ * Fire-and-forget wrapper: dispatch a notification batch without blocking the
+ * caller (HTTP request handler). Delivery failures are still recorded in
+ * design_notification_log by sendDesignMail; anything unexpected is logged.
+ * Returns a promise so callers/tests can await it if they want to.
+ */
+function dispatchNotifications(recipients, send) {
+  const work = Promise.allSettled(recipients.map(send)).catch((e) => {
+    console.error("[mail] notification batch error:", e?.message || e);
+  });
+  // Don't let a rejection become an unhandled promise rejection.
+  work.catch(() => {});
+  return work;
+}
+
+export function notifyDesigners(db, { requestId, eventType, data, excludeEmail }) {
   const designers = db.prepare(
     `SELECT email, name FROM users WHERE is_designer = 1 AND role IN ('staff', 'admin')`
   ).all();
-  for (const d of designers) {
-    if (excludeEmail && d.email === excludeEmail) continue;
-    await sendDesignMail(db, { requestId, eventType, to: d.email, data });
-  }
+  const targets = designers.filter((d) => !(excludeEmail && d.email === excludeEmail));
+  return dispatchNotifications(targets, (d) =>
+    sendDesignMail(db, { requestId, eventType, to: d.email, data })
+  );
 }
 
-export async function notifyClientUsers(db, clientId, { requestId, eventType, data }) {
+export function notifyClientUsers(db, clientId, { requestId, eventType, data }) {
   const users = db.prepare(
     `SELECT email FROM users WHERE role = 'client' AND client_id = ?`
   ).all(clientId);
-  for (const u of users) {
-    await sendDesignMail(db, { requestId, eventType, to: u.email, data });
-  }
+  return dispatchNotifications(users, (u) =>
+    sendDesignMail(db, { requestId, eventType, to: u.email, data })
+  );
 }

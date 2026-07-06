@@ -29,36 +29,48 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
 
   const saveLoginAnnouncement = async (e) => {
     e.preventDefault();
-    const { announcement } = await loginAnnouncementApi.set(loginAnn);
-    setLoginAnn(announcement);
-    reloadAudit();
-    flash("Login announcement updated");
+    try {
+      const { announcement } = await loginAnnouncementApi.set(loginAnn);
+      setLoginAnn(announcement);
+      reloadAudit();
+      flash("Login announcement updated");
+    } catch (err) {
+      flash(err?.message || "Could not update login announcement");
+    }
   };
 
   const registerVoterFile = async (e) => {
     e.preventDefault();
-    await api("/admin/voter-files", {
-      method: "POST",
-      body: JSON.stringify({
-        clientId: voterForm.clientId,
-        source: voterForm.source,
-        recordCount: Number(voterForm.recordCount) || 0,
-      }),
-    });
-    setVoterForm({ clientId: "", source: "", recordCount: "" });
-    reloadAudit();
-    flash("Voter file registered");
+    try {
+      await api("/admin/voter-files", {
+        method: "POST",
+        body: JSON.stringify({
+          clientId: voterForm.clientId,
+          source: voterForm.source,
+          recordCount: Number(voterForm.recordCount) || 0,
+        }),
+      });
+      setVoterForm({ clientId: "", source: "", recordCount: "" });
+      reloadAudit();
+      flash("Voter file registered");
+    } catch (err) {
+      flash(err?.message || "Could not register voter file");
+    }
   };
 
   const postAnnouncement = async (e) => {
     e.preventDefault();
-    await api("/admin/announcements", {
-      method: "POST",
-      body: JSON.stringify({ title: announceForm.title, body: announceForm.body, tag: announceForm.tag, audience: ["staff", "admin", "client"] }),
-    });
-    setAnnounceForm({ title: "", body: "", tag: "" });
-    reloadAudit();
-    flash("Announcement posted");
+    try {
+      await api("/admin/announcements", {
+        method: "POST",
+        body: JSON.stringify({ title: announceForm.title, body: announceForm.body, tag: announceForm.tag, audience: ["staff", "admin", "client"] }),
+      });
+      setAnnounceForm({ title: "", body: "", tag: "" });
+      reloadAudit();
+      flash("Announcement posted");
+    } catch (err) {
+      flash(err?.message || "Could not post announcement");
+    }
   };
 
   return (
@@ -172,7 +184,7 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
       )}
 
       {tab === "modules" && (
-        <AdminModulesTab allRoles={allRoles} onFlash={flash} />
+        <AdminModulesTab allRoles={allRoles} user={user} onFlash={flash} />
       )}
 
       {tab === "audit" && (

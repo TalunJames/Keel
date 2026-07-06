@@ -24,6 +24,7 @@ import {
   findContestForBallotRace,
   sortContestsForBallot,
   liveResultsMatchBallotRace,
+  escapeHtml,
 } from "./race-detail-helpers.js";
 import "./race-detail.css";
 
@@ -64,28 +65,38 @@ import "./race-detail.css";
         }
       });
 
+      // Track whether the current state came from a reset so we clear (rather
+      // than rewrite) the persisted key. Persistence lives in an effect so it
+      // doesn't run twice per update under StrictMode's double-invoked updater.
+      const clearedRef = useRef(false);
+
       const setSetting = useCallback((key, value) => {
-        setSettingsState(prev => {
-          const next = typeof key === "object"
+        clearedRef.current = false;
+        setSettingsState(prev => (
+          typeof key === "object"
             ? { ...prev, ...key, colors: key.colors ? { ...prev.colors, ...key.colors } : prev.colors }
-            : { ...prev, [key]: value };
-          localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
-          return next;
-        });
+            : { ...prev, [key]: value }
+        ));
       }, []);
 
       const setColor = useCallback((key, value) => {
-        setSettingsState(prev => {
-          const next = { ...prev, colors: { ...prev.colors, [key]: value } };
-          localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
-          return next;
-        });
+        clearedRef.current = false;
+        setSettingsState(prev => ({ ...prev, colors: { ...prev.colors, [key]: value } }));
       }, []);
 
       const resetSettings = useCallback(() => {
-        localStorage.removeItem(SETTINGS_STORAGE_KEY);
+        clearedRef.current = true;
         setSettingsState(SETTINGS_DEFAULTS);
       }, []);
+
+      useEffect(() => {
+        if (clearedRef.current) {
+          localStorage.removeItem(SETTINGS_STORAGE_KEY);
+          clearedRef.current = false;
+          return;
+        }
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      }, [settings]);
 
       return [settings, setSetting, setColor, resetSettings];
     }
@@ -150,13 +161,13 @@ import "./race-detail.css";
         label: "Polling Centers", kind: "point",
         url: "/election-data/Voting_Service_Polling_Center_Locations.geojson",
         color: "#1A3A5C",
-        popup: (p) => `<div style="font-weight:700;color:#1A3A5C">${p.NAME}</div><div style="color:#5B5B58">${p.ADDRESS || ""}</div>`,
+        popup: (p) => `<div style="font-weight:700;color:#1A3A5C">${escapeHtml(p.NAME)}</div><div style="color:#5B5B58">${escapeHtml(p.ADDRESS || "")}</div>`,
       },
       dropbox: {
         label: "Drop Boxes", kind: "point",
         url: "/election-data/Ballot_Drop_Boxes.geojson",
         color: "#B8932A",
-        popup: (p) => `<div style="font-weight:700;color:#1A3A5C">${p.NAME}</div><div style="color:#5B5B58">${p.ADDRESS || ""}</div>`,
+        popup: (p) => `<div style="font-weight:700;color:#1A3A5C">${escapeHtml(p.NAME)}</div><div style="color:#5B5B58">${escapeHtml(p.ADDRESS || "")}</div>`,
       },
     };
 
@@ -383,11 +394,11 @@ import "./race-detail.css";
 
     function schoolPopup(p) {
       return `
-        <div style="font-weight:700;color:#1A3A5C;margin-bottom:6px">${p.name}</div>
+        <div style="font-weight:700;color:#1A3A5C;margin-bottom:6px">${escapeHtml(p.name)}</div>
         <div style="font-size:11px;color:#5B5B58;line-height:1.55">
-          <div style="margin-bottom:4px"><b>${p.tierLabel}</b>${p.schoolType ? ` · ${p.schoolType}` : ""}${p.zip ? ` · ZIP ${p.zip}` : ""}</div>
-          <div>Bond allocation: ${p.bond}</div>
-          <div>FCI: ${p.fci}</div>
+          <div style="margin-bottom:4px"><b>${escapeHtml(p.tierLabel)}</b>${p.schoolType ? ` · ${escapeHtml(p.schoolType)}` : ""}${p.zip ? ` · ZIP ${escapeHtml(p.zip)}` : ""}</div>
+          <div>Bond allocation: ${escapeHtml(p.bond)}</div>
+          <div>FCI: ${escapeHtml(p.fci)}</div>
           <div>Charter school: ${p.isCharter ? "Yes" : "No"}</div>
         </div>
       `;
@@ -620,15 +631,12 @@ import "./race-detail.css";
     // Build the full race dataset on REAL precinct geography. Shapes and IDs
     // come from the county GIS file. Reporting comes only from public ENR
     // totals; precincts without live data stay in an explicit awaiting state.
-    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC, liveResults = null, raceContext = null) {
-      const liveByPrecinct = liveResults?.precincts || null;
-      const isUnopposed = !!(liveResults?.totals?.isUnopposed)
-        || isContestUnopposed({ race: raceContext, totals: liveResults?.totals });
-      const contestRegistered = liveResults?.contest?.registered;
-      const inContestOnMap = liveResults?.jurisdiction?.inContestOnMap;
-      const estRegisteredPerPrecinct = contestRegistered && inContestOnMap
-        ? contestRegistered / inContestOnMap
-        : null;
+    // Heavy, purely-geometric pass: clip precincts to the district, assign each
+    // to a rollup area (quad), council district and ZIP, and build the area
+    // Voronoi cells. Depends only on the GIS layers (geo), so it is memoized
+    // per geo and reused across live-result ticks — makeRaceData below only
+    // re-decorates these shapes with fresh ENR properties.
+    function computeRaceGeometry(boundary, precinctsFC, councilFC, zipFC) {
       const [minX, minY, maxX, maxY] = turf.bbox(boundary);
       const bbox = [minX, minY, maxX, maxY];
 
@@ -655,14 +663,35 @@ import "./race-detail.css";
         }
       };
 
-      // Pass 1 — clip real precincts to the district; drop slivers that only
-      // graze the boundary (< 2% of the precinct inside = split precinct edge)
+      const councilZones = councilFC?.features?.length
+        ? councilFC.features.map(f => ({ id: f.properties.DISTRICT, geom: f }))
+        : null;
+      const zipZones = zipFC?.features?.length
+        ? zipFC.features.map(f => ({ zip: String(f.properties.zip), geom: f }))
+        : null;
+
+      // Clip real precincts to the district; drop slivers that only graze the
+      // boundary (< 2% of the precinct inside = split precinct edge). Council
+      // district + ZIP are geometry-derived, so compute them here once.
       const inDistrict = [];
       precinctsFC.features.forEach((pf) => {
         const clipped = clipToBoundary(pf);
         if (!clipped) return;
         if (turf.area(clipped) / turf.area(pf) < 0.02) return;
-        const c = turf.centroid(clipped).geometry.coordinates;
+        const centroidPt = turf.centroid(clipped);
+        const c = centroidPt.geometry.coordinates;
+        let councilDist = null;
+        if (councilZones) {
+          for (const d of councilZones) {
+            if (turf.booleanPointInPolygon(centroidPt, d.geom)) { councilDist = d.id; break; }
+          }
+        }
+        let zip = null;
+        if (zipZones) {
+          for (const z of zipZones) {
+            if (turf.booleanPointInPolygon(centroidPt, z.geom)) { zip = z.zip; break; }
+          }
+        }
         inDistrict.push({
           num: pf.properties.PRECINCT,
           senate: pf.properties.SENATE,
@@ -670,12 +699,41 @@ import "./race-detail.css";
           comDist: pf.properties.COM_DIST,
           geometry: clipped.geometry,
           quad: areaDelaunay.find(c[0], c[1]),
+          councilDist,
+          zip,
         });
       });
 
-      // Pass 2 — live ENR when a contest is wired; awaiting state otherwise
+      const areaCells = AREA_NAMES.map((_, q) => {
+        const cell = areaVoronoi.cellPolygon(q);
+        const clipped = cell ? clipToBoundary(turf.polygon([closeRing(cell)])) : null;
+        return clipped ? clipped.geometry : null;
+      });
+
+      const zipCodes = zipFC?.features
+        ? [...zipFC.features].map(f => String(f.properties.zip)).sort()
+        : [];
+
+      return { inDistrict, areaCells, zipCodes };
+    }
+
+    function makeRaceData(client, boundary, precinctsFC, councilFC, zipFC, liveResults = null, raceContext = null, geoBase = null) {
+      const base = geoBase || computeRaceGeometry(boundary, precinctsFC, councilFC, zipFC);
+      const { inDistrict, areaCells, zipCodes } = base;
+
+      const liveByPrecinct = liveResults?.precincts || null;
+      const isUnopposed = !!(liveResults?.totals?.isUnopposed)
+        || isContestUnopposed({ race: raceContext, totals: liveResults?.totals });
+      const contestRegistered = liveResults?.contest?.registered;
+      const inContestOnMap = liveResults?.jurisdiction?.inContestOnMap;
+      const estRegisteredPerPrecinct = contestRegistered && inContestOnMap
+        ? contestRegistered / inContestOnMap
+        : null;
+
+      // Live ENR when a contest is wired; awaiting state otherwise. Council
+      // district + ZIP come from the precomputed geometry base.
       const liveActive = !!(liveResults?.contest && liveResults?.totals);
-      const precinctFeatures = inDistrict.map((p) => {
+      const precinctsWithCouncil = inDistrict.map((p) => {
         if (liveActive) {
           const liveP = liveByPrecinct?.[String(p.num)] ?? {
             inContest: false,
@@ -708,6 +766,8 @@ import "./race-detail.css";
               county: AREA_NAMES[p.quad],
               senate: p.senate, rep: p.rep, comDist: p.comDist,
               quad: p.quad,
+              councilDist: p.councilDist,
+              zip: p.zip,
               reported: liveP.reported,
               inContest: liveP.inContest,
               protected: liveP.protected,
@@ -738,6 +798,8 @@ import "./race-detail.css";
             county: AREA_NAMES[p.quad],
             senate: p.senate, rep: p.rep, comDist: p.comDist,
             quad: p.quad, reported: false, registered: null,
+            councilDist: p.councilDist,
+            zip: p.zip,
             yesPct: -1,
             yesVotes: 0, noVotes: 0, ballots: 0,
             inContest: true, protected: false, live: false,
@@ -746,22 +808,15 @@ import "./race-detail.css";
         };
       });
 
-      const precinctsWithCouncil = assignPrecinctZip(
-        assignCouncilDistrictToPrecincts(precinctFeatures, councilFC),
-        zipFC,
-      );
-
-      // Area level — aggregate precincts into 4 rollup areas
+      // Area level — aggregate precincts into 4 rollup areas (cells precomputed)
       const areaFeatures = AREA_NAMES.map((name, q) => {
         const members = precinctsWithCouncil.filter(f => f.properties.quad === q);
         if (!members.length) return null;
         const rep = members.filter(f => f.properties.reported);
         const sum = (arr, fn) => arr.reduce((s, f) => s + fn(f.properties), 0);
         const yes = sum(rep, p => p.yesVotes), no = sum(rep, p => p.noVotes);
-        const cell = areaVoronoi.cellPolygon(q);
-        const clipped = cell ? clipToBoundary(turf.polygon([closeRing(cell)])) : null;
-        if (!clipped) return null;
-        const geom = clipped.geometry;
+        const geom = areaCells[q];
+        if (!geom) return null;
         return {
           type: "Feature",
           id: 1000 + q,
@@ -775,10 +830,6 @@ import "./race-detail.css";
           geometry: geom,
         };
       }).filter(Boolean);
-
-      const zipCodes = zipFC?.features
-        ? [...zipFC.features].map(f => String(f.properties.zip)).sort()
-        : [];
 
       return {
         precincts: { type: "FeatureCollection", features: precinctsWithCouncil },
@@ -1005,7 +1056,7 @@ import "./race-detail.css";
             if (m.choroplethKind === "prior") {
               const ctx = priorCtxRef.current;
               fmt = ctx?.metricDef ? formatPriorMetric(p, ctx.metricDef) : "Prior election data not loaded";
-              if (ctx?.election) sub = `<div style="color:#7A7975;font-size:11px">${ctx.election.label} · ${ctx.election.date}</div>`;
+              if (ctx?.election) sub = `<div style="color:#7A7975;font-size:11px">${escapeHtml(ctx.election.label)} · ${escapeHtml(ctx.election.date)}</div>`;
             } else {
               fmt = m.format(p, thresholdRef.current, isUnopposedRef.current);
               sub = p.reported && p.yesPct >= 0
@@ -1013,7 +1064,7 @@ import "./race-detail.css";
                 : `<div style="color:#7A7975;font-size:11px">No totals released yet</div>`;
             }
             popup.setLngLat(e.lngLat).setHTML(
-              `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${p.name}</div>` +
+              `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${escapeHtml(p.name)}</div>` +
               `<div style="color:#5B5B58">${fmt}</div>` + sub +
               `<div style="color:#8B9AAB;font-size:10px;margin-top:6px">Click for area details</div>`
             ).addTo(map);
@@ -1458,6 +1509,9 @@ import "./race-detail.css";
 
     // Historical polling trend — SVG chart with threshold line
     function TrendChart({ polls, threshold, embedded }) {
+      // Guard against an empty wave set (e.g. polling tab active but no waves
+      // loaded) — polls[polls.length - 1] would otherwise crash the boundary.
+      if (!polls || !polls.length) return null;
       const W = 300, H = 150, padL = 28, padR = 30, padT = 12, padB = 24;
       const xs = (i) => padL + (i / Math.max(1, polls.length - 1)) * (W - padL - padR);
       const ys = (v) => padT + (1 - v / 80) * (H - padT - padB);
@@ -2565,15 +2619,23 @@ import "./race-detail.css";
         return findBallotRace(liveResultsForMap.contest.name, ballotConfig) || selectedBallotRace;
       }, [liveOnMap, liveResultsForMap, ballotConfig, selectedBallotRace]);
 
-      const race = useMemo(() => {
+      // Static turf geometry pipeline (clip/centroid/point-in-polygon over the
+      // precinct set) depends only on geo — memoize it so a live-result tick
+      // every ~10s doesn't recompute the whole thing.
+      const geoBase = useMemo(() => {
         if (!geo) return null;
+        return computeRaceGeometry(geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts);
+      }, [geo]);
+
+      const race = useMemo(() => {
+        if (!geo || !geoBase) return null;
         const r = makeRaceData(
           client, geo.boundary, geo.precincts, geo.councilDistricts, geo.zipDistricts,
-          liveResultsForMap, raceContext,
+          liveResultsForMap, raceContext, geoBase,
         );
         const withPrior = priorData ? { ...r, priorData } : r;
         return liveResultsForMap ? { ...withPrior, liveResults: liveResultsForMap } : withPrior;
-      }, [geo, priorData, liveResultsForMap, raceContext]);
+      }, [geo, geoBase, priorData, liveResultsForMap, raceContext]);
 
       const filteredView = useMemo(() => {
         if (!race) return { geojson: EMPTY_FC, yesPct: null, reportedCount: 0, totalCount: 0, ballots: 0, precinctProps: [] };
@@ -2647,6 +2709,14 @@ import "./race-detail.css";
       useEffect(() => {
         if (!selected && sidebarTab === "selection") setSidebarTab("live");
       }, [selected, sidebarTab, setSidebarTab]);
+
+      // If the persisted sidebar tab is no longer among the currently-visible
+      // tabs (e.g. "polling" with no waves loaded), fall back to a visible one.
+      useEffect(() => {
+        if (sidebarTabs.length && !sidebarTabs.some((t) => t.id === sidebarTab)) {
+          setSidebarTab(sidebarTabs[0].id);
+        }
+      }, [sidebarTabs, sidebarTab, setSidebarTab]);
 
       useEscapeClose(settingsOpen, () => setSettingsOpen(false));
       useEscapeClose(collectorOpen, () => setCollectorOpen(false));
