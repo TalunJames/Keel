@@ -35,7 +35,6 @@ export async function provisionDesignIntegrations({
   spec,
   priority,
   due,
-  budgetCode,
 }) {
   const integrations = {
     drive: { status: isDriveConfigured() ? "pending" : "skipped" },
@@ -59,7 +58,6 @@ export async function provisionDesignIntegrations({
         spec,
         priority,
         due,
-        budgetCode,
       });
       if (drive?.folderUrl) {
         driveFolderUrl = drive.folderUrl;

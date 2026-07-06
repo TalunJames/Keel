@@ -12,7 +12,6 @@ const EMPTY = {
   spec: "",
   deadline: "",
   priority: "Normal",
-  budgetCode: "",
   assigneeId: "",
   reviewerIds: [],
   attachments: [],
@@ -73,7 +72,6 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
         audience: form.audience,
         cta: form.cta,
         spec: form.spec,
-        budgetCode: form.budgetCode,
         attachments: form.attachments,
         reviewerIds: form.reviewerIds,
         draft,
@@ -185,11 +183,6 @@ export function DesignIntake({ clientId, client, onBack, onSubmitted }) {
               {designers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
-        </div>
-
-        <div className="field">
-          <label>Budget code</label>
-          <input className="input" value={form.budgetCode} onChange={(e) => upd("budgetCode", e.target.value)} />
         </div>
 
         <div className="field">

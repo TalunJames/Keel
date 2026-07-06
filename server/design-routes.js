@@ -360,7 +360,7 @@ export function registerDesignRoutes(app, db, auth) {
   app.post("/api/design/requests", auth, requireStaff, async (req, res) => {
     const {
       title, clientId, priority, due, assigneeId, draft,
-      assetType, audience, cta, spec, budgetCode, attachments, reviewerIds,
+      assetType, audience, cta, spec, attachments, reviewerIds,
     } = req.body || {};
     if (!title?.trim() || !clientId) {
       return res.status(400).json({ error: "title and clientId required" });
@@ -377,7 +377,6 @@ export function registerDesignRoutes(app, db, auth) {
       audience: audience || "",
       cta: cta || "",
       spec: spec || "",
-      budgetCode: budgetCode || "",
       attachments: attachments || [],
       reviewerIds: resolvedReviewers,
       draft: !!draft,
@@ -413,7 +412,6 @@ export function registerDesignRoutes(app, db, auth) {
           spec: payload.spec,
           priority: priority || "Normal",
           due: due || null,
-          budgetCode: payload.budgetCode,
         });
         payload.integrations = provisioned.integrations;
         if (provisioned.driveFolderUrl) {
@@ -508,7 +506,7 @@ export function registerDesignRoutes(app, db, auth) {
 
     const {
       title, status, priority, due, assigneeId,
-      assetType, audience, cta, spec, budgetCode, action, reviewerIds, approvalNote,
+      assetType, audience, cta, spec, action, reviewerIds, approvalNote,
     } = req.body || {};
 
     // Consultant / reviewer actions (Final Proof stage)
@@ -615,13 +613,12 @@ export function registerDesignRoutes(app, db, auth) {
       payloadDirty = true;
     }
 
-    if (assetType !== undefined || audience !== undefined || cta !== undefined || spec !== undefined || budgetCode !== undefined) {
+    if (assetType !== undefined || audience !== undefined || cta !== undefined || spec !== undefined) {
       if (!staff) return res.status(403).json({ error: "Forbidden" });
       if (assetType !== undefined) payload.assetType = assetType;
       if (audience !== undefined) payload.audience = audience;
       if (cta !== undefined) payload.cta = cta;
       if (spec !== undefined) payload.spec = spec;
-      if (budgetCode !== undefined) payload.budgetCode = budgetCode;
       payloadDirty = true;
     }
 
