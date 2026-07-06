@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { PageHead, Icon, Avatar, Eyebrow } from "../components/ui.jsx";
 import { accountApi } from "../lib/api.js";
+import { safeUrl } from "../lib/safe-url.js";
 
 function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
@@ -89,6 +90,8 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
     accountApi.me().then((r) => {
       setUser(r.user);
       setClients(r.clients || []);
+    }).catch((e) => {
+      setMsg(e?.message || "Could not load your account.");
     });
   }, []);
 
@@ -128,6 +131,9 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
       setEditing(false);
       setMsg("Saved");
       setTimeout(() => setMsg(""), 2200);
+    } catch (e) {
+      setMsg(e?.message || "Could not save your changes.");
+      setTimeout(() => setMsg(""), 4000);
     } finally {
       setSaving(false);
     }
@@ -168,8 +174,8 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
         <div className="col" style={{ gap: 20 }}>
           <div className="card card-pad" style={{ textAlign: "center" }}>
             <div style={{ display: "grid", placeItems: "center", marginBottom: 12 }}>
-              {user.photo
-                ? <img src={user.photo} alt="" className="acct-photo" />
+              {safeUrl(user.photo)
+                ? <img src={safeUrl(user.photo)} alt="" className="acct-photo" />
                 : <div style={{ borderRadius: "50%", overflow: "hidden" }}><Avatar name={user.name} size={88} /></div>}
             </div>
             {editing ? (

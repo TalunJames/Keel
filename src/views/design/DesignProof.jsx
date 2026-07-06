@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { PageHead, Icon, Tag, Avatar, Eyebrow } from "../../components/ui.jsx";
 import { designApi } from "../../lib/api.js";
 import { statusTone, DESIGNER_TRANSITIONS, DESIGN_STATUSES } from "../../lib/design-status.js";
+import { safeUrl, BLANK_REL } from "../../lib/safe-url.js";
 import { Loading } from "../../components/Loading.jsx";
 
 const MAIL_PROOF_ASSET = "Print — direct mail";
@@ -375,16 +376,19 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
             <div className="card card-pad" style={{ marginTop: 16 }}>
               <Eyebrow>Reference files</Eyebrow>
               <div className="col" style={{ gap: 6, marginTop: 10 }}>
-                {request.attachments.map((a, i) => (
-                  <div key={a.url || i} className="row" style={{ gap: 8, fontSize: 13 }}>
-                    <Icon name="folder" size={13} color="var(--fs-navy)" />
-                    {a.url ? (
-                      <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--fs-navy)" }}>{a.name}</a>
-                    ) : (
-                      <span>{a.name}</span>
-                    )}
-                  </div>
-                ))}
+                {request.attachments.map((a, i) => {
+                  const href = safeUrl(a.url);
+                  return (
+                    <div key={a.url || i} className="row" style={{ gap: 8, fontSize: 13 }}>
+                      <Icon name="folder" size={13} color="var(--fs-navy)" />
+                      {href ? (
+                        <a href={href} target="_blank" rel={BLANK_REL} style={{ color: "var(--fs-navy)" }}>{a.name}</a>
+                      ) : (
+                        <span>{a.name}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -1,5 +1,6 @@
 import { ModuleListView, cell, formatDate } from "./ModuleList.jsx";
 import { mediaApi } from "../lib/api.js";
+import { safeUrl, BLANK_REL } from "../lib/safe-url.js";
 
 const FIELDS = [
   { name: "headline", label: "Headline", required: true },
@@ -34,8 +35,8 @@ export function MediaView(props) {
       renderItem={(m) => (
         <>
           {cell(
-            m.url
-              ? <a href={m.url} target="_blank" rel="noreferrer" style={{ color: "var(--fs-navy)" }}>{m.headline}</a>
+            safeUrl(m.url)
+              ? <a href={safeUrl(m.url)} target="_blank" rel={BLANK_REL} style={{ color: "var(--fs-navy)" }}>{m.headline}</a>
               : m.headline,
             { style: { fontWeight: 600, color: "var(--fs-navy)" } }
           )}

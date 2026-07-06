@@ -42,22 +42,34 @@ def ingest_version(conn, version):
     prev_state = db.current_state(conn)
     ok, problems = validate.validate(contest_rows, choice_rows, prev_state)
 
-    detail_raw, detail_contests = feed.fetch_details(version)
-    precinct_rows = parse.parse_details(detail_contests, contests)
-    raw_path = _archive(version, sum_raw, detail_raw)
-
     if not ok:
-        db.log_ingest(conn, version, len(contest_rows), len(precinct_rows),
-                      raw_path, "rejected")
+        raw_path = _archive(version, sum_raw, None)
+        db.log_ingest(conn, version, len(contest_rows), 0, raw_path, "rejected")
         alert(f"v{version} REJECTED by validation gate: " + "; ".join(problems),
               level="error")
         db.beat(conn, version, note="rejected")
         return "rejected"
 
-    # Fast path first: race totals + turnout reach the dashboard immediately.
+    # Fast path first: promote the validated summary BEFORE touching details, so
+    # a malformed details cell can never block good race totals / turnout from
+    # reaching the dashboard.
     db.promote_summary(conn, contest_rows, choice_rows)
-    # Slow path: precinct detail lands a beat later.
-    db.promote_precincts(conn, precinct_rows)
+
+    # Slow path: precinct detail is best-effort. A details failure must not
+    # abort the (already-promoted) summary or trip the retry loop.
+    precinct_rows = []
+    detail_raw = None
+    try:
+        detail_raw, detail_contests = feed.fetch_details(version)
+        precinct_rows = parse.parse_details(detail_contests, contests)
+        db.promote_precincts(conn, precinct_rows)
+    except Exception as e:  # noqa: BLE001 - details are non-blocking
+        log.warning("v%s detail fetch/parse failed (summary already promoted): %s",
+                    version, e)
+        alert(f"v{version} detail fetch/parse failed (summary promoted): {e}",
+              level="warning")
+
+    raw_path = _archive(version, sum_raw, detail_raw)
     db.log_ingest(conn, version, len(contest_rows), len(precinct_rows),
                   raw_path, "promoted")
     db.beat(conn, version, note="promoted")
@@ -81,6 +93,10 @@ def run():
     last = None
     last_change = datetime.datetime.now(datetime.timezone.utc)
     warned_stall = False
+    # Alert dedup/backoff: don't re-fire the same error alert every cycle.
+    last_error_key = None
+    last_error_alert_at = None
+    ERROR_ALERT_BACKOFF = datetime.timedelta(minutes=5)
 
     while True:
         try:
@@ -91,6 +107,8 @@ def run():
                 last = version
                 last_change = datetime.datetime.now(datetime.timezone.utc)
                 warned_stall = False
+                last_error_key = None
+                last_error_alert_at = None
             else:
                 # Watchdog: no new batch for too long after polls close.
                 if config.WATCHDOG_MINUTES and not warned_stall:
@@ -105,5 +123,14 @@ def run():
             log.info("stopping (keyboard interrupt)")
             break
         except Exception as e:  # noqa: BLE001 - resilience is the point
-            alert(f"poll error: {e}", level="error")
+            # Dedup identical repeating errors: log every cycle but only alert
+            # when the error changes or the backoff window has elapsed.
+            key = f"{type(e).__name__}:{e}"
+            now = datetime.datetime.now(datetime.timezone.utc)
+            log.error("poll error: %s", e)
+            if key != last_error_key or last_error_alert_at is None \
+                    or (now - last_error_alert_at) >= ERROR_ALERT_BACKOFF:
+                alert(f"poll error: {e}", level="error")
+                last_error_key = key
+                last_error_alert_at = now
         time.sleep(config.POLL_SECONDS)

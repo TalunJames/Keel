@@ -1,11 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 import { openDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
+import { initSetupToken } from "./bootstrap.js";
 import {
   initElectionCollector,
   shutdownElectionCollector,
@@ -14,9 +16,31 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const PORT = Number(process.env.PORT) || 3001;
+const isProd = process.env.NODE_ENV === "production";
 
 const db = openDb();
+initSetupToken(db);
 const app = express();
+
+// Security headers. The CSP is tailored to the SPA + MapLibre GL (which needs
+// blob: web workers and data:/https: images and connects to tile/geocoder
+// hosts). COEP is disabled because it breaks cross-origin map tiles/workers.
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      workerSrc: ["'self'", "blob:"],
+      connectSrc: ["'self'", "https:"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+    },
+  },
+}));
 
 // Trust X-Forwarded-* from Cloudflare tunnel / reverse proxy so secure cookies work.
 app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS) || 1);
@@ -29,23 +53,33 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+if (isProd && !allowedOrigins.length) {
+  // Reflecting arbitrary origins with credentials on a PII app is unsafe. In
+  // production we require an explicit allowlist; without one, only same-origin
+  // requests (which carry no Origin header) are permitted.
+  console.warn("[cors] CORS_ORIGIN is unset in production — only same-origin requests will be allowed.");
+}
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);                 // same-origin / curl
-    if (!allowedOrigins.length) return cb(null, true);  // dev fallback
     if (allowedOrigins.includes(origin)) return cb(null, true);
-    // Origin not in allowlist: don't add CORS headers, but don't throw.
-    // Same-origin requests (browser knows they're same-origin) succeed because
-    // they don't need Access-Control-Allow-Origin. Real cross-origin requests
-    // from a disallowed host get blocked by the browser — the desired outcome.
-    // Throwing here was the wrong move: it 500s legitimate LAN/IP access where
-    // the origin happens to differ from the Cloudflare hostname in the allowlist.
-    cb(null, false);
+    // Dev convenience: with no allowlist configured outside production, reflect
+    // any origin so LAN/IP access works. In production this branch never runs.
+    if (!allowedOrigins.length && !isProd) return cb(null, true);
+    cb(null, false); // not allowlisted → no CORS headers (browser blocks it)
   },
   credentials: true,
 }));
-// 25mb accommodates base64-encoded design uploads (15 MB binary ≈ 20 MB base64).
-app.use(express.json({ limit: "25mb" }));
+
+// Capture the exact request bytes so webhook HMAC verification (see
+// cleatus-routes.js) can hash what was actually sent, not a re-serialization.
+const captureRaw = (req, _res, buf) => { req.rawBody = buf; };
+
+// Base64 design uploads (15 MB binary ≈ 20 MB base64) need a large limit — but
+// ONLY on that endpoint. Everything else (incl. unauthenticated login/setup) is
+// capped small so a 25 MB body can't be used as a cheap memory/CPU DoS.
+app.use("/api/design/uploads", express.json({ limit: "25mb", verify: captureRaw }));
+app.use(express.json({ limit: "1mb", verify: captureRaw }));
 app.use(cookieParser());
 
 registerRoutes(app, db);

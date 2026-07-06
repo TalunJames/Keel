@@ -1,5 +1,6 @@
 import { ModuleListView, cell } from "./ModuleList.jsx";
 import { resourcesApi } from "../lib/api.js";
+import { safeUrl, BLANK_REL } from "../lib/safe-url.js";
 
 const FIELDS = [
   { name: "title", label: "Title", required: true },
@@ -36,8 +37,8 @@ export function ResourcesView(props) {
       renderItem={(r) => (
         <>
           {cell(
-            r.url
-              ? <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "var(--fs-navy)" }}>{r.title}</a>
+            safeUrl(r.url)
+              ? <a href={safeUrl(r.url)} target="_blank" rel={BLANK_REL} style={{ color: "var(--fs-navy)" }}>{r.title}</a>
               : r.title,
             { style: { fontWeight: 600, color: "var(--fs-navy)" } }
           )}

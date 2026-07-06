@@ -58,6 +58,7 @@ export default function App() {
   const [setup, setSetup] = useState(null);
   const [booting, setBooting] = useState(true);
   const [clients, setClients] = useState([]);
+  const [clientsError, setClientsError] = useState(null);
   const [roleModules, setRoleModules] = useState(DEFAULT_MODULES_FALLBACK.staff);
   const [userOverrides, setUserOverrides] = useState({});
   const [badges, setBadges] = useState({});
@@ -89,17 +90,17 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    // Modules are fetched by the clientId-aware effect below; keeping a second
+    // fetch here (with a stale captured clientId) produced duplicate,
+    // order-dependent requests.
+    setClientsError(null);
     clientsApi.list().then((r) => {
       const list = r.clients || [];
       setClients(list);
       if (user.role === "client" && list[0]) setClientId(list[0].id);
-    });
-    modulesApi.get(clientId).then((r) => {
-      setRoleModules(r.modules || DEFAULT_MODULES_FALLBACK[user.role]);
-      setUserOverrides(r.overrides || {});
-    }).catch(() => {
-      setRoleModules(DEFAULT_MODULES_FALLBACK[user.role]);
-      setUserOverrides({});
+    }).catch((e) => {
+      setClients([]);
+      setClientsError(e?.message || "Could not load clients.");
     });
   }, [user]);
 
@@ -112,9 +113,12 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     modulesApi.get(clientId).then((r) => {
-      if (r.modules) setRoleModules(r.modules);
-      if (r.overrides) setUserOverrides(r.overrides);
-    }).catch(() => {});
+      setRoleModules(r.modules || DEFAULT_MODULES_FALLBACK[user.role]);
+      setUserOverrides(r.overrides || {});
+    }).catch(() => {
+      setRoleModules(DEFAULT_MODULES_FALLBACK[user.role]);
+      setUserOverrides({});
+    });
   }, [user, clientId]);
 
   const selectedClient = useMemo(
@@ -257,6 +261,11 @@ export default function App() {
           />
         )}
         <div className={"content" + (section === "election" ? " no-pad" : "") + (section !== "election" ? " chart-bg" : "")}>
+          {clientsError && section !== "election" && (
+            <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
+              {clientsError}
+            </div>
+          )}
           {section === "home" && guardModule("home", <HomeView {...viewProps} />)}
           {section === "calendar" && guardModule("calendar", <CalendarView {...viewProps} />)}
           {section === "design" && guardModule("design", (

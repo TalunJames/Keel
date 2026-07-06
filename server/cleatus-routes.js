@@ -1,8 +1,11 @@
 import crypto from "crypto";
+import rateLimit from "express-rate-limit";
 import { createProposalFromCleatus } from "./proposal-routes.js";
 
 function verifyCleatusSignature(rawBody, signature, secret) {
-  if (!secret) return true;
+  // Fail closed: without a configured secret, a raw body, or a signature we cannot verify.
+  if (!secret) return false;
+  if (!Buffer.isBuffer(rawBody) && typeof rawBody !== "string") return false;
   if (!signature) return false;
   const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
   const sig = String(signature).replace(/^sha256=/, "");
@@ -13,13 +16,25 @@ function verifyCleatusSignature(rawBody, signature, secret) {
   }
 }
 
+const cleatusWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export function registerCleatusRoutes(app, db, auth) {
-  app.post("/api/integrations/cleatus/webhook", (req, res) => {
+  app.post("/api/integrations/cleatus/webhook", cleatusWebhookLimiter, (req, res) => {
     const secret = process.env.CLEATUS_WEBHOOK_SECRET || "";
-    const rawBody = req.rawBody || JSON.stringify(req.body || {});
+    if (!secret) {
+      return res.status(503).json({ error: "Webhook not configured" });
+    }
+
+    // HMAC must be computed over the exact received bytes, not a re-serialized body.
+    const rawBody = req.rawBody;
     const signature = req.headers["x-cleatus-signature"] || req.headers["x-hub-signature-256"] || "";
 
-    if (secret && !verifyCleatusSignature(rawBody, signature, secret)) {
+    if (!verifyCleatusSignature(rawBody, signature, secret)) {
       return res.status(401).json({ error: "Invalid signature" });
     }
 

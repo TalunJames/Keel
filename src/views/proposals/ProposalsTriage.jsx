@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { PageHead, Tag, Icon } from "../../components/ui.jsx";
 import { proposalsApi } from "../../lib/api.js";
 import { useApi } from "../../lib/useApi.js";
@@ -12,6 +12,7 @@ export function ProposalsTriage({ clientId, onOpen, onNew }) {
   );
 
   const items = data?.items || [];
+  const [actionError, setActionError] = useState(null);
 
   const byColumn = useMemo(() => {
     const map = Object.fromEntries(TRIAGE_COLUMNS.map((c) => [c.key, []]));
@@ -23,8 +24,13 @@ export function ProposalsTriage({ clientId, onOpen, onNew }) {
   }, [items]);
 
   const handleDrop = async (proposalId, triageState) => {
-    await proposalsApi.update(proposalId, { triageState });
-    reload();
+    setActionError(null);
+    try {
+      await proposalsApi.update(proposalId, { triageState });
+      reload();
+    } catch (e) {
+      setActionError(e?.message || "Could not move this proposal.");
+    }
   };
 
   if (loading && !data) return <Loading />;
@@ -40,6 +46,12 @@ export function ProposalsTriage({ clientId, onOpen, onNew }) {
           </button>
         }
       />
+
+      {actionError && (
+        <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
+          {actionError}
+        </div>
+      )}
 
       <div style={{ paddingBottom: 40, overflowX: "auto" }}>
         <div style={{

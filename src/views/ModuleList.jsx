@@ -5,6 +5,7 @@ import { withClient, ApiError } from "../lib/api.js";
 import { realClients } from "../lib/clients.js";
 import { Loading } from "../components/Loading.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { useModalA11y } from "../lib/useModalA11y.js";
 
 export function formatDate(iso) {
   if (!iso) return "—";
@@ -56,9 +57,10 @@ function buildBody(fields, form) {
 }
 
 function ModuleModal({ title, children, onClose }) {
+  const dialogRef = useModalA11y(onClose);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "rgba(26,58,92,0.45)", display: "grid", placeItems: "center", padding: 24 }} onClick={onClose}>
-      <div className="card" style={{ maxWidth: 480, width: "100%", padding: "22px 24px", maxHeight: "90vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="card" role="dialog" aria-modal="true" aria-label={title} style={{ maxWidth: 480, width: "100%", padding: "22px 24px", maxHeight: "90vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div className="row between" style={{ marginBottom: 16 }}>
           <h3 style={{ margin: 0, color: "var(--fs-navy)", fontSize: 16 }}>{title}</h3>
           <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close">

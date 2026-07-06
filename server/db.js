@@ -19,6 +19,10 @@ export function openDb() {
 }
 
 function migrate(db) {
+  // Run the whole migration atomically: a crash mid-upgrade must not leave a
+  // half-migrated schema. better-sqlite3 uses SAVEPOINTs for any nested
+  // transaction() calls (e.g. inside syncPortalPolls), so this composes safely.
+  db.transaction(() => {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -235,6 +239,7 @@ function migrate(db) {
   purgeDemoDesignData(db);
   ensureBootstrapAdmin(db);
   syncPortalPolls(db, root);
+  })();
 }
 
 function ensureProposalColumns(db) {
@@ -275,6 +280,54 @@ function ensureProposalTables(db) {
       processing_error TEXT,
       FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS proposal_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proposal_id INTEGER NOT NULL,
+      block_id TEXT,
+      author_id TEXT,
+      author_name TEXT NOT NULL,
+      assignee_id TEXT,
+      assignee_name TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      text TEXT NOT NULL,
+      resolved_by TEXT,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS proposal_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proposal_id INTEGER NOT NULL,
+      title TEXT,
+      label TEXT,
+      author_id TEXT,
+      author_name TEXT,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS proposal_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proposal_id INTEGER NOT NULL,
+      block_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'edit',
+      base_json TEXT,
+      proposed_json TEXT,
+      author_id TEXT,
+      author_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_proposal_comments ON proposal_comments(proposal_id, status);
+    CREATE INDEX IF NOT EXISTS idx_proposal_revisions ON proposal_revisions(proposal_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_proposal_suggestions ON proposal_suggestions(proposal_id, status);
   `);
 }
 
@@ -302,6 +355,9 @@ function ensureUserColumns(db) {
   add("phone",        "phone TEXT NOT NULL DEFAULT ''");
   add("photo",        "photo TEXT");
   add("is_designer",  "is_designer INTEGER NOT NULL DEFAULT 0");
+  // Bumped whenever a user's credentials/privileges change so previously issued
+  // JWTs (including 30-day "remember me" tokens) stop validating. See auth.js.
+  add("token_version", "token_version INTEGER NOT NULL DEFAULT 0");
 }
 
 function ensureDesignColumns(db) {
@@ -364,11 +420,19 @@ function ensureDesignProofColumns(db) {
 // client, and created an election_races table nothing ever wrote to (live
 // races now come from the ENR collector DB). Clean both up once.
 function purgeDemoDesignData(db) {
+  // One-time cleanup only. Guarded by a settings flag so we never re-run it on
+  // later boots — otherwise a legitimately-created client with id 'demo' would
+  // have its design requests silently deleted on every startup.
+  const done = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("demo_purge_done");
+  if (done?.value === "1") return;
   db.prepare("DELETE FROM design_requests WHERE client_id = 'demo'").run();
   const hasRows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'election_races'").get()
     ? db.prepare("SELECT COUNT(*) AS n FROM election_races").get().n
     : null;
   if (hasRows === 0) db.exec("DROP TABLE election_races");
+  db.prepare(
+    "INSERT INTO app_settings (key, value) VALUES ('demo_purge_done', '1') ON CONFLICT(key) DO UPDATE SET value = '1'"
+  ).run();
 }
 
 function ensureClientColumns(db) {

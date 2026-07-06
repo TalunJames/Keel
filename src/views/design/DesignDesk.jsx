@@ -8,6 +8,7 @@ import { DeskSummaryStrip, RequestTable, PoolTable, TabRow } from "./shared.jsx"
 
 export function DesignDesk({ clientId, onOpen, onReload }) {
   const [sub, setSub] = useState("my");
+  const [actionError, setActionError] = useState(null);
   const { data: queueData, loading: qLoading, reload: reloadQueue } = useApi("/design/my-queue", []);
   const poolPath = withClient("/design/pool", clientId);
   const { data: poolData, loading: pLoading, reload: reloadPool } = useApi(poolPath, [clientId]);
@@ -21,8 +22,13 @@ export function DesignDesk({ clientId, onOpen, onReload }) {
   };
 
   const handleClaim = async (row) => {
-    await designApi.claim(row.id);
-    reload();
+    setActionError(null);
+    try {
+      await designApi.claim(row.id);
+      reload();
+    } catch (e) {
+      setActionError(e?.message || "Could not claim this job.");
+    }
   };
 
   if (qLoading && !queueData) return <Loading />;
@@ -33,6 +39,12 @@ export function DesignDesk({ clientId, onOpen, onReload }) {
         title="Designer Desk"
         sub="Your assigned work and the unassigned pool. Claim jobs from the pool or work from your queue."
       />
+
+      {actionError && (
+        <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
+          {actionError}
+        </div>
+      )}
 
       <DeskSummaryStrip stats={deskStats} />
 

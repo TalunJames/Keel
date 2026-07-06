@@ -1,19 +1,42 @@
+# Keep the Docker build context lean and safe.
+# Without this, `COPY . .` would drag host node_modules (with wrong-arch
+# native better-sqlite3 binaries), local secrets, and SQLite data into the
+# build context/image.
+
+# Dependencies — reinstalled inside the image via `npm ci`
 node_modules
-dist
-data
-uploads
+**/node_modules
+
+# Secrets / local env
 .env
 .env.*
 !.env.example
+
+# Local runtime state
+data
+uploads
+*.db
+*.db-shm
+*.db-wal
+
+# Build output — produced inside the image
+dist
+
+# VCS and CI
 .git
-.github
 .gitignore
-.DS_Store
+.github
+
+# Logs
 *.log
-npm-debug.log*
-README.md
-DEPLOY.md
-Keel.html
-docker-compose.yml
-.dockerignore
-Dockerfile
+logs
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.vscode
+.idea
+
+# Docs / dev-only files not needed at runtime
+*.md

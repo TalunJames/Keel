@@ -6,8 +6,9 @@ const db = openDb();
 const status = getSetupStatus(db);
 
 if (status.needsSetup) {
-  console.log("Bootstrap admin is awaiting first-boot setup at:", status.email);
-  console.log("Open the app URL — you will be prompted to create a password.");
+  console.log("Bootstrap admin is awaiting first-boot setup.");
+  console.log("Start the API, read the one-time SETUP TOKEN from its console output,");
+  console.log("then open the app URL and complete the first-boot setup screen.");
   process.exit(0);
 }
 

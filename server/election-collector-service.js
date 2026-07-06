@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
+import { invalidateResultsDb } from "./election-live.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -139,6 +140,9 @@ function pushLog(line) {
 
 function wipeResultsDb(dbPath) {
   if (!dbPath) return;
+  // Drop the reader's cached handle first so it can't keep serving stale
+  // results from the deleted inode after the collector recreates results.db.
+  invalidateResultsDb();
   for (const suffix of ["", "-wal", "-shm"]) {
     try { fs.unlinkSync(`${dbPath}${suffix}`); } catch { /* ok */ }
   }

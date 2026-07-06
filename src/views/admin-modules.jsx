@@ -18,7 +18,7 @@ function moduleOptionsForRole(role) {
   return role === "client" ? CLIENT_MODULE_OPTIONS : STAFF_MODULE_OPTIONS;
 }
 
-export function AdminModulesTab({ allRoles, onFlash }) {
+export function AdminModulesTab({ allRoles, user, onFlash }) {
   const [subTab, setSubTab] = useState("roles");
   const [roleModules, setRoleModules] = useState(allRoles || {});
   const [clients, setClients] = useState([]);
@@ -48,6 +48,17 @@ export function AdminModulesTab({ allRoles, onFlash }) {
     api("/admin/users")
       .then((r) => setUsers(r.users || []))
       .finally(() => setUsersLoading(false));
+  }, []);
+
+  // Seed the Role defaults editor from the server's persisted config for ALL
+  // roles so it shows real saved state (not the hardcoded fallback). Otherwise
+  // saving one role would overwrite the others with defaults.
+  useEffect(() => {
+    api("/admin/module-defaults")
+      .then((r) => {
+        if (r?.defaults) setRoleModules((prev) => ({ ...prev, ...r.defaults }));
+      })
+      .catch(() => {});
   }, []);
 
   const selectedClient = useMemo(

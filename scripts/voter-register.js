@@ -10,8 +10,8 @@
 import "dotenv/config";
 import fs from "fs";
 import path from "path";
-import readline from "readline";
 import { fileURLToPath } from "url";
+import { parse } from "csv-parse";
 import { openDb } from "../server/db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,14 +42,20 @@ function parseArgs(argv) {
   return out;
 }
 
-async function countCsvRows(filePath) {
-  const stream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  let count = 0;
-  for await (const _line of rl) {
-    count += 1;
-  }
-  return Math.max(0, count - 1);
+function countCsvRows(filePath) {
+  // Count actual CSV records (not physical lines) so embedded newlines inside
+  // quoted fields don't inflate the count. The header row is excluded.
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    const parser = fs.createReadStream(filePath).pipe(
+      parse({ columns: true, bom: true, skip_empty_lines: true, relax_column_count: true }),
+    );
+    parser.on("data", () => {
+      count += 1;
+    });
+    parser.on("error", reject);
+    parser.on("end", () => resolve(count));
+  });
 }
 
 function storeVoterFile({ clientId, sourcePath, link }) {

@@ -32,6 +32,12 @@ export const PROPOSAL_TEMPLATES = [
 ];
 
 export const PROPOSAL_BLOCK_TYPES = {
+  text: { label: "Text", icon: "pen", group: "Basics" },
+  heading: { label: "Section heading", icon: "layout", group: "Basics" },
+  quote: { label: "Pull quote", icon: "comment", group: "Basics" },
+  divider: { label: "Divider", icon: "more", group: "Basics" },
+  pagebreak: { label: "Page break", icon: "layout", group: "Basics" },
+  toc: { label: "Table of contents", icon: "book", group: "Front matter" },
   cover: { label: "Cover page", icon: "image", group: "Front matter" },
   summary: { label: "Executive summary", icon: "comment", group: "Front matter" },
   executive: { label: "Executive summary", icon: "comment", group: "Front matter" },
@@ -55,6 +61,18 @@ export const PROPOSAL_BLOCK_TYPES = {
 export function defaultBlockContent(type, { clientName = "Client" } = {}) {
   const cname = clientName || "Client";
   switch (type) {
+    case "text":
+      return { html: "<p>Start writing…</p>" };
+    case "heading":
+      return { title: "New section" };
+    case "quote":
+      return { text: "A short, memorable line that anchors this section.", attribution: "" };
+    case "divider":
+      return {};
+    case "pagebreak":
+      return {};
+    case "toc":
+      return { title: "Contents" };
     case "cover":
       return {
         eyebrow: "Engagement Proposal",

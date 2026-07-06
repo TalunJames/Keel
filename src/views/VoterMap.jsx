@@ -12,19 +12,32 @@ const LAYER_OPTIONS = [
   { id: "voters", label: "Voter points" },
 ];
 
+// Voter-file fields (name, address, party) are third-party CSV data and must
+// never be trusted as HTML. Escape every interpolated value before it reaches
+// popup.setHTML(...).
+function escapeHtml(value) {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function voterPopupHtml(props, mode) {
   if (mode === "cluster") {
     return (
-      `<div style="font-weight:700;color:#1A3A5C;margin-bottom:4px">${props.count.toLocaleString()} voters</div>` +
-      `<div style="color:#5B5B58;font-size:12px">D ${props.dCount || 0} · R ${props.rCount || 0} · I ${props.iCount || 0}</div>` +
-      `<div style="color:#7A7975;font-size:11px;margin-top:4px">Avg turnout ${props.avgScore || 0}</div>`
+      `<div style="font-weight:700;color:#1A3A5C;margin-bottom:4px">${escapeHtml(Number(props.count || 0).toLocaleString())} voters</div>` +
+      `<div style="color:#5B5B58;font-size:12px">D ${escapeHtml(props.dCount || 0)} · R ${escapeHtml(props.rCount || 0)} · I ${escapeHtml(props.iCount || 0)}</div>` +
+      `<div style="color:#7A7975;font-size:11px;margin-top:4px">Avg turnout ${escapeHtml(props.avgScore || 0)}</div>`
     );
   }
   return (
-    `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${props.name}</div>` +
-    `<div style="color:#5B5B58;font-size:12px">${props.party} · Score ${props.score}</div>` +
-    `<div style="color:#7A7975;font-size:11px;margin-top:4px">${props.address || ""}</div>` +
-    (props.precinct ? `<div style="color:#8B9AAB;font-size:10px;margin-top:2px">Precinct ${props.precinct}</div>` : "")
+    `<div style="font-weight:700;color:#1A3A5C;margin-bottom:2px">${escapeHtml(props.name)}</div>` +
+    `<div style="color:#5B5B58;font-size:12px">${escapeHtml(props.party)} · Score ${escapeHtml(props.score)}</div>` +
+    `<div style="color:#7A7975;font-size:11px;margin-top:4px">${escapeHtml(props.address || "")}</div>` +
+    (props.precinct ? `<div style="color:#8B9AAB;font-size:10px;margin-top:2px">Precinct ${escapeHtml(props.precinct)}</div>` : "")
   );
 }
 
@@ -43,6 +56,7 @@ export function VoterMap({
   const containerRef = useRef(null);
   const popupRef = useRef(null);
   const fetchTimer = useRef(null);
+  const mapAbortRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [layers, setLayers] = useState({ boundary: true, precincts: false, voters: true });
@@ -75,9 +89,15 @@ export function VoterMap({
       bounds.getNorth(),
     ];
     reportBbox(map);
+    // Cancel any in-flight request so a slow older response can't overwrite a
+    // newer one when bounds/filters change rapidly.
+    if (mapAbortRef.current) mapAbortRef.current.abort();
+    const controller = new AbortController();
+    mapAbortRef.current = controller;
     setLoading(true);
     api("/voter/map", {
       method: "POST",
+      signal: controller.signal,
       body: JSON.stringify({
         clientId,
         filters: filtersRef.current,
@@ -87,6 +107,7 @@ export function VoterMap({
       }),
     })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setMapStats({
           matchingInView: data.matchingInView || 0,
           geocodedTotal: data.geocodedTotal || 0,
@@ -105,7 +126,10 @@ export function VoterMap({
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (mapAbortRef.current === controller) mapAbortRef.current = null;
+        if (!controller.signal.aborted) setLoading(false);
+      });
   }, [clientId, ready, reportBbox]);
 
   // moveend is bound once at map creation; route through a ref so the handler
@@ -220,6 +244,7 @@ export function VoterMap({
 
     return () => {
       if (fetchTimer.current) clearTimeout(fetchTimer.current);
+      if (mapAbortRef.current) mapAbortRef.current.abort();
       map.remove();
       mapRef.current = null;
       onBboxChange?.(null);

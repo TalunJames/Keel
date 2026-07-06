@@ -1,6 +1,4 @@
 const BASE = "/api";
-const TOKEN_SESSION = "keel_token";
-const TOKEN_LOCAL = "keel_token_persist";
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -9,41 +7,15 @@ export class ApiError extends Error {
   }
 }
 
-export function getStoredToken() {
-  try {
-    return localStorage.getItem(TOKEN_LOCAL) || sessionStorage.getItem(TOKEN_SESSION) || "";
-  } catch {
-    return "";
-  }
-}
-
-export function setAuthToken(token, { remember = false } = {}) {
-  try {
-    if (!token) {
-      sessionStorage.removeItem(TOKEN_SESSION);
-      localStorage.removeItem(TOKEN_LOCAL);
-      return;
-    }
-    sessionStorage.setItem(TOKEN_SESSION, token);
-    if (remember) localStorage.setItem(TOKEN_LOCAL, token);
-    else localStorage.removeItem(TOKEN_LOCAL);
-  } catch {
-    /* private browsing */
-  }
-}
-
-export function clearAuthToken() {
-  setAuthToken(null);
-}
-
+// Auth is carried entirely by the server's httpOnly session cookie. The token
+// is never stored in localStorage/sessionStorage or attached as a Bearer
+// header, so an XSS payload cannot read or exfiltrate a session token.
 export async function api(path, options = {}) {
-  const token = getStoredToken();
   const res = await fetch(BASE + path, {
     ...options,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: "Bearer " + token } : {}),
       ...(options.headers || {}),
     },
   });
@@ -62,13 +34,11 @@ export async function api(path, options = {}) {
 
 /** Download a CSV or other binary/text export from the API. */
 export async function downloadExport(path, body, filename) {
-  const token = getStoredToken();
   const res = await fetch(BASE + path, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: "Bearer " + token } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -90,31 +60,18 @@ export async function downloadExport(path, body, filename) {
 }
 
 export const authApi = {
-  login: async (email, password, remember = false) => {
-    const data = await api("/auth/login", {
+  login: (email, password, remember = false) =>
+    api("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password, remember }),
-    });
-    if (data?.token) setAuthToken(data.token, { remember });
-    return data;
-  },
-  logout: async () => {
-    try {
-      await api("/auth/logout", { method: "POST" });
-    } finally {
-      clearAuthToken();
-    }
-  },
+    }),
+  logout: () => api("/auth/logout", { method: "POST" }),
   me: () => api("/auth/me"),
 };
 
 export const setupApi = {
   status: () => api("/setup/status"),
-  complete: async (body) => {
-    const data = await api("/setup/complete", { method: "POST", body: JSON.stringify(body) });
-    if (data?.token) setAuthToken(data.token, { remember: true });
-    return data;
-  },
+  complete: (body) => api("/setup/complete", { method: "POST", body: JSON.stringify(body) }),
 };
 
 export const accountApi = {
@@ -232,6 +189,25 @@ export const proposalsApi = {
   notes: {
     list: (id) => api(`/proposals/${id}/notes`),
     add: (id, body) => api(`/proposals/${id}/notes`, { method: "POST", body: JSON.stringify(body) }),
+  },
+  comments: {
+    list: (id) => api(`/proposals/${id}/comments`),
+    add: (id, body) => api(`/proposals/${id}/comments`, { method: "POST", body: JSON.stringify(body) }),
+    update: (id, commentId, body) =>
+      api(`/proposals/${id}/comments/${commentId}`, { method: "PATCH", body: JSON.stringify(body) }),
+    remove: (id, commentId) => api(`/proposals/${id}/comments/${commentId}`, { method: "DELETE" }),
+  },
+  revisions: {
+    list: (id) => api(`/proposals/${id}/revisions`),
+    snapshot: (id, label) =>
+      api(`/proposals/${id}/revisions`, { method: "POST", body: JSON.stringify({ label }) }),
+    restore: (id, revId) => api(`/proposals/${id}/revisions/${revId}/restore`, { method: "POST" }),
+  },
+  suggestions: {
+    list: (id, status = "pending") => api(`/proposals/${id}/suggestions?status=${status}`),
+    add: (id, body) => api(`/proposals/${id}/suggestions`, { method: "POST", body: JSON.stringify(body) }),
+    accept: (id, sid) => api(`/proposals/${id}/suggestions/${sid}/accept`, { method: "POST" }),
+    reject: (id, sid) => api(`/proposals/${id}/suggestions/${sid}/reject`, { method: "POST" }),
   },
 };
 export const mediaApi = crudApi("/media/mentions");

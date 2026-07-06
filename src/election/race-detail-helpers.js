@@ -219,3 +219,16 @@ export function sortContestsForBallot(contests, ballotConfig) {
   };
   return [...contests].sort((a, b) => score(a.name) - score(b.name));
 }
+
+// HTML-escape values before interpolating them into map popup .setHTML(...)
+// strings. Popup content is built from external GeoJSON/ENR feed data
+// (candidate/leader/place names, addresses) and must never be trusted as HTML.
+export function escapeHtml(value) {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

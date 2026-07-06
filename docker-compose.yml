@@ -6,24 +6,27 @@
 #                 without opening any ports on the NAS.
 #
 # Before deploying:
-#   1. The image below points at ghcr.io/talunjames/keel:latest — change if your repo name differs.
-#      `pull_policy: always` makes docker re-check GHCR every time the container starts,
-#      so a TrueNAS app restart (or full reboot) picks up the newest :latest automatically.
-#      Caveat: a new image only exists after the GitHub Actions "Build and push container"
-#      workflow runs, which only fires on pushes to `main` or `v*` tags. Merge feature
-#      branches into main, then restart the app to pull.
+#   1. The image below points at ghcr.io/talunjames/keel — change if your repo name differs.
+#      For production, pin to an immutable per-commit tag (e.g. :sha-abc1234) from the
+#      "Build and push container" GitHub Actions run rather than :latest, then bump it
+#      deliberately when you want to update. The workflow only publishes images on pushes
+#      to `main` or `v*` tags.
 #   2. Create the host dirs and chown them to the TrueNAS apps user (568):
 #        mkdir -p /mnt/<pool>/apps/keel/{data,uploads}
 #        chown -R 568:568 /mnt/<pool>/apps/keel
 #      Adjust the bind-mount source paths below to match your pool.
-#   3. Fill in the env vars (JWT_SECRET, TUNNEL_TOKEN) in TrueNAS's
-#      "Environment Variables" UI — do NOT commit real secrets to this file.
-#      On first boot, open the app URL and set the administrator password
-#      for BOOTSTRAP_ADMIN_EMAIL (default cjames@fogsignal.co).
+#   3. Fill in the env vars (JWT_SECRET, BOOTSTRAP_ADMIN_EMAIL, TUNNEL_TOKEN) in
+#      TrueNAS's "Environment Variables" UI — do NOT commit real secrets to this file.
+#      On first boot, read the one-time `SETUP TOKEN` from the container logs
+#      (`docker logs keel`), open the app URL, and complete the first-boot setup
+#      screen (enter the token + choose the admin password).
 
 services:
   keel:
     image: ghcr.io/talunjames/keel:latest
+    # `pull_policy: always` re-checks GHCR on every container start so a restart
+    # picks up a new :latest. For production, pin `image:` to a :sha- tag above and
+    # drop this to `missing` (the default) for reproducible deploys.
     pull_policy: always
     container_name: keel
     restart: unless-stopped
@@ -43,12 +46,21 @@ services:
       EP_EID: ${EP_EID:-126592}
       EP_ENFORCE_POLLS_CLOSE: ${EP_ENFORCE_POLLS_CLOSE:-0}
       EP_POLL_SECONDS: ${EP_POLL_SECONDS:-7}
-      EP_POLLS_CLOSE_UTC: ${EP_POLLS_CLOSE_UTC:-2026-07-01T01:00:00+00:00}
+      # No default: a stale/past polls-close instant would immediately halt polling
+      # when EP_ENFORCE_POLLS_CLOSE=1. Set this per election, e.g.
+      # EP_POLLS_CLOSE_UTC=2026-11-03T02:00:00+00:00
+      EP_POLLS_CLOSE_UTC: ${EP_POLLS_CLOSE_UTC:-}
       ELECTION_CONTEST_PATTERNS: ${ELECTION_CONTEST_PATTERNS:-Governor,United States Senator,Congress District 5,State Representative District,State Senator District,County Commissioner}
+      # Required. In production the server refuses to start without it.
+      # Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      JWT_EXPIRES_IN: 8h
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-cjames@fogsignal.co}
-      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Carter James}
+      # Session lifetime in seconds (8h = 28800).
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
+      # Required — the initial administrator's email. No hardcoded default.
+      # First boot prints a one-time SETUP TOKEN to the logs; use it to set the
+      # admin password on the setup screen. There is no ADMIN_PASSWORD.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?set admin email}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Administrator}
       # Comma-separated allowlist. Add every public hostname that fronts Keel
       # (e.g. cloudflared tunnels for portal.fogsignalstrategies.com and
       # keel.fogsignalstrategies.com). No spaces around commas.
@@ -64,15 +76,20 @@ services:
     #   - "3001:3001"
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
-    pull_policy: always
+    # Pinned to a versioned release. Bump deliberately: check
+    # https://github.com/cloudflare/cloudflared/releases for the newest tag.
+    image: cloudflare/cloudflared:2026.6.1
+    pull_policy: missing
     container_name: keel-cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required}
     depends_on:
-      - keel
+      # Wait until keel passes its HEALTHCHECK before publishing the tunnel,
+      # so the public hostname doesn't serve 502s during first-boot migrations.
+      keel:
+        condition: service_healthy
     networks:
       - keel-net
 

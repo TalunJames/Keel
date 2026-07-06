@@ -4,6 +4,7 @@ import { setupApi, ApiError } from "../lib/api.js";
 
 export function SetupView({ setup, onComplete }) {
   const [name, setName] = useState(setup?.name || "");
+  const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -12,6 +13,10 @@ export function SetupView({ setup, onComplete }) {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!token.trim()) {
+      setError("Enter the setup token from the server console.");
+      return;
+    }
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -22,7 +27,7 @@ export function SetupView({ setup, onComplete }) {
     }
     setLoading(true);
     try {
-      const { user } = await setupApi.complete({ password, name: name.trim() });
+      const { user } = await setupApi.complete({ password, name: name.trim(), setupToken: token.trim() });
       onComplete(user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Setup failed");
@@ -54,7 +59,7 @@ export function SetupView({ setup, onComplete }) {
             Welcome aboard.
           </h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-            Set your administrator password for this Keel deployment. This is a one-time step — the password is stored in the database and used for every sign-in afterward.
+            Enter the one-time setup token printed in the server console, then set your administrator password. This is a one-time step — the password is stored in the database and used for every sign-in afterward.
           </p>
         </div>
         <div style={{ position: "relative", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
@@ -78,9 +83,10 @@ export function SetupView({ setup, onComplete }) {
           )}
 
           <div className="field">
-            <label>Administrator email</label>
-            <input className="input" type="email" value={setup?.email || ""} readOnly
-              style={{ background: "var(--fs-bone-50)", color: "var(--fs-fg-muted)" }} />
+            <label htmlFor="setup-token">Setup token</label>
+            <input id="setup-token" className="input" required autoComplete="off"
+              placeholder="Printed in the server logs on first boot"
+              value={token} onChange={(e) => setToken(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="setup-name">Your name</label>

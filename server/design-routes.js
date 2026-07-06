@@ -6,6 +6,7 @@ import {
   ACTIVE_STATUSES,
   CLIENT_VISIBLE_STATUSES,
   DESIGN_STATUSES,
+  DESIGNER_SETTABLE_STATUSES,
   POOL_STATUSES,
   RUSH_PRIORITIES,
   isDesigner,
@@ -31,6 +32,15 @@ import {
   notifyDesigners,
   notifyClientUsers,
 } from "./mail.js";
+
+// Fire-and-forget a single notification email so a hung SMTP server can't stall
+// the HTTP response. sendDesignMail records success/failure in
+// design_notification_log internally; this only guards the async boundary.
+function queueDesignMail(db, opts) {
+  Promise.resolve()
+    .then(() => sendDesignMail(db, opts))
+    .catch((e) => console.error(`[mail] notify failed ${opts?.eventType}:`, e?.message || e));
+}
 
 function mapRequestRow(db, r, cache) {
   const payload = r.payload_json ? JSON.parse(r.payload_json) : {};
@@ -75,6 +85,14 @@ function mapRequestRow(db, r, cache) {
 
 function getRequest(db, id) {
   return db.prepare("SELECT * FROM design_requests WHERE id = ?").get(id);
+}
+
+// Proof URLs must point at app-served, same-origin paths. This blocks
+// `javascript:`, `data:`, protocol-relative (`//host`) and external URLs that
+// would otherwise be stored and echoed to client users.
+function isInternalProofUrl(url) {
+  return /^\/api\/design\/files\/[A-Za-z0-9._-]+$/.test(url)
+    || /^\/periscope\/[A-Za-z0-9._/?=&%-]*$/.test(url);
 }
 
 function assertRequestAccess(req, row) {
@@ -340,7 +358,7 @@ export function registerDesignRoutes(app, db, auth) {
     if (!draft && resolvedAssignee) {
       const assignee = db.prepare("SELECT email, name FROM users WHERE id = ?").get(resolvedAssignee);
       if (assignee?.email) {
-        await sendDesignMail(db, {
+        queueDesignMail(db, {
           requestId,
           eventType: "assigned",
           to: assignee.email,
@@ -348,7 +366,7 @@ export function registerDesignRoutes(app, db, auth) {
         });
       }
     } else if (!draft && !resolvedAssignee && RUSH_PRIORITIES.includes(priority)) {
-      await notifyDesigners(db, {
+      notifyDesigners(db, {
         requestId,
         eventType: "rush_pool",
         data: { title: title.trim(), priority, clientName: client.name },
@@ -386,7 +404,7 @@ export function registerDesignRoutes(app, db, auth) {
         if (row.assignee_id) {
           const assignee = db.prepare("SELECT email FROM users WHERE id = ?").get(row.assignee_id);
           if (assignee?.email) {
-            await sendDesignMail(db, {
+            queueDesignMail(db, {
               requestId: row.id,
               eventType: "comment",
               to: assignee.email,
@@ -430,6 +448,11 @@ export function registerDesignRoutes(app, db, auth) {
       if (!DESIGN_STATUSES.includes(status)) {
         return res.status(400).json({ error: "Invalid status" });
       }
+      // Designer-assignees may only move a request through the safe workflow
+      // subset; only staff/admins can set 'Approved', 'draft', etc.
+      if (!staff && !DESIGNER_SETTABLE_STATUSES.includes(status)) {
+        return res.status(403).json({ error: "Designers cannot set this status" });
+      }
       updates.push("status = ?");
       args.push(status);
     }
@@ -466,7 +489,7 @@ export function registerDesignRoutes(app, db, auth) {
       const assignee = db.prepare("SELECT email FROM users WHERE id = ?").get(assigneeId);
       const client = db.prepare("SELECT name FROM clients WHERE id = ?").get(row.client_id);
       if (assignee?.email) {
-        await sendDesignMail(db, {
+        queueDesignMail(db, {
           requestId: row.id,
           eventType: "assigned",
           to: assignee.email,
@@ -477,7 +500,7 @@ export function registerDesignRoutes(app, db, auth) {
 
     if (action === "ready_for_review") {
       const client = db.prepare("SELECT name FROM clients WHERE id = ?").get(row.client_id);
-      await notifyClientUsers(db, row.client_id, {
+      notifyClientUsers(db, row.client_id, {
         requestId: row.id,
         eventType: "proof_ready",
         data: { title: row.title, clientName: client?.name || "" },
@@ -509,7 +532,7 @@ export function registerDesignRoutes(app, db, auth) {
       `Claimed design request #${row.id}`,
       "Design"
     );
-    await sendDesignMail(db, {
+    queueDesignMail(db, {
       requestId: row.id,
       eventType: "claimed",
       to: req.user.email,
@@ -570,6 +593,14 @@ export function registerDesignRoutes(app, db, auth) {
     }
     const { version, label, fileUrl, mimeType } = req.body || {};
     if (!version) return res.status(400).json({ error: "version required" });
+
+    // Only accept internal, app-served URLs. Rejecting external/`javascript:`
+    // URLs prevents stored-XSS/phishing when the value is echoed to clients.
+    if (fileUrl !== undefined && fileUrl !== null && fileUrl !== "") {
+      if (typeof fileUrl !== "string" || !isInternalProofUrl(fileUrl)) {
+        return res.status(400).json({ error: "fileUrl must be an internal /api/design/files/ or /periscope/ path" });
+      }
+    }
 
     const result = db.prepare(
       `INSERT INTO design_proofs (request_id, version, label, file_url, mime_type, uploaded_by)
@@ -668,7 +699,7 @@ export function registerDesignRoutes(app, db, auth) {
       const assignee = db.prepare("SELECT email FROM users WHERE id = ?").get(row.assignee_id);
       const client = db.prepare("SELECT name FROM clients WHERE id = ?").get(row.client_id);
       if (assignee?.email) {
-        await sendDesignMail(db, {
+        queueDesignMail(db, {
           requestId: row.id,
           eventType: "comment",
           to: assignee.email,

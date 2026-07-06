@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { PageHead, Icon, Eyebrow } from "../components/ui.jsx";
 import { useApi } from "../lib/useApi.js";
 import { withClient } from "../lib/api.js";
+import { safeUrl, BLANK_REL } from "../lib/safe-url.js";
 import { Loading } from "../components/Loading.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 
@@ -121,12 +122,12 @@ function AssetLinks({ assets }) {
     assets.crosstabPdf && { label: "Crosstabs PDF", url: assets.crosstabPdf },
     assets.reportPdf && { label: "Full report PDF", url: assets.reportPdf },
     assets.presentation && { label: "Presentation", url: assets.presentation },
-  ].filter(Boolean);
+  ].filter(Boolean).map((l) => ({ ...l, url: safeUrl(l.url) })).filter((l) => l.url);
   if (!links.length) return null;
   return (
     <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
       {links.map((l) => (
-        <a key={l.url} className="btn secondary sm" href={l.url} target="_blank" rel="noopener noreferrer">
+        <a key={l.url} className="btn secondary sm" href={l.url} target="_blank" rel={BLANK_REL}>
           <Icon name="download" size={12} /> {l.label}
         </a>
       ))}

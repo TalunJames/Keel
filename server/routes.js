@@ -1,7 +1,15 @@
 import { randomUUID } from "crypto";
+import rateLimit from "express-rate-limit";
 import { DEFAULT_MODULES, DEFAULT_LOGIN_ANNOUNCEMENT } from "./db.js";
 import { computeEffectiveModules } from "./access.js";
-import { getSetupStatus, isBootstrapPending, markSetupComplete, findBootstrapUser } from "./bootstrap.js";
+import {
+  getSetupStatus,
+  isBootstrapPending,
+  markSetupComplete,
+  findBootstrapUser,
+  verifySetupToken,
+  clearSetupToken,
+} from "./bootstrap.js";
 import {
   getElectionLiveStatus,
   listElectionContests,
@@ -91,16 +99,34 @@ function slugifyClientId(tag) {
 export function registerRoutes(app, db) {
   const auth = requireAuth(db);
 
+  // Throttle unauthenticated credential endpoints to blunt online brute force.
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many attempts. Try again later." },
+  });
+
+  // Invalidate a user's existing JWTs after a credential/privilege change.
+  const bumpTokenVersion = (userId) =>
+    db.prepare("UPDATE users SET token_version = token_version + 1 WHERE id = ?").run(userId);
+
   app.get("/api/setup/status", (_req, res) => {
     res.json(getSetupStatus(db));
   });
 
-  app.post("/api/setup/complete", async (req, res) => {
+  app.post("/api/setup/complete", authLimiter, async (req, res) => {
     const status = getSetupStatus(db);
     if (!status.needsSetup) {
       return res.status(400).json({ error: "Setup already completed" });
     }
-    const { password, name } = req.body || {};
+    const { password, name, setupToken } = req.body || {};
+    // Gate first-boot setup behind the one-time token printed to the server
+    // console, so an anonymous visitor to a fresh deploy can't claim the admin.
+    if (!verifySetupToken(setupToken)) {
+      return res.status(403).json({ error: "Invalid or missing setup token" });
+    }
     if (!password || String(password).length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters" });
     }
@@ -119,8 +145,9 @@ export function registerRoutes(app, db) {
       "UPDATE users SET password_hash = ?, name = ?, role = 'admin', system_admin = 1 WHERE id = ?"
     ).run(await hashPassword(password), displayName, row.id);
     markSetupComplete(db);
+    clearSetupToken();
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
-      status.email,
+      row.email,
       "Completed first-boot setup and set admin password",
       "System"
     );
@@ -145,7 +172,7 @@ export function registerRoutes(app, db) {
     res.json({ user, token });
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     const setup = getSetupStatus(db);
     if (setup.needsSetup) {
       return res.status(403).json({
@@ -232,13 +259,22 @@ export function registerRoutes(app, db) {
   });
 
   app.patch("/api/account/me", auth, (req, res) => {
-    const allowed = ["name", "team", "title", "location", "about", "phone", "photo"];
+    // Per-field caps. `photo` is re-selected on every authenticated request, so
+    // a huge value would bloat the DB and slow all of the user's API calls.
+    const limits = { name: 200, team: 120, title: 160, location: 160, about: 2000, phone: 40, photo: 512 * 1024 };
     const sets = [];
     const args = [];
-    for (const f of allowed) {
+    for (const f of Object.keys(limits)) {
       if (req.body[f] !== undefined) {
+        const val = req.body[f];
+        if (typeof val !== "string") {
+          return res.status(400).json({ error: `${f} must be a string` });
+        }
+        if (val.length > limits[f]) {
+          return res.status(400).json({ error: `${f} is too long` });
+        }
         sets.push(`${f} = ?`);
-        args.push(req.body[f]);
+        args.push(val);
       }
     }
     if (!sets.length) return res.status(400).json({ error: "No fields" });
@@ -257,6 +293,9 @@ export function registerRoutes(app, db) {
 
   app.get("/api/account/calendar", auth, (req, res) => {
     const start = new Date(req.query.start || Date.now());
+    if (Number.isNaN(start.getTime())) {
+      return res.status(400).json({ error: "Invalid start date" });
+    }
     const days = Math.max(1, Math.min(120, Number(req.query.days) || 42));
     const end = new Date(start);
     end.setDate(end.getDate() + days);
@@ -343,6 +382,16 @@ export function registerRoutes(app, db) {
 
   app.get("/api/access/overrides", auth, (req, res) => {
     res.json({ overrides: allUserOverrides(req.user.id) });
+  });
+
+  // Persisted module defaults for every role — so the admin "Role defaults"
+  // editor seeds from saved config instead of the client-side fallback.
+  app.get("/api/admin/module-defaults", auth, requireRole("admin"), (_req, res) => {
+    const defaults = {};
+    for (const role of Object.keys(DEFAULT_MODULES)) {
+      defaults[role] = roleModuleDefaults(role);
+    }
+    res.json({ defaults });
   });
 
   app.put("/api/modules/:role", auth, requireRole("admin"), (req, res) => {
@@ -944,7 +993,18 @@ export function registerRoutes(app, db) {
   });
 
   app.delete("/api/voter/cuts/:id", auth, requireRole("staff", "admin"), (req, res) => {
-    db.prepare("DELETE FROM voter_cuts WHERE id = ?").run(req.params.id);
+    const cut = db.prepare("SELECT id, user_id AS userId, client_id AS clientId, name FROM voter_cuts WHERE id = ?").get(req.params.id);
+    if (!cut) return res.status(404).json({ error: "Not found" });
+    // Owner or admin only — staff can't delete another user's saved cut.
+    if (req.user.role !== "admin" && cut.userId !== req.user.id) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    db.prepare("DELETE FROM voter_cuts WHERE id = ?").run(cut.id);
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Deleted voter cut ${cut.name} (${cut.clientId})`,
+      "Data"
+    );
     res.json({ ok: true });
   });
 
@@ -970,16 +1030,36 @@ export function registerRoutes(app, db) {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("X-Export-Count", String(total));
-    res.write("\uFEFF" + voterExportCsvHeader() + "\n");
 
-    for (const row of iterateVoterExport(client, {
-      filters: filters || {},
-      query: query || "",
-      bbox: exportBbox,
-    })) {
-      res.write(voterExportCsvRow(row) + "\n");
-    }
-    res.end();
+    // Stream with backpressure so a slow client can't force us to buffer the
+    // entire (potentially hundreds of MB) CSV in memory, and stop early if the
+    // client disconnects. `res.write` returning false means the socket buffer
+    // is full \u2014 wait for 'drain' before writing more.
+    let aborted = false;
+    res.on("close", () => { aborted = true; });
+    const writeChunk = (chunk) =>
+      new Promise((resolve) => {
+        if (res.write(chunk)) resolve();
+        else res.once("drain", resolve);
+      });
+
+    (async () => {
+      try {
+        await writeChunk("\uFEFF" + voterExportCsvHeader() + "\n");
+        for (const row of iterateVoterExport(client, {
+          filters: filters || {},
+          query: query || "",
+          bbox: exportBbox,
+        })) {
+          if (aborted) return;
+          await writeChunk(voterExportCsvRow(row) + "\n");
+        }
+        res.end();
+      } catch (e) {
+        if (!res.headersSent) res.status(500).json({ error: "Export failed" });
+        else res.destroy(e);
+      }
+    })();
   });
 
   app.post("/api/voter/export/count", auth, requireRole("staff", "admin"), (req, res) => {
@@ -1074,6 +1154,9 @@ export function registerRoutes(app, db) {
       args.push(role);
       changes.push("role");
       if (role !== "admin") updates.push("system_admin = 0");
+      // A client can never be a designer; clear the flag so a demoted staff
+      // designer doesn't keep designer capabilities (mailer PDFs, claim/patch).
+      if (role === "client") updates.push("is_designer = 0");
     }
     if (clientId !== undefined) {
       updates.push("client_id = ?");
@@ -1114,6 +1197,12 @@ export function registerRoutes(app, db) {
 
     args.push(target.id);
     db.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`).run(...args);
+    // Revoke the target's existing JWTs when credentials or privileges change,
+    // so a password reset or role/admin change takes effect immediately even
+    // for outstanding 30-day "remember me" tokens.
+    const roleChanged = role !== undefined && role !== target.role;
+    const adminChanged = systemAdmin !== undefined && !!systemAdmin !== !!target.systemAdmin;
+    if (password || roleChanged || adminChanged) bumpTokenVersion(target.id);
     db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
       req.user.email,
       `Updated user ${target.email} (${changes.join(", ")})`,
@@ -1259,6 +1348,7 @@ export function registerRoutes(app, db) {
   app.post("/api/admin/voter-files", auth, requireRole("admin"), (req, res) => {
     const { clientId, source, recordCount, refreshedAt, storagePath } = req.body || {};
     if (!clientId || !source) return res.status(400).json({ error: "clientId and source required" });
+    if (!clientExists(clientId)) return res.status(400).json({ error: "Unknown client" });
     db.prepare("UPDATE voter_files SET active = 0 WHERE client_id = ?").run(clientId);
     db.prepare(
       `INSERT INTO voter_files (client_id, source, record_count, refreshed_at, storage_path, active)
@@ -1275,6 +1365,7 @@ export function registerRoutes(app, db) {
   app.post("/api/admin/voter-files/ingest", auth, requireRole("admin"), async (req, res) => {
     const { clientId, filePath, source, link } = req.body || {};
     if (!clientId || !filePath) return res.status(400).json({ error: "clientId and filePath required" });
+    if (!clientExists(clientId)) return res.status(400).json({ error: "Unknown client" });
     try {
       const manifest = await ingestVoterFile({ clientId, sourcePath: filePath, source, link: !!link });
       registerVoterFileInDb(db, { clientId, manifest });
@@ -1292,6 +1383,7 @@ export function registerRoutes(app, db) {
   app.post("/api/admin/voter-files/geocode", auth, requireRole("admin"), async (req, res) => {
     const { clientId } = req.body || {};
     if (!clientId) return res.status(400).json({ error: "clientId required" });
+    if (!clientExists(clientId)) return res.status(400).json({ error: "Unknown client" });
     try {
       const result = await geocodeClientVoters(clientId);
       db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
@@ -1320,12 +1412,20 @@ export function registerRoutes(app, db) {
   app.post("/api/admin/announcements", auth, requireRole("admin"), (req, res) => {
     const { pin, audience, from, title, body, tag, clientId } = req.body || {};
     if (!title || !body) return res.status(400).json({ error: "title and body required" });
+    // audience_json is JSON.parse'd and .includes()'d on every /api/home load —
+    // a non-array (or bad role) would throw and break the home page for all
+    // users. Coerce to a validated subset of the known roles.
+    const KNOWN_ROLES = ["staff", "admin", "client"];
+    let audienceList = Array.isArray(audience)
+      ? audience.filter((r) => KNOWN_ROLES.includes(r))
+      : KNOWN_ROLES;
+    if (!audienceList.length) audienceList = KNOWN_ROLES;
     db.prepare(
       `INSERT INTO announcements (pin, audience_json, from_name, title, body, tag, client_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(
       pin ? 1 : 0,
-      JSON.stringify(audience || ["staff", "admin", "client"]),
+      JSON.stringify(audienceList),
       from || req.user.name,
       title,
       body,

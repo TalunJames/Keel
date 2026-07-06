@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import express from "express";
 import multer from "multer";
+const { MulterError } = multer;
 import { isDesigner, isStaffOrAdmin } from "./design-status.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -119,9 +120,21 @@ export function registerPeriscopeRoutes(app, auth) {
     }
   });
 
-  api.post("/uploads", auth, requireDesignerCapable, (req, res, next) => {
+  api.post("/uploads", auth, requireDesignerCapable, (req, res) => {
+    // multer 2.x surfaces multipart parse failures through this callback rather
+    // than throwing; map them to 4xx so a malformed request never crashes the
+    // process or bubbles to the default error handler as a 500.
     upload.single("pdf")(req, res, (err) => {
-      if (err) return res.status(400).json({ error: err.message });
+      if (err) {
+        if (err instanceof MulterError) {
+          const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+          const msg = err.code === "LIMIT_FILE_SIZE"
+            ? `File exceeds ${MAX_UPLOAD_MB} MB limit`
+            : err.message;
+          return res.status(status).json({ error: msg });
+        }
+        return res.status(400).json({ error: err.message || "Upload failed" });
+      }
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
       res.json({
         url: `${BASE}/uploads/${encodeURIComponent(req.file.filename)}`,
