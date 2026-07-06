@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PageHead, Icon, Eyebrow, Tag } from "../../components/ui.jsx";
+import { PageHead, Icon } from "../../components/ui.jsx";
 import { proposalsApi } from "../../lib/api.js";
 import { useApi } from "../../lib/useApi.js";
 import { Loading } from "../../components/Loading.jsx";
-import { triageLabel, triageTone } from "../../lib/proposal-status.js";
-import { BlockNode } from "./blocks/BlockNode.jsx";
 import { BlockPreview } from "./blocks/BlockPreview.jsx";
 import { InsertMenu, htmlToText } from "./richtext.jsx";
 import { CommentsPanel } from "./CommentsPanel.jsx";
 import { HistoryPanel } from "./HistoryPanel.jsx";
 import { ExportPreview } from "./ExportPreview.jsx";
+import { ProposalOutline } from "./ProposalOutline.jsx";
+import { DocToolbar } from "./DocToolbar.jsx";
+import { DocCanvas } from "./DocCanvas.jsx";
 
 function groupBlocks(blockTypes) {
   const grouped = {};
@@ -79,6 +80,10 @@ export function ProposalEditor({ proposalId, client, user, onBack, onSaved }) {
   const [exporting, setExporting] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionBusy, setSuggestionBusy] = useState(false);
+  const [activeBlockId, setActiveBlockId] = useState(null);
+  const [outlineOpen, setOutlineOpen] = useState(true);
+  const [sideOpen, setSideOpen] = useState(false);
+  const [toolbarInsertOpen, setToolbarInsertOpen] = useState(false);
   const saveTimer = useRef(null);
   const pendingPatch = useRef(null);
   const suggestTimers = useRef({});
@@ -300,6 +305,7 @@ export function ProposalEditor({ proposalId, client, user, onBack, onSaved }) {
   };
 
   const jumpToBlock = (blockId) => {
+    setActiveBlockId(blockId);
     const el = document.querySelector(`[data-block-id="${blockId}"]`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -310,6 +316,7 @@ export function ProposalEditor({ proposalId, client, user, onBack, onSaved }) {
   const openCommentsFor = (blockId) => {
     setCommentTarget(blockId);
     setSideTab("comments");
+    setSideOpen(true);
   };
 
   const advanceWorkflow = async () => {
@@ -343,381 +350,225 @@ export function ProposalEditor({ proposalId, client, user, onBack, onSaved }) {
   ];
 
   return (
-    <div>
-      <PageHead
-        eyebrow={proposal?.clientName + " · Proposal"}
-        title="Build a proposal"
-        sub="Click anything to edit. Use Suggesting mode for review edits, comment on blocks, and export a paginated PDF."
-        actions={
-          <>
-            <button type="button" className="btn ghost" onClick={onBack}>
-              <Icon name="arrow-left" size={13} /> Back
-            </button>
-            <div className="mode-toggle" role="group" aria-label="Editing mode">
-              <button
-                type="button"
-                className={mode === "edit" ? "on" : ""}
-                title="Changes apply directly"
-                onClick={() => setMode("edit")}
-              >
-                <Icon name="pen" size={12} /> Editing
-              </button>
-              <button
-                type="button"
-                className={mode === "suggest" ? "on" : ""}
-                title="Changes become suggestions others accept or reject"
-                onClick={() => setMode("suggest")}
-              >
-                <Icon name="comment" size={12} /> Suggesting
-              </button>
-            </div>
-            <button type="button" className="btn secondary" onClick={() => setExporting(true)}>
-              <Icon name="download" size={13} /> Export PDF
-            </button>
-            {nextStep && (
-              <button type="button" className="btn primary" disabled={saving} onClick={advanceWorkflow}>
-                <Icon name="check" size={13} /> {nextStep.label}
-              </button>
-            )}
-          </>
-        }
+    <div className="gdocs-editor">
+      <DocToolbar
+        title={title}
+        onTitleChange={(v) => { setTitle(v); scheduleSave({ title: v }); }}
+        onBack={onBack}
+        mode={mode}
+        onModeChange={setMode}
+        saving={saving}
+        saveError={saveError}
+        lastSaved={lastSaved}
+        words={words}
+        outlineOpen={outlineOpen}
+        onToggleOutline={() => setOutlineOpen((o) => !o)}
+        sideOpen={sideOpen}
+        onToggleSide={(force) => setSideOpen(typeof force === "boolean" ? force : (o) => !o)}
+        onExport={() => setExporting(true)}
+        onInsert={() => setToolbarInsertOpen(true)}
+        templates={templates}
+        activeTemplateId={proposal?.templateId}
+        onApplyTemplate={applyTemplate}
+        triageState={proposal?.triageState}
+        nextStep={nextStep}
+        onAdvanceWorkflow={advanceWorkflow}
+        openComments={openComments}
+        onOpenComments={() => setSideTab("comments")}
       />
 
       {saveError && (
-        <div className="card card-pad" style={{ marginBottom: 12, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
-          {saveError}
-        </div>
+        <div className="gdocs-alert">{saveError}</div>
       )}
 
       {mode === "suggest" && (
-        <div className="suggest-banner">
+        <div className="gdocs-suggest-strip">
           <Icon name="comment" size={13} />
-          Suggesting mode — your edits, additions, and removals become pending suggestions for the team to accept or reject.
+          Suggesting — edits become suggestions for the team to accept or reject.
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr 300px", gap: 18, alignItems: "flex-start" }}>
-        <aside style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="card">
-            <div className="card-head"><h3>Templates</h3></div>
-            <div style={{ padding: 8 }}>
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => applyTemplate(t.id)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    background: proposal?.templateId === t.id ? "var(--fs-navy-50)" : "transparent",
-                    border: "1px solid " + (proposal?.templateId === t.id ? "var(--fs-navy)" : "transparent"),
-                    borderRadius: 4,
-                    cursor: "pointer",
-                    marginBottom: 4,
-                  }}
-                >
-                  <div className="row between">
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fs-navy)", marginBottom: 3 }}>{t.name}</div>
-                    {t.recommended && <Tag tone="gold">Recommended</Tag>}
-                  </div>
-                  <div className="mut" style={{ fontSize: 11, lineHeight: 1.4 }}>{t.desc}</div>
-                </button>
-              ))}
-            </div>
+      {toolbarInsertOpen && (
+        <div className="gdocs-insert-popup">
+          <div className="gdocs-insert-popup-head">
+            <span>Insert section</span>
+            <button type="button" className="gdocs-icon-btn sm" onClick={() => setToolbarInsertOpen(false)}>
+              <Icon name="x" size={14} />
+            </button>
           </div>
-
-          <div className="card">
-            <div className="card-head"><h3>Block library</h3></div>
-            <div className="mut" style={{ padding: "8px 14px 4px", fontSize: 11 }}>
-              Drag onto canvas, or click to append. Gold dots = recommended for this client type.
-            </div>
-            {Object.entries(grouped).map(([group, items]) => (
-              <div key={group} style={{ padding: "8px 8px 4px" }}>
-                <div className="lbl" style={{ margin: "6px 6px 6px" }}>{group}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  {items.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      draggable
-                      onDragStart={() => { setDraggingType(b.id); setDraggingFromIndex(null); }}
-                      onDragEnd={() => setDraggingType(null)}
-                      onClick={() => addBlock(b.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "7px 10px",
-                        background: b.recommended ? "var(--fs-gold-50)" : "var(--fs-bone-50)",
-                        border: "1px solid " + (b.recommended ? "var(--fs-gold-200)" : "var(--fs-border)"),
-                        borderRadius: 4,
-                        cursor: "grab",
-                        fontSize: 12,
-                        color: "var(--fs-ink)",
-                        textAlign: "left",
-                      }}
-                    >
-                      <Icon name="grip" size={11} color="var(--fs-fg-subtle)" />
-                      <Icon name={b.icon} size={13} color="var(--fs-navy)" />
-                      <span style={{ flex: 1 }}>{b.label}</span>
-                      {b.recommended && <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--fs-gold)" }} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        <div>
-          <div className="row between" style={{ marginBottom: 10 }}>
-            <div className="mut" style={{ fontSize: 12 }}>
-              <strong style={{ color: "var(--fs-navy)" }}>{blocks.length}</strong> blocks
-              {" · "}{words.toLocaleString()} words
-              {pendingCount > 0 && (
-                <span style={{ color: "var(--fs-gold-700)" }}> · {pendingCount} pending suggestion{pendingCount === 1 ? "" : "s"}</span>
-              )}
-              {openComments > 0 && (
-                <button type="button" className="linklike" onClick={() => setSideTab("comments")}>
-                  {" "}· {openComments} open comment{openComments === 1 ? "" : "s"}
-                </button>
-              )}
-              {saving && <span> · Saving…</span>}
-              {!saving && saveError && <span style={{ color: "var(--fs-danger)" }}> · Save failed</span>}
-              {!saving && !saveError && lastSaved && <span> · Saved</span>}
-            </div>
-          </div>
-
-          <div
-            style={{
-              background: "var(--fs-paper)",
-              border: "1px solid var(--fs-border)",
-              borderRadius: 4,
-              padding: "24px 40px 28px",
-              minHeight: 400,
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (draggingType) {
-                addBlock(draggingType);
-                setDraggingType(null);
-              }
-            }}
-          >
-            {!blocks.length ? (
-              <div style={{ padding: "40px 0 20px", textAlign: "center", color: "var(--fs-fg-muted)" }}>
-                <Icon name="layout" size={32} color="var(--fs-fg-subtle)" />
-                <div style={{ fontSize: 14, marginTop: 12, marginBottom: 16 }}>
-                  Pick a recommended template, drag blocks in, or add your first block below.
-                </div>
-                <InsertMenu grouped={grouped} onInsert={(type) => insertBlockAt(type, 0)} />
-              </div>
-            ) : (
-              <>
-                {blocks.map((b, i) => (
-                  <React.Fragment key={b.id}>
-                    <InsertMenu compact grouped={grouped} onInsert={(type) => insertBlockAt(type, i)} />
-                    {addSuggestions.filter((s) => (s.proposed?.index ?? 0) === i).map((s) => (
-                      <AddSuggestionCard key={s.id} s={s} blockTypes={blockTypes} client={editorClient}
-                        busy={suggestionBusy}
-                        onAccept={() => resolveSuggestion(s, "accept")}
-                        onReject={() => resolveSuggestion(s, "reject")} />
-                    ))}
-                    <BlockNode
-                      block={b}
-                      index={i}
-                      blockTypes={blockTypes}
-                      client={editorClient}
-                      allBlocks={blocks}
-                      mode={mode}
-                      currentUserId={user?.id}
-                      suggestions={suggestionsByBlock[b.id] || []}
-                      commentCount={commentCounts[b.id] || 0}
-                      suggestionBusy={suggestionBusy}
-                      onRemove={() => removeBlock(b)}
-                      onDuplicate={() => duplicateBlock(b, i)}
-                      onMoveUp={() => moveBlock(i, i - 1)}
-                      onMoveDown={() => moveBlock(i, i + 1)}
-                      onComment={() => openCommentsFor(b.id)}
-                      onAcceptSuggestion={(s) => resolveSuggestion(s, "accept")}
-                      onRejectSuggestion={(s) => resolveSuggestion(s, "reject")}
-                      draggingFromIndex={draggingFromIndex}
-                      onDragStart={() => { setDraggingFromIndex(i); setDraggingType(null); }}
-                      onDragEnd={() => setDraggingFromIndex(null)}
-                      onDropAt={() => {
-                        if (draggingFromIndex !== null) moveBlock(draggingFromIndex, i);
-                        else if (draggingType) insertBlockAt(draggingType, i);
-                        setDraggingFromIndex(null);
-                        setDraggingType(null);
-                      }}
-                      onContentChange={(content) => updateBlockContent(b, content)}
-                    />
-                  </React.Fragment>
-                ))}
-                {addSuggestions.filter((s) => (s.proposed?.index ?? blocks.length) >= blocks.length).map((s) => (
-                  <AddSuggestionCard key={s.id} s={s} blockTypes={blockTypes} client={editorClient}
-                    busy={suggestionBusy}
-                    onAccept={() => resolveSuggestion(s, "accept")}
-                    onReject={() => resolveSuggestion(s, "reject")} />
-                ))}
-                <InsertMenu grouped={grouped} onInsert={(type) => insertBlockAt(type, blocks.length)} />
-              </>
-            )}
-          </div>
+          <InsertMenu grouped={grouped} onInsert={(type) => { insertBlockAt(type, blocks.length); setToolbarInsertOpen(false); }} />
         </div>
+      )}
 
-        <aside className="card card-pad" style={{ position: "sticky", top: 0 }}>
-          <div className="side-tabs">
-            {sideTabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={sideTab === t.id ? "on" : ""}
-                onClick={() => setSideTab(t.id)}
-              >
-                {t.label}
-                {t.count > 0 && <span className="side-tab-count">{t.count}</span>}
-              </button>
-            ))}
-          </div>
-
-          {sideTab === "details" && (
-            <>
-              <Eyebrow>Proposal details</Eyebrow>
-              <div className="field" style={{ marginTop: 14 }}>
-                <label>Title</label>
-                <input
-                  className="input"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    scheduleSave({ title: e.target.value });
-                  }}
-                />
-              </div>
-              <div className="field">
-                <label>Client</label>
-                <input className="input" value={proposal?.clientName || "—"} readOnly />
-              </div>
-              <div className="field">
-                <label>Stage</label>
-                <Tag tone={triageTone(proposal?.triageState)}>{triageLabel(proposal?.triageState)}</Tag>
-              </div>
-              <div className="field">
-                <label>Owner</label>
-                <input className="input" value={proposal?.ownerName || user?.name || ""} readOnly />
-              </div>
-              <div className="field">
-                <label>Due date</label>
-                <input
-                  type="date"
-                  className="input"
-                  defaultValue={proposal?.dueAt?.slice(0, 10) || ""}
-                  onChange={(e) => scheduleSave({ dueAt: e.target.value })}
-                />
-              </div>
-              <div className="field">
-                <label>Value (USD)</label>
-                <input
-                  type="number"
-                  className="input"
-                  defaultValue={proposal?.amount ?? ""}
-                  placeholder="e.g. 302000"
-                  onChange={(e) => scheduleSave({ amount: e.target.value === "" ? null : Number(e.target.value) })}
-                />
-              </div>
-            </>
-          )}
-
-          {sideTab === "comments" && (
-            <CommentsPanel
-              proposalId={proposalId}
-              comments={comments}
-              user={user}
-              team={team}
+      <div className="gdocs-workspace">
+        {outlineOpen && (
+          <aside className="gdocs-outline-panel">
+            <div className="gdocs-panel-head">Document outline</div>
+            <ProposalOutline
               blocks={blocks}
               blockTypes={blockTypes}
-              targetBlockId={commentTarget}
-              onClearTarget={() => setCommentTarget(null)}
-              onChanged={reloadComments}
-              onJumpToBlock={jumpToBlock}
+              activeBlockId={activeBlockId}
+              onJump={jumpToBlock}
             />
-          )}
+          </aside>
+        )}
 
-          {sideTab === "history" && (
-            <HistoryPanel
-              proposalId={proposalId}
-              revisions={revisions}
-              onChanged={() => { reloadRevisions(); reload(); }}
-            />
-          )}
+        <DocCanvas
+          blocks={blocks}
+          blockTypes={blockTypes}
+          client={editorClient}
+          grouped={grouped}
+          mode={mode}
+          user={user}
+          suggestionsByBlock={suggestionsByBlock}
+          addSuggestions={addSuggestions}
+          commentCounts={commentCounts}
+          suggestionBusy={suggestionBusy}
+          activeBlockId={activeBlockId}
+          onInsertAt={insertBlockAt}
+          onRemove={removeBlock}
+          onDuplicate={duplicateBlock}
+          onMoveUp={(i) => moveBlock(i, i - 1)}
+          onMoveDown={(i) => moveBlock(i, i + 1)}
+          onComment={openCommentsFor}
+          onAcceptSuggestion={resolveSuggestion}
+          onRejectSuggestion={(s) => resolveSuggestion(s, "reject")}
+          onContentChange={updateBlockContent}
+          onMoveBlock={moveBlock}
+          onInsertBlockType={insertBlockAt}
+          draggingFromIndex={draggingFromIndex}
+          setDraggingFromIndex={setDraggingFromIndex}
+          draggingType={draggingType}
+          setDraggingType={setDraggingType}
+          AddSuggestionCard={AddSuggestionCard}
+        />
 
-          {sideTab === "cleatus" && (
-            <>
-              <Eyebrow>Cleatus / RFP</Eyebrow>
-              {cleatus ? (
-                <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.55 }}>
-                  {cleatus.rfpUrl && (
-                    <div className="field">
-                      <label>RFP link</label>
-                      <a href={cleatus.rfpUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--fs-navy)" }}>
-                        Open in Cleatus
-                      </a>
-                    </div>
-                  )}
-                  {cleatus.rfpDueDate && (
-                    <div className="field">
-                      <label>Due date</label>
-                      <div>{cleatus.rfpDueDate}</div>
-                    </div>
-                  )}
-                  {cleatus.rfpSummary && (
-                    <div className="field">
-                      <label>RFP summary</label>
-                      <div className="mut" style={{ whiteSpace: "pre-wrap" }}>{cleatus.rfpSummary}</div>
-                    </div>
-                  )}
-                  {cleatus.staffNotes && (
-                    <div className="field">
-                      <label>Staff notes (from Cleatus)</label>
-                      <div className="mut" style={{ whiteSpace: "pre-wrap" }}>{cleatus.staffNotes}</div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="mut" style={{ fontSize: 13, marginTop: 12 }}>No Cleatus data on this proposal.</p>
-              )}
-            </>
-          )}
-
-          {sideTab === "notes" && (
-            <>
-              <Eyebrow>Staff notes</Eyebrow>
-              <div style={{ marginTop: 12, maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-                {notes.map((n) => (
-                  <div key={n.id} style={{ fontSize: 13, padding: "8px 10px", background: "var(--fs-bone-50)", borderRadius: 4 }}>
-                    <div className="mut" style={{ fontSize: 11, marginBottom: 4 }}>{n.authorName} · {n.createdAt?.slice(0, 10)}</div>
-                    <div style={{ whiteSpace: "pre-wrap" }}>{n.text}</div>
-                  </div>
+        {sideOpen && (
+          <aside className="gdocs-side-panel">
+            <div className="gdocs-panel-head row between">
+              <div className="side-tabs gdocs-side-tabs">
+                {sideTabs.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={sideTab === t.id ? "on" : ""}
+                    onClick={() => setSideTab(t.id)}
+                  >
+                    {t.label}
+                    {t.count > 0 && <span className="side-tab-count">{t.count}</span>}
+                  </button>
                 ))}
-                {!notes.length && <p className="mut" style={{ fontSize: 12 }}>No notes yet.</p>}
               </div>
-              <div className="field" style={{ marginTop: 12 }}>
-                <textarea
-                  className="input"
-                  rows={3}
-                  placeholder="Add an internal note…"
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
+              <button type="button" className="gdocs-icon-btn sm" onClick={() => setSideOpen(false)} title="Close panel">
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+
+            <div className="gdocs-side-body">
+              {sideTab === "details" && (
+                <>
+                  <div className="field">
+                    <label>Client</label>
+                    <input className="input" value={proposal?.clientName || "—"} readOnly />
+                  </div>
+                  <div className="field">
+                    <label>Owner</label>
+                    <input className="input" value={proposal?.ownerName || user?.name || ""} readOnly />
+                  </div>
+                  <div className="field">
+                    <label>Due date</label>
+                    <input
+                      type="date"
+                      className="input"
+                      defaultValue={proposal?.dueAt?.slice(0, 10) || ""}
+                      onChange={(e) => scheduleSave({ dueAt: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Value (USD)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      defaultValue={proposal?.amount ?? ""}
+                      placeholder="e.g. 60500"
+                      onChange={(e) => scheduleSave({ amount: e.target.value === "" ? null : Number(e.target.value) })}
+                    />
+                  </div>
+                  {pendingCount > 0 && (
+                    <p className="mut" style={{ fontSize: 12 }}>{pendingCount} pending suggestion{pendingCount === 1 ? "" : "s"}</p>
+                  )}
+                </>
+              )}
+
+              {sideTab === "comments" && (
+                <CommentsPanel
+                  proposalId={proposalId}
+                  comments={comments}
+                  user={user}
+                  team={team}
+                  blocks={blocks}
+                  blockTypes={blockTypes}
+                  targetBlockId={commentTarget}
+                  onClearTarget={() => setCommentTarget(null)}
+                  onChanged={reloadComments}
+                  onJumpToBlock={jumpToBlock}
                 />
-                <button type="button" className="btn secondary sm" style={{ marginTop: 8 }} onClick={handleAddNote}>
-                  Add note
-                </button>
-              </div>
-            </>
-          )}
-        </aside>
+              )}
+
+              {sideTab === "history" && (
+                <HistoryPanel
+                  proposalId={proposalId}
+                  revisions={revisions}
+                  onChanged={() => { reloadRevisions(); reload(); }}
+                />
+              )}
+
+              {sideTab === "cleatus" && (
+                <>
+                  {cleatus ? (
+                    <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                      {cleatus.rfpUrl && (
+                        <div className="field">
+                          <label>RFP link</label>
+                          <a href={cleatus.rfpUrl} target="_blank" rel="noreferrer">Open in Cleatus</a>
+                        </div>
+                      )}
+                      {cleatus.rfpDueDate && (
+                        <div className="field"><label>Due date</label><div>{cleatus.rfpDueDate}</div></div>
+                      )}
+                      {cleatus.rfpSummary && (
+                        <div className="field"><label>Summary</label><div className="mut" style={{ whiteSpace: "pre-wrap" }}>{cleatus.rfpSummary}</div></div>
+                      )}
+                      {cleatus.staffNotes && (
+                        <div className="field"><label>Staff notes</label><div className="mut" style={{ whiteSpace: "pre-wrap" }}>{cleatus.staffNotes}</div></div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mut" style={{ fontSize: 13 }}>No Cleatus data on this proposal.</p>
+                  )}
+                </>
+              )}
+
+              {sideTab === "notes" && (
+                <>
+                  <div className="gdocs-notes-list">
+                    {notes.map((n) => (
+                      <div key={n.id} className="gdocs-note">
+                        <div className="mut" style={{ fontSize: 11, marginBottom: 4 }}>{n.authorName} · {n.createdAt?.slice(0, 10)}</div>
+                        <div style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{n.text}</div>
+                      </div>
+                    ))}
+                    {!notes.length && <p className="mut" style={{ fontSize: 12 }}>No notes yet.</p>}
+                  </div>
+                  <div className="field" style={{ marginTop: 12 }}>
+                    <textarea className="input" rows={3} placeholder="Add an internal note…" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+                    <button type="button" className="btn secondary sm" style={{ marginTop: 8 }} onClick={handleAddNote}>Add note</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {exporting && (

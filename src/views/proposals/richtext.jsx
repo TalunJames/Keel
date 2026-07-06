@@ -128,7 +128,7 @@ export function RichText({ value, onChange, readOnly, style, placeholder = "Star
 }
 
 /** Inline "+" affordance between blocks that opens a searchable block menu. */
-export function InsertMenu({ grouped, onInsert, compact }) {
+export function InsertMenu({ grouped, onInsert, compact, className = "" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const inputRef = useRef(null);
@@ -161,7 +161,7 @@ export function InsertMenu({ grouped, onInsert, compact }) {
   };
 
   return (
-    <div ref={rootRef} className={"insert-zone" + (compact ? " compact" : "") + (open ? " open" : "")}>
+    <div ref={rootRef} className={"insert-zone" + (compact ? " compact" : "") + (open ? " open" : "") + (className ? ` ${className}` : "")}>
       <div className="insert-line" />
       <button
         type="button"
