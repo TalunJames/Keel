@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  html, body { margin: 0; padding: 0; }
+  a { color: #1A3A5C; }
+  a:hover { color: #0E2238; }
+  .keel-cta:hover { background: #0E2238 !important; }
+  .keel-alt:hover { text-decoration-thickness: 2px; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; background: #EDECE3; padding: 40px 16px 64px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Handoff meta band (NOT part of the email) -->
+  <div style="max-width: 600px; margin: 0 auto 20px; padding: 14px 18px; background: #ffffff; border: 1px solid rgba(26,58,92,0.16); border-radius: 4px;">
+    <div style="font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8A97A3; font-weight: 700; margin-bottom: 8px;">Email Setup · for reference, not sent</div>
+    <div style="display: flex; gap: 10px; font-size: 12px; color: #3A4A5A; margin-bottom: 5px;">
+      <span style="min-width: 68px; color: #8A97A3; letter-spacing: 0.04em;">Subject</span>
+      <span style="color: #0F0F0F;">You're invited to Keel — the Fog Signal Strategies workspace</span>
+    </div>
+    <div style="display: flex; gap: 10px; font-size: 12px; color: #3A4A5A; margin-bottom: 5px;">
+      <span style="min-width: 68px; color: #8A97A3; letter-spacing: 0.04em;">Preheader</span>
+      <span style="color: #0F0F0F;">{{ inviterName }} invited you to join Keel. Set your password to get started.</span>
+    </div>
+    <div style="display: flex; gap: 10px; font-size: 12px; color: #3A4A5A;">
+      <span style="min-width: 68px; color: #8A97A3; letter-spacing: 0.04em;">From</span>
+      <span style="color: #0F0F0F;">Fog Signal Strategies · <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3d535249545b545e5c495452534e7d5b525a4e545a535c514e494f5c49585a54584e135e5250">[email&#160;protected]</a></span>
+    </div>
+  </div>
+
+  <!-- ===================== EMAIL ===================== -->
+  <table role="presentation" style="width: 600px; max-width: 600px; margin: 0 auto; border-collapse: collapse; background: #ffffff; box-shadow: 0 12px 32px rgba(14,34,56,0.10);">
+    <tbody>
+
+      <!-- Header band: navy with reversed white logo -->
+      <tr>
+        <td style="background: #1A3A5C; padding: 34px 48px 30px;">
+          <img src="assets/logo-horizontal-white.png" alt="Fog Signal Strategies" width="204" style="display: block; width: 204px; height: auto; border: 0;" />
+        </td>
+      </tr>
+      <!-- Gold beacon rule -->
+      <tr><td style="height: 3px; background: #EFC53F; font-size: 0; line-height: 0;">&nbsp;</td></tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="padding: 44px 48px 8px;">
+          <div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #B08D1F; font-weight: 700; margin-bottom: 16px;">Workspace Invitation</div>
+          <h1 style="margin: 0 0 22px; font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 32px; line-height: 1.15; color: #1A3A5C; letter-spacing: -0.01em;">You've been invited to Keel</h1>
+          <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.6; color: #2A3742;">Hi {{ recipientName }},</p>
+          <p style="margin: 0 0 8px; font-size: 16px; line-height: 1.6; color: #2A3742;">{{ inviterName }} has invited you to join Keel — the internal workspace for Fog Signal Strategies, and a steady signal through noisy weeks.</p>
+        </td>
+      </tr>
+
+      <!-- Section: What is Keel -->
+      <tr>
+        <td style="padding: 24px 48px 0;">
+          <div style="border-top: 1px solid rgba(26,58,92,0.14); padding-top: 24px;">
+            <div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #1A3A5C; font-weight: 700; margin-bottom: 10px;">What Is Keel</div>
+            <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #3A4653;">Keel is the internal portal for the firm. It brings client workstreams, design requests, polling, calendar, and team resources into one place — so the work stays visible and the noise stays out.</p>
+          </div>
+        </td>
+      </tr>
+
+      <!-- Section: Your role -->
+      <tr>
+        <td style="padding: 24px 48px 0;">
+          <div style="border-top: 1px solid rgba(26,58,92,0.14); padding-top: 24px;">
+            <div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #1A3A5C; font-weight: 700; margin-bottom: 10px;">Your Role · {{ role }}</div>
+            <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.65; color: #3A4653;">{{ roleLine1 }}</p>
+            <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #3A4653;">{{ roleLine2 }}</p>
+          </div>
+        </td>
+      </tr>
+
+      <!-- CTA -->
+      <tr>
+        <td style="padding: 34px 48px 6px;">
+          <p style="margin: 0 0 18px; font-size: 15px; line-height: 1.6; color: #3A4653;">Create your account and set a password using the link below.</p>
+          <table role="presentation" style="border-collapse: collapse;">
+            <tbody><tr>
+              <td style="background: #1A3A5C; border-radius: 4px;">
+                <a class="keel-cta" href="{{ primaryUrl }}" style="display: inline-block; padding: 15px 34px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.01em; color: #ffffff; text-decoration: none; border-radius: 4px;">Create Your Account →</a>
+              </td>
+            </tr></tbody>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Alternate link + expiry -->
+      <tr>
+        <td style="padding: 26px 48px 0;">
+          <p style="margin: 0 0 6px; font-size: 13px; line-height: 1.6; color: #6A7580;">Keel is also available at:</p>
+          <p style="margin: 0 0 20px; font-size: 13px; line-height: 1.5; word-break: break-all;"><a class="keel-alt" href="{{ secondaryUrl }}" style="color: #1A3A5C; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px;">{{ secondaryUrl }}</a></p>
+          <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #6A7580;">This link expires on <span style="color: #2A3742; font-weight: 700;">{{ expiryDate }}</span>.</p>
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="padding: 36px 48px 40px;">
+          <div style="border-top: 1px solid rgba(26,58,92,0.14); padding-top: 22px;">
+            <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.6; color: #8A97A3;">If you weren't expecting this invitation, you can ignore this email — no account will be created.</p>
+            <p style="margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 14px; color: #1A3A5C;">— Fog Signal Strategies</p>
+            <p style="margin: 12px 0 0; font-size: 11px; line-height: 1.5; color: #A6B0BA;">Fog Signal Strategies · Public Affairs &amp; Strategic Communications</p>
+          </div>
+        </td>
+      </tr>
+
+    </tbody>
+  </table>
+  <!-- =================== END EMAIL =================== -->
+
+</div>
+</x-dc>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="text/x-dc" data-dc-script data-props="{
+  &quot;recipientName&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Luke O'Connell&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Recipient&quot; },
+  &quot;inviterName&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Carter James&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Recipient&quot; },
+  &quot;role&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;Staff&quot;, &quot;options&quot;: [&quot;Staff&quot;, &quot;Admin&quot;, &quot;Client&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Recipient&quot; },
+  &quot;primaryUrl&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;https://keel.fogsignalstrategies.com/?invite=TOKEN&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Links&quot; },
+  &quot;secondaryUrl&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;https://keel.fogsignal.com/?invite=TOKEN&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Links&quot; },
+  &quot;expiryDate&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;July 13, 2026&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Links&quot; }
+}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const role = p.role ?? "Staff";
+    const copy = {
+      Staff: [
+        "Work across client accounts on design requests, polling, voter data, calendar, and team resources.",
+        "Collaborate with strategists, designers, and data leads inside one workspace."
+      ],
+      Admin: [
+        "Manage members, permissions, and account settings across every client workspace.",
+        "Keep billing, integrations, and shared resources in order for the whole firm."
+      ],
+      Client: [
+        "Follow your account's workstreams, review deliverables, and track progress in one place.",
+        "Message your Fog Signal team and approve work without the endless email thread."
+      ]
+    };
+    const lines = copy[role] || copy.Staff;
+    return {
+      recipientName: p.recipientName ?? "Luke O'Connell",
+      inviterName: p.inviterName ?? "Carter James",
+      role: role,
+      primaryUrl: p.primaryUrl ?? "https://keel.fogsignalstrategies.com/?invite=TOKEN",
+      secondaryUrl: p.secondaryUrl ?? "https://keel.fogsignal.com/?invite=TOKEN",
+      expiryDate: p.expiryDate ?? "July 13, 2026",
+      roleLine1: lines[0],
+      roleLine2: lines[1]
+    };
+  }
+}
+</script>
+</body>
+</html>

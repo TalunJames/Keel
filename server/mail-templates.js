@@ -1,3 +1,74 @@
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const INVITE_HTML_TEMPLATE = readFileSync(
+  join(__dirname, "..", "keel-invite.email.html"),
+  "utf8",
+);
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/'/g, "&#39;");
+}
+
+function formatInviteExpiry(expiresAt) {
+  if (!expiresAt) return "";
+  return new Date(expiresAt).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function alternateLinkBlock(secondaryUrl) {
+  if (!secondaryUrl) return "";
+  const href = escapeAttr(secondaryUrl);
+  const label = escapeHtml(secondaryUrl);
+  return [
+    `<p style="margin:0 0 6px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:13px; line-height:1.6; color:#6A7580;">Keel is also available at:</p>`,
+    `<p style="margin:0 0 20px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:13px; line-height:1.5; word-break:break-all;"><a class="keel-alt" href="${href}" style="color:#1A3A5C; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:2px;">${label}</a></p>`,
+  ].join("");
+}
+
+function renderInviteHtml({
+  name,
+  roleLabel,
+  roleDescription,
+  invitedBy,
+  inviteUrl,
+  alternateInviteUrls,
+  expiresAt,
+  logoUrl,
+}) {
+  const secondaryUrl = alternateInviteUrls?.[0] || "";
+  const tokens = {
+    recipient_name: escapeHtml(name || "there"),
+    inviter_name: escapeHtml(invitedBy || "Your team"),
+    role: escapeHtml(roleLabel || ""),
+    role_line_1: escapeHtml(roleDescription?.[0] || ""),
+    role_line_2: escapeHtml(roleDescription?.[1] || ""),
+    primary_url: escapeAttr(inviteUrl || ""),
+    expiry_date: escapeHtml(formatInviteExpiry(expiresAt)),
+    logo_url: escapeAttr(logoUrl || ""),
+    alternate_link_block: alternateLinkBlock(secondaryUrl),
+  };
+
+  let html = INVITE_HTML_TEMPLATE;
+  for (const [key, value] of Object.entries(tokens)) {
+    html = html.replaceAll(`{{${key}}}`, value);
+  }
+  return html;
+}
+
 export function assignedEmail({ title, clientName, due, appUrl }) {
   return {
     subject: `Assigned: ${title}`,
@@ -90,22 +161,22 @@ export function inviteEmail({
   inviteUrl,
   alternateInviteUrls,
   expiresAt,
+  logoUrl,
 }) {
-  const expiry = expiresAt
-    ? new Date(expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-    : null;
+  const expiry = formatInviteExpiry(expiresAt);
+  const intro = invitedBy
+    ? `${invitedBy} has invited you to join Keel — the internal workspace for Fog Signal Strategies, and a steady signal through noisy weeks.`
+    : `You've been invited to join Keel — the internal workspace for Fog Signal Strategies, and a steady signal through noisy weeks.`;
 
   const lines = [
     `Hi ${name || "there"},`,
     ``,
-    invitedBy
-      ? `${invitedBy} invited you to join Keel — the workspace for Fog Signal Strategies.`
-      : `You've been invited to join Keel — the workspace for Fog Signal Strategies.`,
+    intro,
     ``,
     `WHAT IS KEEL`,
     ...(keelOverview || []).map((line) => `• ${line}`),
     ``,
-    `YOUR ROLE: ${roleLabel}`,
+    `YOUR ROLE · ${roleLabel}`,
     ...(roleDescription || []).map((line) => `• ${line}`),
   ];
 
@@ -131,13 +202,23 @@ export function inviteEmail({
     ``,
     expiry ? `This link expires on ${expiry}.` : "",
     ``,
-    `If you weren't expecting this invitation, you can ignore this email.`,
+    `If you weren't expecting this invitation, you can ignore this email — no account will be created.`,
     ``,
     `— Fog Signal Strategies`,
   );
 
   return {
-    subject: `You're invited to Keel (${roleLabel})`,
+    subject: "You're invited to Keel — the Fog Signal Strategies workspace",
     text: lines.filter((line) => line !== "").join("\n"),
+    html: renderInviteHtml({
+      name,
+      roleLabel,
+      roleDescription,
+      invitedBy,
+      inviteUrl,
+      alternateInviteUrls,
+      expiresAt,
+      logoUrl,
+    }),
   };
 }
