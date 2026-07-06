@@ -97,17 +97,33 @@ function inviteAlternateUrls(token) {
   return appUrls().slice(1).map((base) => inviteLink(base, token));
 }
 
+/** SMTP envelope MAIL FROM (Google relay rejects empty/mismatched envelope). */
+function smtpEnvelopeFrom(fromHeader) {
+  const explicit = (process.env.SMTP_ENVELOPE_FROM || "").trim();
+  if (explicit) return explicit;
+  const raw = String(fromHeader || "").trim();
+  const bracketed = raw.match(/<([^>]+)>/);
+  return (bracketed ? bracketed[1] : raw).trim();
+}
+
 export async function sendMail({ to, subject, text, eventType = "general" }) {
   const from = process.env.SMTP_FROM || "keel@localhost";
+  const envelopeFrom = smtpEnvelopeFrom(from);
   let error = null;
   let sent = false;
 
   try {
     const tx = await getTransporter();
     if (tx) {
-      await tx.sendMail({ from, to, subject, text });
+      await tx.sendMail({
+        from,
+        to,
+        subject,
+        text,
+        envelope: { from: envelopeFrom, to },
+      });
       sent = true;
-      console.log(`[mail] ${eventType} → ${to} (from ${from})`);
+      console.log(`[mail] ${eventType} → ${to} (from ${from}, envelope ${envelopeFrom})`);
     } else {
       error = "SMTP not configured (MAIL_ENABLED=1 but transporter unavailable)";
       console.error(`[mail] ${error}`);
