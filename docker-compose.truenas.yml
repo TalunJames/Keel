@@ -16,7 +16,7 @@ services:
     pull_policy: always
     restart: unless-stopped
     user: "568:568"
-  hostname: keel.fogsignalstrategies.com
+    hostname: keel.fogsignalstrategies.com
     ports:
       - "33001:3001"
     environment:
