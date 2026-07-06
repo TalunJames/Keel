@@ -74,6 +74,20 @@ export const setupApi = {
   complete: (body) => api("/setup/complete", { method: "POST", body: JSON.stringify(body) }),
 };
 
+export const inviteApi = {
+  get: (token) => api("/invite/" + encodeURIComponent(token)),
+  accept: (token, body) =>
+    api("/invite/" + encodeURIComponent(token) + "/accept", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+export const usersAdminApi = {
+  invite: (body) => api("/admin/users/invite", { method: "POST", body: JSON.stringify(body) }),
+  resendInvite: (userId) => api("/admin/users/" + encodeURIComponent(userId) + "/resend-invite", { method: "POST" }),
+};
+
 export const accountApi = {
   me: () => api("/account/me"),
   update: (patch) => api("/account/me", { method: "PATCH", body: JSON.stringify(patch) }),

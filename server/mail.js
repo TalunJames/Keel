@@ -5,7 +5,9 @@ import {
   commentEmail,
   proofReadyEmail,
   dueReminderEmail,
+  inviteEmail,
 } from "./mail-templates.js";
+import { roleLabel, roleDescription, keelOverview } from "./invites.js";
 
 const TEMPLATES = {
   assigned: assignedEmail,
@@ -18,20 +20,31 @@ const TEMPLATES = {
 
 let transporter = null;
 
+function isGoogleSmtpRelay(host) {
+  return /smtp-relay\.gmail\.com$/i.test(String(host || "").trim());
+}
+
 async function getTransporter() {
   if (transporter) return transporter;
   if (process.env.MAIL_ENABLED !== "1") return null;
   const host = process.env.SMTP_HOST;
   if (!host) return null;
+
+  const relay = isGoogleSmtpRelay(host);
+  const useAuth = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (relay && !useAuth) {
+    console.log("[mail] Google Workspace SMTP relay (no SMTP auth — IP allowlist must match server egress)");
+  }
+
   const nodemailer = await import("nodemailer");
-  // Bound how long a hung/slow SMTP server can tie up a send. Without these,
-  // a stalled connection blocks indefinitely.
   const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS) || 10000;
   transporter = nodemailer.createTransport({
     host,
     port: Number(process.env.SMTP_PORT) || 587,
     secure: process.env.SMTP_SECURE === "1",
-    auth: process.env.SMTP_USER
+    // Google SMTP relay requires TLS on port 587.
+    requireTLS: relay || process.env.SMTP_REQUIRE_TLS === "1",
+    auth: useAuth
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || "" }
       : undefined,
     connectionTimeout: timeoutMs,
@@ -41,12 +54,75 @@ async function getTransporter() {
   return transporter;
 }
 
+// APP_URL may be comma-separated; first entry is the canonical link in outbound mail.
+function appUrls() {
+  const raw = process.env.APP_URL || "http://localhost:5173";
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 function appBaseUrl() {
-  return process.env.APP_URL || "http://localhost:5173";
+  return appUrls()[0] || "http://localhost:5173";
+}
+
+function appPath(base, path) {
+  return `${base.replace(/\/$/, "")}${path}`;
 }
 
 export function designAppUrl(requestId) {
-  return `${appBaseUrl()}/#design/${requestId}`;
+  return appPath(appBaseUrl(), `/#design/${requestId}`);
+}
+
+function inviteLink(base, token) {
+  return appPath(base, `/?invite=${encodeURIComponent(token)}`);
+}
+
+export function inviteAppUrl(token) {
+  return inviteLink(appBaseUrl(), token);
+}
+
+function inviteAlternateUrls(token) {
+  return appUrls().slice(1).map((base) => inviteLink(base, token));
+}
+
+export async function sendMail({ to, subject, text, eventType = "general" }) {
+  const from = process.env.SMTP_FROM || "keel@localhost";
+  let error = null;
+  let sent = false;
+
+  try {
+    const tx = await getTransporter();
+    if (tx) {
+      await tx.sendMail({ from, to, subject, text });
+      sent = true;
+      console.log(`[mail] ${eventType} → ${to}`);
+    } else {
+      console.log(`[mail:dev] ${eventType} → ${to}\n${text}`);
+    }
+  } catch (e) {
+    error = e.message;
+    console.error(`[mail] failed ${eventType} → ${to}:`, e.message);
+  }
+
+  return { sent: sent || process.env.MAIL_ENABLED !== "1", error };
+}
+
+export async function sendInviteMail({ to, data }) {
+  const { subject, text } = inviteEmail(data);
+  return sendMail({ to, subject, text, eventType: "user_invite" });
+}
+
+export function buildInviteMailData({ user, token, expiresAt, invitedBy }) {
+  return {
+    name: user.name,
+    roleLabel: roleLabel(user.role),
+    roleDescription: roleDescription(user.role, { clientName: user.clientName }),
+    keelOverview: keelOverview(),
+    clientName: user.clientName || null,
+    invitedBy,
+    inviteUrl: inviteAppUrl(token),
+    alternateInviteUrls: inviteAlternateUrls(token),
+    expiresAt,
+  };
 }
 
 export async function sendDesignMail(db, { requestId, eventType, to, data }) {

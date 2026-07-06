@@ -79,3 +79,65 @@ export function dueReminderEmail({ title, due, appUrl }) {
     ].join("\n"),
   };
 }
+
+export function inviteEmail({
+  name,
+  roleLabel,
+  roleDescription,
+  keelOverview,
+  clientName,
+  invitedBy,
+  inviteUrl,
+  alternateInviteUrls,
+  expiresAt,
+}) {
+  const expiry = expiresAt
+    ? new Date(expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : null;
+
+  const lines = [
+    `Hi ${name || "there"},`,
+    ``,
+    invitedBy
+      ? `${invitedBy} invited you to join Keel — the workspace for Fog Signal Strategies.`
+      : `You've been invited to join Keel — the workspace for Fog Signal Strategies.`,
+    ``,
+    `WHAT IS KEEL`,
+    ...(keelOverview || []).map((line) => `• ${line}`),
+    ``,
+    `YOUR ROLE: ${roleLabel}`,
+    ...(roleDescription || []).map((line) => `• ${line}`),
+  ];
+
+  if (clientName) {
+    lines.push(``, `Client account: ${clientName}`);
+  }
+
+  lines.push(
+    ``,
+    `Create your account and set a password using the link below:`,
+    inviteUrl || "",
+  );
+
+  if (alternateInviteUrls?.length) {
+    lines.push(
+      ``,
+      `Keel is also available at:`,
+      ...alternateInviteUrls,
+    );
+  }
+
+  lines.push(
+    ``,
+    expiry ? `This link expires on ${expiry}.` : "",
+    ``,
+    `If you weren't expecting this invitation, you can ignore this email.`,
+    ``,
+    `— Fog Signal Strategies`,
+  );
+
+  return {
+    subject: `You're invited to Keel (${roleLabel})`,
+    text: lines.filter((line) => line !== "").join("\n"),
+  };
+}

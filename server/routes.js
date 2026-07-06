@@ -11,6 +11,16 @@ import {
   clearSetupToken,
 } from "./bootstrap.js";
 import {
+  createUserInvite,
+  findInviteByToken,
+  invitePublicView,
+  acceptInvite,
+  isInvitePending,
+  getInviteStatus,
+  resendUserInvite,
+} from "./invites.js";
+import { sendInviteMail, buildInviteMailData } from "./mail.js";
+import {
   getElectionLiveStatus,
   listElectionContests,
   getElectionLiveResults,
@@ -174,6 +184,54 @@ export function registerRoutes(app, db) {
     res.json({ user, token });
   });
 
+  app.get("/api/invite/:token", authLimiter, async (req, res) => {
+    const row = await findInviteByToken(db, req.params.token);
+    if (!row) {
+      return res.status(404).json({ error: "Invalid or expired invitation link" });
+    }
+    const view = invitePublicView(row);
+    if (view.expired) {
+      return res.status(410).json({ error: "This invitation has expired. Ask your admin to send a new one." });
+    }
+    res.json({ invite: view });
+  });
+
+  app.post("/api/invite/:token/accept", authLimiter, async (req, res) => {
+    const { password, name } = req.body || {};
+    let row;
+    try {
+      row = await acceptInvite(db, req.params.token, { password, name });
+    } catch (e) {
+      return res.status(e.status || 400).json({ error: e.message });
+    }
+
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      row.email,
+      "Accepted invitation and created account",
+      "Users"
+    );
+
+    const user = {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      team: row.team || "",
+      role: row.role,
+      clientId: row.clientId ?? null,
+      systemAdmin: !!row.systemAdmin,
+      title: row.title || "",
+      location: row.location || "",
+      about: row.about || "",
+      phone: row.phone || "",
+      photo: row.photo ?? null,
+      isDesigner: !!row.isDesigner,
+      preferences: {},
+    };
+    const token = signToken(user, { remember: true });
+    setAuthCookie(res, token, { remember: true, req });
+    res.json({ user, token });
+  });
+
   app.post("/api/auth/login", authLimiter, async (req, res) => {
     const setup = getSetupStatus(db);
     if (setup.needsSetup) {
@@ -201,6 +259,16 @@ export function registerRoutes(app, db) {
       return res.status(403).json({
         error: "Complete first-time setup to create your password",
         needsSetup: true,
+      });
+    }
+    if (isInvitePending(user.password_hash)) {
+      const invite = getInviteStatus(db, user.id, user.password_hash);
+      return res.status(403).json({
+        error: invite.expired
+          ? "Your invitation has expired. Ask your admin to send a new one."
+          : "Your account isn't set up yet. Check your email for the invitation link.",
+        needsInvite: true,
+        expired: !!invite.expired,
       });
     }
     if (!(await comparePassword(password, user.password_hash))) {
@@ -1128,12 +1196,97 @@ export function registerRoutes(app, db) {
       `SELECT u.id, u.email, u.name, u.team, u.role, u.client_id AS clientId,
               u.system_admin AS systemAdmin, u.is_designer AS isDesigner,
               u.title, u.location, u.created_at AS createdAt,
-              c.name AS clientName
+              u.password_hash AS passwordHash,
+              c.name AS clientName,
+              (SELECT i.expires_at FROM user_invitations i
+               WHERE i.user_id = u.id AND i.accepted_at IS NULL
+               ORDER BY i.created_at DESC LIMIT 1) AS inviteExpiresAt
        FROM users u
        LEFT JOIN clients c ON c.id = u.client_id
        ORDER BY u.name COLLATE NOCASE`
-    ).all().map((u) => ({ ...u, systemAdmin: !!u.systemAdmin, isDesigner: !!u.isDesigner }));
+    ).all().map((u) => {
+      const pendingInvite = isInvitePending(u.passwordHash);
+      const inviteExpired = pendingInvite && u.inviteExpiresAt
+        ? new Date(u.inviteExpiresAt).getTime() < Date.now()
+        : false;
+      const { passwordHash, inviteExpiresAt, ...rest } = u;
+      return {
+        ...rest,
+        systemAdmin: !!rest.systemAdmin,
+        isDesigner: !!rest.isDesigner,
+        pendingInvite,
+        inviteExpired,
+      };
+    });
     res.json({ users });
+  });
+
+  app.post("/api/admin/users/invite", auth, requireRole("admin"), async (req, res) => {
+    const { email, name, team, role, clientId, systemAdmin, isDesigner } = req.body || {};
+    if (systemAdmin && !req.user.systemAdmin) {
+      return res.status(403).json({ error: "Only a system admin can grant system_admin" });
+    }
+
+    let result;
+    try {
+      result = await createUserInvite(db, {
+        email,
+        name,
+        team,
+        role,
+        clientId,
+        systemAdmin,
+        isDesigner,
+        invitedBy: req.user.name || req.user.email,
+      });
+    } catch (e) {
+      return res.status(e.status || 500).json({ error: e.message });
+    }
+
+    const mailData = buildInviteMailData({
+      user: result.user,
+      token: result.token,
+      expiresAt: result.expiresAt,
+      invitedBy: req.user.name || req.user.email,
+    });
+    const mail = await sendInviteMail({ to: result.user.email, data: mailData });
+
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Invited user ${result.user.email} (${role}${systemAdmin ? ", system admin" : ""})`,
+      "Users"
+    );
+
+    res.status(201).json({
+      id: result.user.id,
+      emailSent: mail.sent,
+      mailError: mail.error || null,
+    });
+  });
+
+  app.post("/api/admin/users/:id/resend-invite", auth, requireRole("admin"), async (req, res) => {
+    let result;
+    try {
+      result = await resendUserInvite(db, req.params.id, req.user.name || req.user.email);
+    } catch (e) {
+      return res.status(e.status || 500).json({ error: e.message });
+    }
+
+    const mailData = buildInviteMailData({
+      user: result.user,
+      token: result.token,
+      expiresAt: result.expiresAt,
+      invitedBy: req.user.name || req.user.email,
+    });
+    const mail = await sendInviteMail({ to: result.user.email, data: mailData });
+
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Resent invitation to ${result.user.email}`,
+      "Users"
+    );
+
+    res.json({ ok: true, emailSent: mail.sent, mailError: mail.error || null });
   });
 
   app.post("/api/admin/users", auth, requireRole("admin"), async (req, res) => {
