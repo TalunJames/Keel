@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 // dialog container. Pass the onClose handler used by the modal.
 export function useModalA11y(onClose) {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const node = dialogRef.current;
@@ -27,7 +29,7 @@ export function useModalA11y(onClose) {
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (e.key === "Tab") {
@@ -52,7 +54,7 @@ export function useModalA11y(onClose) {
         previouslyFocused.focus();
       }
     };
-  }, [onClose]);
+  }, []);
 
   return dialogRef;
 }
