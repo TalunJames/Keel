@@ -107,9 +107,10 @@ export async function sendMail({ to, subject, text, eventType = "general" }) {
     if (tx) {
       await tx.sendMail({ from, to, subject, text });
       sent = true;
-      console.log(`[mail] ${eventType} → ${to}`);
+      console.log(`[mail] ${eventType} → ${to} (from ${from})`);
     } else {
-      console.log(`[mail:dev] ${eventType} → ${to}\n${text}`);
+      error = "SMTP not configured (MAIL_ENABLED=1 but transporter unavailable)";
+      console.error(`[mail] ${error}`);
     }
   } catch (e) {
     error = [e.message, e.response].filter(Boolean).join(" | ");
