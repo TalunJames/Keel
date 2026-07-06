@@ -240,6 +240,7 @@ function migrate(db) {
   seedDefaultModules(db);
   seedDefaultSettings(db);
   purgeDemoDesignData(db);
+  purgeSampleDesignData(db);
   ensureBootstrapAdmin(db);
   syncPortalPolls(db, root);
   })();
@@ -488,6 +489,27 @@ function purgeDemoDesignData(db) {
   if (hasRows === 0) db.exec("DROP TABLE election_races");
   db.prepare(
     "INSERT INTO app_settings (key, value) VALUES ('demo_purge_done', '1') ON CONFLICT(key) DO UPDATE SET value = '1'"
+  ).run();
+}
+
+// First-boot seedDesignData() inserted these titles under whichever client existed
+// first (usually not client_id 'demo'), so demo_purge_done alone never removed them.
+const SAMPLE_DESIGN_TITLES = [
+  "Coalition launch one-pager",
+  "30s TV spot — lighthouse concept",
+  "Direct mail piece #4",
+  "Social cut-downs (6 assets)",
+  "Memo cover series — June batch",
+];
+
+function purgeSampleDesignData(db) {
+  const done = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("sample_design_purge_v1");
+  if (done?.value === "1") return;
+  const placeholders = SAMPLE_DESIGN_TITLES.map(() => "?").join(", ");
+  db.prepare(`DELETE FROM design_requests WHERE title IN (${placeholders})`).run(...SAMPLE_DESIGN_TITLES);
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('sample_design_purge_v1', '1', datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = datetime('now')`
   ).run();
 }
 
