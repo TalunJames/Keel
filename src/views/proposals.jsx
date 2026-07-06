@@ -8,7 +8,7 @@ import { TabRow } from "./proposals/shared.jsx";
 
 function NewProposalForm({ clientId, client, user, onBack, onCreated }) {
   const [title, setTitle] = useState(
-    client?.name ? `Engagement Proposal — ${client.name}` : "",
+    client?.name ? `Proposal — ${client.name}` : "",
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -43,7 +43,7 @@ function NewProposalForm({ clientId, client, user, onBack, onCreated }) {
     <div>
       <PageHead
         title="New proposal"
-        sub="Starts from the recommended template for this client's service line."
+        sub="Starts from the Ballot measure RFP template — cover letter, qualifications, team, experience, fees, and work plan."
         actions={
           <button type="button" className="btn ghost" onClick={onBack}>
             <Icon name="arrow-left" size={13} /> Cancel
@@ -86,13 +86,15 @@ export function ProposalsView({ user, role, client, clientId }) {
 
   if (tab === "editor" && activeProposal) {
     return (
-      <ProposalEditor
+      <div className="proposals-doc-immersive">
+        <ProposalEditor
         proposalId={activeProposal}
         client={client}
         user={user}
         onBack={() => { setTab("triage"); setActiveProposal(null); bump(); }}
         onSaved={bump}
-      />
+        />
+      </div>
     );
   }
 
