@@ -56,11 +56,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       # Session lifetime in seconds (8h = 28800).
       JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
-      # Required — the initial administrator's email. No hardcoded default.
+      # Initial administrator email. Override in TrueNAS env vars if you like.
       # First boot prints a one-time SETUP TOKEN to the logs; use it to set the
       # admin password on the setup screen. There is no ADMIN_PASSWORD.
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?set admin email}
-      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Administrator}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-cjames@fogsignal.co}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Carter James}
       # Comma-separated allowlist. Add every public hostname that fronts Keel
       # (e.g. cloudflared tunnels for portal.fogsignalstrategies.com and
       # keel.fogsignalstrategies.com). No spaces around commas.
@@ -86,10 +86,7 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required}
     depends_on:
-      # Wait until keel passes its HEALTHCHECK before publishing the tunnel,
-      # so the public hostname doesn't serve 502s during first-boot migrations.
-      keel:
-        condition: service_healthy
+      - keel
     networks:
       - keel-net
 
