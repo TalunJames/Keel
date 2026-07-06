@@ -40,7 +40,7 @@ services:
       EP_RAW_DIR: /app/data/election/raw
       # Set to 1 to start ENR polling when the container boots (or use the UI)
       ELECTION_COLLECTOR_AUTO_START: ${ELECTION_COLLECTOR_AUTO_START:-0}
-      EP_EID: ${EP_EID:-124432}
+      EP_EID: ${EP_EID:-126592}
       EP_ENFORCE_POLLS_CLOSE: ${EP_ENFORCE_POLLS_CLOSE:-0}
       EP_POLL_SECONDS: ${EP_POLL_SECONDS:-7}
       EP_POLLS_CLOSE_UTC: ${EP_POLLS_CLOSE_UTC:-2026-07-01T01:00:00+00:00}

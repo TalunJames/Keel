@@ -13,6 +13,12 @@ import urllib.error
 
 from . import config
 
+# Clarity serves county elections at /{state}/{county}/{eid}/ and statewide
+# elections at /{state}/{eid}/. The 2026 primary (EID 126592) is statewide;
+# probing only the El Paso path yields 404 on current_ver.txt.
+_base_cache = {}
+_eid_scope = {}  # eid -> "county" | "state" (from elections.json)
+
 
 def _get(url, timeout=20):
     """Fetch a URL, returning raw (already-inflated) bytes."""
@@ -33,14 +39,62 @@ def _get(url, timeout=20):
     return body
 
 
+_STATE_ROOT = f"https://results.enr.clarityelections.com/{config.STATE}"
+
+
+def _county_base(eid):
+    return f"{config.COUNTY_ROOT}/{eid}"
+
+
+def _state_base(eid):
+    return f"{_STATE_ROOT}/{eid}"
+
+
+def _probe_base(eid):
+    """Resolve the Clarity feed root for an EID (county vs statewide)."""
+    eid = str(eid)
+    if eid in _base_cache:
+        return _base_cache[eid]
+
+    scope = _eid_scope.get(eid)
+    candidates = []
+    if scope == "state":
+        candidates = [_state_base(eid)]
+    elif scope == "county":
+        candidates = [_county_base(eid)]
+    else:
+        candidates = [_county_base(eid), _state_base(eid)]
+
+    last_err = None
+    for base in candidates:
+        try:
+            _get(f"{base}/current_ver.txt")
+            _base_cache[eid] = base
+            return base
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code != 404:
+                raise
+    if last_err:
+        raise last_err
+    raise urllib.error.HTTPError(
+        candidates[0] + "/current_ver.txt", 404, "Not Found", None, None
+    )
+
+
+def feed_base(eid=None):
+    """Return the Clarity ENR base URL for the configured or given EID."""
+    return _probe_base(eid or config.EID)
+
+
 def current_version():
     """Return the current version string, e.g. '367216'."""
-    return _get(f"{config.BASE}/current_ver.txt").decode("utf-8").strip()
+    return _get(f"{feed_base()}/current_ver.txt").decode("utf-8").strip()
 
 
 def fetch_summary(version):
     """Return the list of contest objects from sum.json for a version."""
-    body = _get(f"{config.BASE}/{version}/json/sum.json")
+    body = _get(f"{feed_base()}/{version}/json/sum.json")
     return body, json.loads(body)["Contests"]
 
 
@@ -53,7 +107,7 @@ def fetch_details(version):
     contests_list). contests_list may be [] if details aren't published yet.
     """
     try:
-        body = _get(f"{config.BASE}/{version}/json/details.json")
+        body = _get(f"{feed_base()}/{version}/json/details.json")
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return b"", []
@@ -65,29 +119,40 @@ def fetch_details(version):
 # at the county/EID root is the reliable liveness probe; for discovery we scan
 # the county election list page for the numeric EID directories.
 _EID_RE = re.compile(r"/" + re.escape(config.COUNTY) + r"/(\d+)/")
-_STATE_ROOT = f"https://results.enr.clarityelections.com/{config.STATE}"
-
-
-def _base_for_eid(eid):
-    return f"{config.COUNTY_ROOT}/{eid}"
 
 
 def current_version_for_eid(eid):
-    """Return current_ver.txt for any county EID."""
-    return _get(f"{_base_for_eid(eid)}/current_ver.txt").decode("utf-8").strip()
+    """Return current_ver.txt for any EID (county or statewide)."""
+    return _get(f"{_probe_base(eid)}/current_ver.txt").decode("utf-8").strip()
 
 
 def fetch_summary_for_eid(eid, version=None):
-    """Return contest objects from sum.json for any county EID."""
+    """Return contest objects from sum.json for any EID."""
+    base = _probe_base(eid)
     v = version or current_version_for_eid(eid)
-    body = _get(f"{_base_for_eid(eid)}/{v}/json/sum.json")
+    body = _get(f"{base}/{v}/json/sum.json")
     return json.loads(body)["Contests"]
+
+
+def _record_manifest_row(row, source):
+    eid = str(row.get("EID") or "")
+    if not eid:
+        return None
+    county = (row.get("County") or "").strip()
+    if source == "county" or county:
+        _eid_scope[eid] = "county"
+    else:
+        _eid_scope[eid] = "state"
+    return eid
 
 
 def _manifest_eids():
     """Read county + state Clarity election manifests."""
     found = []
-    for url in (f"{config.COUNTY_ROOT}/elections.json", f"{_STATE_ROOT}/elections.json"):
+    for url, source in (
+        (f"{config.COUNTY_ROOT}/elections.json", "county"),
+        (f"{_STATE_ROOT}/elections.json", "state"),
+    ):
         try:
             rows = json.loads(_get(url).decode("utf-8"))
         except Exception:
@@ -95,18 +160,18 @@ def _manifest_eids():
         if not isinstance(rows, list):
             continue
         for row in rows:
-            eid = row.get("EID")
+            eid = _record_manifest_row(row, source)
             if not eid:
                 continue
             name = (row.get("ElectionName") or "")
             county = (row.get("County") or "")
-            if url.endswith("/El_Paso/elections.json"):
-                found.append(str(eid))
+            if source == "county":
+                found.append(eid)
                 continue
             # State manifest: keep 2026 primary rows (county blank until posted).
             if "2026" in name and "Primary" in name:
                 if not county or "El Paso" in county:
-                    found.append(str(eid))
+                    found.append(eid)
     return found
 
 
@@ -159,6 +224,12 @@ def pick_primary_eid(min_score=45):
         ranked.append({"eid": eid, "score": score, "sample": sample})
     ranked.sort(key=lambda r: (r["score"], r["eid"]), reverse=True)
     best = ranked[0] if ranked else {"eid": None, "score": -999, "sample": []}
+    feed_root = None
+    if best["eid"]:
+        try:
+            feed_root = _probe_base(best["eid"])
+        except Exception:
+            feed_root = None
     return {
         "eid": best["eid"],
         "score": best["score"],
@@ -166,4 +237,5 @@ def pick_primary_eid(min_score=45):
         "sample": best["sample"],
         "candidates": ranked,
         "configuredEid": config.EID,
+        "feedRoot": feed_root,
     }
