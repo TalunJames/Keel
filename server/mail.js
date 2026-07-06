@@ -24,6 +24,17 @@ function isGoogleSmtpRelay(host) {
   return /smtp-relay\.gmail\.com$/i.test(String(host || "").trim());
 }
 
+/** Google SMTP relay rejects Docker's default EHLO hostname (container id). */
+function smtpEhloName() {
+  const explicit = (process.env.SMTP_NAME || "").trim();
+  if (explicit) return explicit;
+  try {
+    const primary = appUrls()[0];
+    if (primary) return new URL(primary).hostname;
+  } catch { /* ignore */ }
+  return "keel.fogsignalstrategies.com";
+}
+
 async function getTransporter() {
   if (transporter) return transporter;
   if (process.env.MAIL_ENABLED !== "1") return null;
@@ -32,13 +43,15 @@ async function getTransporter() {
 
   const relay = isGoogleSmtpRelay(host);
   const useAuth = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+  const ehloName = smtpEhloName();
   if (relay && !useAuth) {
-    console.log("[mail] Google Workspace SMTP relay (no SMTP auth — IP allowlist must match server egress)");
+    console.log(`[mail] Google Workspace SMTP relay (EHLO ${ehloName}, IP allowlist must match egress)`);
   }
 
   const nodemailer = await import("nodemailer");
   const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS) || 10000;
   transporter = nodemailer.createTransport({
+    name: ehloName,
     host,
     port: Number(process.env.SMTP_PORT) || 587,
     secure: process.env.SMTP_SECURE === "1",
