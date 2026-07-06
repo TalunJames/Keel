@@ -41,6 +41,8 @@ import {
   voterExportCsvRow,
 } from "./voter/warehouse.js";
 import { registerDesignRoutes } from "./design-routes.js";
+import { registerProposalRoutes } from "./proposal-routes.js";
+import { registerCleatusRoutes } from "./cleatus-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
 
 const ALL_CLIENT = {
@@ -529,8 +531,8 @@ export function registerRoutes(app, db) {
   app.get("/api/calendar/events", auth, list("calendar_events", mapCalendarEvent));
 
   registerDesignRoutes(app, db, auth);
-
-  app.get("/api/proposals", auth, list("proposals", mapProposal));
+  registerProposalRoutes(app, db, auth);
+  registerCleatusRoutes(app, db, auth);
 
   app.get("/api/media/mentions", auth, list("media_mentions", mapMediaMention));
 
@@ -654,19 +656,6 @@ export function registerRoutes(app, db) {
       { api: "clientId", column: "client_id", client: true },
       { api: "kind", column: "kind", defaulted: true },
       { api: "location", column: "location" },
-      { api: "payload", column: "payload_json", type: "json" },
-    ],
-  });
-
-  crud("/api/proposals", {
-    table: "proposals",
-    label: "proposal",
-    mapRow: mapProposal,
-    fields: [
-      { api: "title", column: "title", required: true },
-      { api: "clientId", column: "client_id", required: true, client: true },
-      { api: "status", column: "status", defaulted: true },
-      { api: "amount", column: "amount", type: "number" },
       { api: "payload", column: "payload_json", type: "json" },
     ],
   });

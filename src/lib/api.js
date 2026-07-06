@@ -204,7 +204,31 @@ const crudApi = (base) => ({
 });
 
 export const calendarApi = crudApi("/calendar/events");
-export const proposalsApi = crudApi("/proposals");
+export const proposalsApi = {
+  list: (clientId, opts = {}) => {
+    const params = new URLSearchParams();
+    if (clientId) params.set("clientId", clientId);
+    if (opts.triage) params.set("triage", opts.triage);
+    const q = params.toString();
+    return api("/proposals" + (q ? `?${q}` : ""));
+  },
+  get: (id) => api(`/proposals/${id}`),
+  create: (body) => api("/proposals", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) => api(`/proposals/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id) => api(`/proposals/${id}`, { method: "DELETE" }),
+  templates: (clientType) => {
+    const q = clientType ? `?type=${encodeURIComponent(clientType)}` : "";
+    return api(`/proposals/templates${q}`);
+  },
+  blocks: (clientType) => {
+    const q = clientType ? `?type=${encodeURIComponent(clientType)}` : "";
+    return api(`/proposals/blocks${q}`);
+  },
+  notes: {
+    list: (id) => api(`/proposals/${id}/notes`),
+    add: (id, body) => api(`/proposals/${id}/notes`, { method: "POST", body: JSON.stringify(body) }),
+  },
+};
 export const mediaApi = crudApi("/media/mentions");
 export const stakeholdersApi = crudApi("/stakeholders");
 export const resourcesApi = crudApi("/resources");
