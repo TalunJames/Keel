@@ -66,7 +66,7 @@ app.get("/api/version", (_req, res) => {
 if (process.env.SERVE_STATIC === "true" || process.env.NODE_ENV === "production") {
   const dist = path.join(root, "dist");
   app.use(express.static(dist));
-  app.get(/^(?!\/api).*/, (_req, res) => {
+  app.get(/^(?!\/api)(?!\/periscope).*/, (_req, res) => {
     res.sendFile(path.join(dist, "index.html"));
   });
 }

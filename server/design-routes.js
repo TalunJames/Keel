@@ -275,6 +275,7 @@ export function registerDesignRoutes(app, db, auth) {
       fileUrl: p.file_url,
       mimeType: p.mime_type,
       uploadedBy: p.uploaded_by,
+      periscopeShareId: p.periscope_share_id || null,
       createdAt: p.created_at,
     }));
     const comments = db.prepare(
@@ -580,6 +581,40 @@ export function registerDesignRoutes(app, db, auth) {
     }
 
     res.status(201).json({ id: result.lastInsertRowid });
+  });
+
+  app.patch("/api/design/requests/:id/proofs/:proofId", auth, requireDesignerCapable, (req, res) => {
+    const row = getRequest(db, req.params.id);
+    if (!row) return res.status(404).json({ error: "Not found" });
+    const staff = isStaffOrAdmin(req.user);
+    const designer = isDesigner(req.user);
+    if (!staff && !(designer && row.assignee_id === req.user.id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const proof = db.prepare(
+      "SELECT * FROM design_proofs WHERE id = ? AND request_id = ?"
+    ).get(req.params.proofId, row.id);
+    if (!proof) return res.status(404).json({ error: "Proof not found" });
+
+    const { periscopeShareId } = req.body || {};
+    if (periscopeShareId !== undefined) {
+      const id = typeof periscopeShareId === "string" ? periscopeShareId.trim().toLowerCase() : "";
+      if (id && !/^[a-z0-9]{6,32}$/.test(id)) {
+        return res.status(400).json({ error: "Invalid Periscope share id" });
+      }
+      db.prepare(
+        "UPDATE design_proofs SET periscope_share_id = ? WHERE id = ?"
+      ).run(id || null, proof.id);
+    }
+    const updated = db.prepare("SELECT * FROM design_proofs WHERE id = ?").get(proof.id);
+    res.json({
+      id: updated.id,
+      version: updated.version,
+      label: updated.label,
+      fileUrl: updated.file_url,
+      mimeType: updated.mime_type,
+      periscopeShareId: updated.periscope_share_id || null,
+    });
   });
 
   app.get("/api/design/requests/:id/comments", auth, (req, res) => {

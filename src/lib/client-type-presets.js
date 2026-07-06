@@ -114,3 +114,17 @@ export function modulesForType(typeId) {
 export function enabledModuleLabels(modules, options) {
   return options.filter((m) => modules[m.id] || m.mandatory).map((m) => m.label);
 }
+
+/** Recommended proposal template ids per client service line. */
+export const TEMPLATES_BY_TYPE = {
+  "Campaign Services": ["campaign", "boutique"],
+  "Community Outreach": ["coalition", "boutique"],
+  "Crisis Communications": ["coalition", "boutique"],
+  "Public Affairs": ["publicaff", "campaign"],
+  "Financial Strategy": ["boutique"],
+  Custom: ["boutique", "campaign"],
+};
+
+export function templateIdsForType(typeId) {
+  return TEMPLATES_BY_TYPE[typeId] || TEMPLATES_BY_TYPE.Custom;
+}

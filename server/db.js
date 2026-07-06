@@ -226,12 +226,56 @@ function migrate(db) {
   ensureClientColumns(db);
   ensureDesignColumns(db);
   ensureDesignTables(db);
+  ensureDesignProofColumns(db);
+  ensureProposalColumns(db);
+  ensureProposalTables(db);
   ensureIndexes(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
   purgeDemoDesignData(db);
   ensureBootstrapAdmin(db);
   syncPortalPolls(db, root);
+}
+
+function ensureProposalColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(proposals)").all().map((c) => c.name);
+  const add = (name, ddl) => {
+    if (!cols.includes(name)) db.exec(`ALTER TABLE proposals ADD COLUMN ${ddl}`);
+  };
+  add("triage_state", "triage_state TEXT NOT NULL DEFAULT 'inbox'");
+  add("source", "source TEXT NOT NULL DEFAULT 'manual'");
+  add("source_ref", "source_ref TEXT");
+  add("owner_id", "owner_id TEXT");
+  add("template_id", "template_id TEXT");
+  add("due_at", "due_at TEXT");
+}
+
+function ensureProposalTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS proposal_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proposal_id INTEGER NOT NULL,
+      author_id TEXT,
+      author_name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'staff',
+      visibility TEXT NOT NULL DEFAULT 'staff',
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS cleatus_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      external_id TEXT NOT NULL UNIQUE,
+      event_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      processed_at TEXT,
+      proposal_id INTEGER,
+      processing_error TEXT,
+      FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE SET NULL
+    );
+  `);
 }
 
 function ensureIndexes(db) {
@@ -279,6 +323,7 @@ function ensureDesignTables(db) {
       file_url TEXT,
       mime_type TEXT,
       uploaded_by TEXT,
+      periscope_share_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (request_id) REFERENCES design_requests(id) ON DELETE CASCADE
     );
@@ -306,6 +351,13 @@ function ensureDesignTables(db) {
       error TEXT
     );
   `);
+}
+
+function ensureDesignProofColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(design_proofs)").all().map((c) => c.name);
+  if (!cols.includes("periscope_share_id")) {
+    db.exec("ALTER TABLE design_proofs ADD COLUMN periscope_share_id TEXT");
+  }
 }
 
 // Older builds seeded sample design requests under a placeholder "demo"
