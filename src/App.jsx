@@ -3,7 +3,7 @@ import { authApi, clientsApi, modulesApi, badgesApi, api, withClient, setupApi }
 import { usePref } from "./lib/usePref.js";
 import { ALL_MODULES } from "./lib/modules.js";
 import { computeEffectiveModules, visibleModuleList, canAccessModule } from "./lib/access.js";
-import { resolveClientSelection } from "./lib/clients.js";
+import { resolveClientSelection, sortClientsByOrder } from "./lib/clients.js";
 import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
@@ -124,6 +124,11 @@ export default function App() {
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === clientId) || clients[0] || { id: "all", name: "All Clients", initials: "ALL", color: "var(--fs-navy)" },
     [clients, clientId]
+  );
+
+  const orderedClients = useMemo(
+    () => sortClientsByOrder(clients, user?.preferences?.clientOrder),
+    [clients, user?.preferences?.clientOrder]
   );
 
   const effectiveModules = useMemo(() => computeEffectiveModules({
@@ -254,7 +259,7 @@ export default function App() {
           <TopBar
             section={titles[section] || "Home"}
             role={user.role}
-            clients={clients}
+            clients={orderedClients}
             selectedClient={selectedClient}
             onSelectClient={setClientId}
             onNewAction={handleNewAction}

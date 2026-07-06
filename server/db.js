@@ -361,6 +361,7 @@ function ensureUserColumns(db) {
   // Bumped whenever a user's credentials/privileges change so previously issued
   // JWTs (including 30-day "remember me" tokens) stop validating. See auth.js.
   add("token_version", "token_version INTEGER NOT NULL DEFAULT 0");
+  add("preferences_json", "preferences_json TEXT NOT NULL DEFAULT '{}'");
 }
 
 function ensureDesignColumns(db) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { PageHead, Icon, Avatar, Eyebrow } from "../components/ui.jsx";
 import { accountApi } from "../lib/api.js";
+import { sortClientsByOrder } from "../lib/clients.js";
 import { safeUrl } from "../lib/safe-url.js";
 
 function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
@@ -76,6 +77,95 @@ function MiniMonth({ events = [], cursor, onShift }) {
   );
 }
 
+function ClientOrderEditor({ clients, clientOrder, onSave, saving }) {
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+  const [localOrder, setLocalOrder] = useState(clientOrder || []);
+
+  useEffect(() => {
+    setLocalOrder(clientOrder || []);
+  }, [clientOrder]);
+
+  const ordered = useMemo(
+    () => sortClientsByOrder(clients, localOrder),
+    [clients, localOrder]
+  );
+
+  const applyOrder = (ids) => {
+    setLocalOrder(ids);
+    onSave(ids);
+  };
+
+  const move = (from, to) => {
+    if (from === to || from < 0 || to < 0 || from >= ordered.length || to >= ordered.length) return;
+    const ids = ordered.map((c) => c.id);
+    const [item] = ids.splice(from, 1);
+    ids.splice(to, 0, item);
+    applyOrder(ids);
+  };
+
+  const resetAlpha = () => {
+    applyOrder([...clients].sort((a, b) => a.name.localeCompare(b.name)).map((c) => c.id));
+  };
+
+  return (
+    <div>
+      <div className="row between" style={{ marginBottom: 10 }}>
+        <div className="mut" style={{ fontSize: 12, lineHeight: 1.5 }}>
+          Drag to set the order in your client switcher. New clients appear at the end until you move them.
+        </div>
+        <button type="button" className="btn ghost sm" onClick={resetAlpha} disabled={saving}>
+          Reset to A–Z
+        </button>
+      </div>
+      <ul className="client-order-list">
+        {ordered.map((c, i) => (
+          <li
+            key={c.id}
+            className={"client-order-row" + (dragIdx === i ? " dragging" : "") + (overIdx === i && dragIdx !== i ? " over" : "")}
+            draggable
+            onDragStart={() => setDragIdx(i)}
+            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+            onDragOver={(e) => { e.preventDefault(); setOverIdx(i); }}
+            onDragLeave={() => setOverIdx((v) => (v === i ? null : v))}
+            onDrop={() => {
+              if (dragIdx !== null) move(dragIdx, i);
+              setDragIdx(null);
+              setOverIdx(null);
+            }}
+          >
+            <span className="client-order-grip" title="Drag to reorder">
+              <Icon name="grip" size={12} color="var(--fs-fg-subtle)" />
+            </span>
+            <span style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: c.color || "var(--fs-navy)", color: "var(--ks-on-ink)",
+              display: "grid", placeItems: "center",
+              fontSize: 11, fontWeight: 700, flexShrink: 0,
+            }}>{c.initials}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fs-navy)" }}>{c.name}</div>
+              {c.type && <div className="mut" style={{ fontSize: 11 }}>{c.type}</div>}
+            </div>
+            <span className="tag">{c.tag}</span>
+            <div className="client-order-actions">
+              <button type="button" className="icon-btn" style={{ width: 26, height: 26 }}
+                disabled={i === 0 || saving} onClick={() => move(i, i - 1)} aria-label="Move up">
+                <Icon name="chevron-up" size={13} />
+              </button>
+              <button type="button" className="icon-btn" style={{ width: 26, height: 26 }}
+                disabled={i === ordered.length - 1 || saving} onClick={() => move(i, i + 1)} aria-label="Move down">
+                <Icon name="chevron-down" size={13} />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {saving && <div className="mut" style={{ fontSize: 11, marginTop: 8 }}>Saving order…</div>}
+    </div>
+  );
+}
+
 export function AccountView({ user: parentUser, onUserUpdate }) {
   const [user, setUser] = useState(parentUser);
   const [clients, setClients] = useState([]);
@@ -84,6 +174,7 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [orderSaving, setOrderSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -136,6 +227,20 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
       setTimeout(() => setMsg(""), 4000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveClientOrder = async (clientOrder) => {
+    setOrderSaving(true);
+    try {
+      const { user: u } = await accountApi.updateClientOrder(clientOrder);
+      setUser(u);
+      onUserUpdate?.(u);
+    } catch (e) {
+      setMsg(e?.message || "Could not save client order.");
+      setTimeout(() => setMsg(""), 4000);
+    } finally {
+      setOrderSaving(false);
     }
   };
 
@@ -280,7 +385,7 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
             </div>
             {clients.length === 0 ? (
               <div className="card-pad mut" style={{ fontSize: 13 }}>No client access.</div>
-            ) : (
+            ) : clients.length === 1 ? (
               <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {clients.map((c) => (
                   <li key={c.id} style={{
@@ -302,6 +407,20 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
                   </li>
                 ))}
               </ul>
+            ) : (
+              <div className="card-pad" style={{ paddingTop: 14 }}>
+                {user.role !== "client" && (
+                  <div className="mut" style={{ fontSize: 11, marginBottom: 12 }}>
+                    &ldquo;All Clients&rdquo; always stays at the top of the switcher.
+                  </div>
+                )}
+                <ClientOrderEditor
+                  clients={clients}
+                  clientOrder={user.preferences?.clientOrder}
+                  onSave={saveClientOrder}
+                  saving={orderSaving}
+                />
+              </div>
             )}
           </div>
         </div>
