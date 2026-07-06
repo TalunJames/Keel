@@ -181,6 +181,11 @@ export const designApi = {
   pool: (clientId) => api(withClient("/design/pool", clientId)),
   designers: () => api("/design/designers"),
   addProof: (id, body) => api(`/design/requests/${id}/proofs`, { method: "POST", body: JSON.stringify(body) }),
+  linkPeriscopeShare: (requestId, proofId, periscopeShareId) =>
+    api(`/design/requests/${requestId}/proofs/${proofId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ periscopeShareId }),
+    }),
   addComment: (id, body) => api(`/design/requests/${id}/comments`, { method: "POST", body: JSON.stringify(body) }),
   upload: async (file) => {
     const dataUrl = await new Promise((resolve, reject) => {

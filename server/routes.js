@@ -41,6 +41,7 @@ import {
   voterExportCsvRow,
 } from "./voter/warehouse.js";
 import { registerDesignRoutes } from "./design-routes.js";
+import { registerPeriscopeRoutes } from "./periscope-routes.js";
 import { registerProposalRoutes } from "./proposal-routes.js";
 import { registerCleatusRoutes } from "./cleatus-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
@@ -531,6 +532,7 @@ export function registerRoutes(app, db) {
   app.get("/api/calendar/events", auth, list("calendar_events", mapCalendarEvent));
 
   registerDesignRoutes(app, db, auth);
+  registerPeriscopeRoutes(app, auth);
   registerProposalRoutes(app, db, auth);
   registerCleatusRoutes(app, db, auth);
 

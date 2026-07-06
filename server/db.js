@@ -226,6 +226,7 @@ function migrate(db) {
   ensureClientColumns(db);
   ensureDesignColumns(db);
   ensureDesignTables(db);
+  ensureDesignProofColumns(db);
   ensureProposalColumns(db);
   ensureProposalTables(db);
   ensureIndexes(db);
@@ -322,6 +323,7 @@ function ensureDesignTables(db) {
       file_url TEXT,
       mime_type TEXT,
       uploaded_by TEXT,
+      periscope_share_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (request_id) REFERENCES design_requests(id) ON DELETE CASCADE
     );
@@ -349,6 +351,13 @@ function ensureDesignTables(db) {
       error TEXT
     );
   `);
+}
+
+function ensureDesignProofColumns(db) {
+  const cols = db.prepare("PRAGMA table_info(design_proofs)").all().map((c) => c.name);
+  if (!cols.includes("periscope_share_id")) {
+    db.exec("ALTER TABLE design_proofs ADD COLUMN periscope_share_id TEXT");
+  }
 }
 
 // Older builds seeded sample design requests under a placeholder "demo"

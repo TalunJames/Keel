@@ -4,6 +4,98 @@ import { designApi } from "../../lib/api.js";
 import { statusTone, DESIGNER_TRANSITIONS, DESIGN_STATUSES } from "../../lib/design-status.js";
 import { Loading } from "../../components/Loading.jsx";
 
+const MAIL_PROOF_ASSET = "Print — direct mail";
+
+function parsePeriscopeShareId(input) {
+  const raw = (input || "").trim().toLowerCase();
+  if (!raw) return "";
+  const pathMatch = raw.match(/\/s\/([a-z0-9]{6,32})/i);
+  if (pathMatch) return pathMatch[1].toLowerCase();
+  if (/^[a-z0-9]{6,32}$/.test(raw)) return raw;
+  return "";
+}
+
+function PeriscopeProofPanel({ shareId, canDesign, requestId, proofId, onLinked }) {
+  const [draft, setDraft] = useState(shareId || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => { setDraft(shareId || ""); }, [shareId]);
+
+  const saveShare = async () => {
+    const id = parsePeriscopeShareId(draft);
+    if (!id) {
+      setError("Paste a Periscope share link or id (e.g. abc123def4).");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await designApi.linkPeriscopeShare(requestId, proofId, id);
+      onLinked?.();
+    } catch (e) {
+      setError(e.message || "Could not link share.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (shareId) {
+    return (
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <iframe
+          title="Mailer proof"
+          src={`/periscope/s/${shareId}`}
+          style={{ width: "100%", height: "min(72vh, 820px)", border: 0, display: "block", background: "#0a0c10" }}
+        />
+        {canDesign && (
+          <div className="card-pad" style={{ borderTop: "1px solid var(--fs-border)" }}>
+            <div className="row between" style={{ gap: 12, flexWrap: "wrap" }}>
+              <span className="mut" style={{ fontSize: 12 }}>Share id: {shareId}</span>
+              <a className="btn ghost sm" href={`/periscope/app`} target="_blank" rel="noopener noreferrer">
+                Open Periscope editor
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card card-pad">
+      <Eyebrow>Periscope mailer proof</Eyebrow>
+      <p className="mut" style={{ fontSize: 13, lineHeight: 1.55, marginTop: 10 }}>
+        Configure fold geometry and annotations in Periscope, then paste the share link here so clients see the interactive 3D mailer.
+      </p>
+      {canDesign ? (
+        <div style={{ marginTop: 16 }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <a className="btn primary" href="/periscope/app" target="_blank" rel="noopener noreferrer">
+              <Icon name="external" size={13} /> Open Periscope
+            </a>
+          </div>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <input
+              className="input"
+              placeholder="Share link or id"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              style={{ flex: 1, minWidth: 200 }}
+            />
+            <button type="button" className="btn secondary" disabled={saving} onClick={saveShare}>
+              {saving ? "Linking…" : "Attach share"}
+            </button>
+          </div>
+          {error && <div className="flash danger" style={{ marginTop: 10 }}>{error}</div>}
+        </div>
+      ) : (
+        <p className="mut" style={{ fontSize: 13, marginTop: 12 }}>Waiting for the design team to publish a Periscope proof.</p>
+      )}
+    </div>
+  );
+}
+
 function formatWhen(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -52,6 +144,8 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
 
   const { request, proofs, comments } = data;
   const currentProof = proofs.find((p) => p.id === activeProof) || proofs[proofs.length - 1];
+  const isMailerProof = request.assetType === MAIL_PROOF_ASSET;
+  const periscopeShareId = currentProof?.periscopeShareId || null;
 
   const canDesign = isStaff || (isDesigner && isAssignee);
   const designerTransitions = DESIGNER_TRANSITIONS[request.status] || [];
@@ -184,6 +278,15 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
               </div>
             </div>
 
+            {isMailerProof && currentProof ? (
+              <PeriscopeProofPanel
+                shareId={periscopeShareId}
+                canDesign={canDesign}
+                requestId={requestId}
+                proofId={currentProof.id}
+                onLinked={load}
+              />
+            ) : (
             <div
               style={{
                 position: "relative", aspectRatio: "16/9",
@@ -227,9 +330,12 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
                 </div>
               ))}
             </div>
+            )}
+            {!isMailerProof && (
             <div className="mut" style={{ fontSize: 12, marginTop: 10 }}>
               {draft.trim() ? "Click the frame to place a comment marker." : "Type a comment below to enable click-to-place markers."}
             </div>
+            )}
           </div>
 
           {canDesign && (
