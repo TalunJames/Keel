@@ -213,6 +213,8 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       closeModals();
       onReload();
       if (result.emailSent === false && result.mailError) {
+        onFlash("Email failed: " + result.mailError);
+      } else if (result.emailSent === false) {
         onFlash("Invite created but email failed — use Resend invite");
       } else {
         onFlash("Invitation sent to " + inviteForm.email);
@@ -246,6 +248,8 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       const result = await usersAdminApi.resendInvite(u.id);
       onReload();
       if (result.emailSent === false && result.mailError) {
+        onFlash("Email failed: " + result.mailError);
+      } else if (result.emailSent === false) {
         onFlash("Could not send email — check SMTP settings");
       } else {
         onFlash("Invitation resent to " + u.email);
