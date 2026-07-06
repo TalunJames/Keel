@@ -182,6 +182,7 @@ export default function App() {
     clientId: selectedClient?.id || "all",
     client: selectedClient,
     onNavigate: setSection,
+    effectiveModules,
   };
 
   const guardModule = (moduleId, content) => {
