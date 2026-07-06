@@ -14,7 +14,8 @@
     "bootstrap:cssd11": "node scripts/bootstrap-cssd11.js",
     "voter:ingest": "node scripts/voter-ingest.js",
     "voter:geocode": "node scripts/voter-geocode.js",
-    "mail:test": "node scripts/test-mail.js"
+    "mail:test": "node scripts/test-mail.js",
+    "mail:diagnose": "node scripts/mail-diagnose.js"
   },
   "dependencies": {
     "@turf/turf": "^6.5.0",

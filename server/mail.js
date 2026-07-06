@@ -112,11 +112,14 @@ export async function sendMail({ to, subject, text, eventType = "general" }) {
       console.log(`[mail:dev] ${eventType} → ${to}\n${text}`);
     }
   } catch (e) {
-    error = e.message;
-    console.error(`[mail] failed ${eventType} → ${to}:`, e.message);
+    error = [e.message, e.response].filter(Boolean).join(" | ");
+    console.error(`[mail] failed ${eventType} → ${to} (EHLO ${smtpEhloName()}):`, error);
   }
 
-  return { sent: sent || process.env.MAIL_ENABLED !== "1", error };
+  if (process.env.MAIL_ENABLED !== "1") {
+    return { sent: true, error: null };
+  }
+  return { sent: sent && !error, error };
 }
 
 export async function sendInviteMail({ to, data }) {
