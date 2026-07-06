@@ -19,18 +19,17 @@ const ROLE_DESCRIPTIONS = {
     "Collaborate with strategists, designers, and data leads inside one workspace.",
   ],
   admin: [
-    "Full workspace access across all client accounts, including election night and the admin console.",
-    "Manage users, clients, modules, and workspace settings for the team.",
+    "Manage members, permissions, and account settings across every client workspace.",
+    "Keep billing, integrations, and shared resources in order for the whole firm.",
   ],
   client: [
-    "A dedicated client portal scoped to your account — design proofs, polling, calendar, and shared resources.",
-    "Review work in progress and stay aligned with your Fog Signal team without email chains.",
+    "Follow your account's workstreams, review deliverables, and track progress in one place.",
+    "Message your Fog Signal team and approve work without the endless email thread.",
   ],
 };
 
 const KEEL_OVERVIEW = [
-  "Keel is the internal portal for Fog Signal Strategies — a steady signal through noisy weeks.",
-  "It brings client workstreams, design requests, polling, calendar, and team resources into one place.",
+  "Keel is the internal portal for the firm. It brings client workstreams, design requests, polling, calendar, and team resources into one place — so the work stays visible and the noise stays out.",
 ];
 
 export function roleLabel(role) {
@@ -40,7 +39,7 @@ export function roleLabel(role) {
 export function roleDescription(role, { clientName } = {}) {
   const lines = [...(ROLE_DESCRIPTIONS[role] || ROLE_DESCRIPTIONS.staff)];
   if (role === "client" && clientName) {
-    lines[0] = `A dedicated client portal for ${clientName} — design proofs, polling, calendar, and shared resources.`;
+    lines[0] = `Follow ${clientName}'s workstreams, review deliverables, and track progress in one place.`;
   }
   return lines;
 }

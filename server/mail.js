@@ -106,7 +106,7 @@ function smtpEnvelopeFrom(fromHeader) {
   return (bracketed ? bracketed[1] : raw).trim();
 }
 
-export async function sendMail({ to, subject, text, eventType = "general" }) {
+export async function sendMail({ to, subject, text, html, eventType = "general" }) {
   const from = process.env.SMTP_FROM || "keel@localhost";
   const envelopeFrom = smtpEnvelopeFrom(from);
   let error = null;
@@ -120,6 +120,7 @@ export async function sendMail({ to, subject, text, eventType = "general" }) {
         to,
         subject,
         text,
+        html,
         envelope: { from: envelopeFrom, to },
       });
       sent = true;
@@ -140,11 +141,12 @@ export async function sendMail({ to, subject, text, eventType = "general" }) {
 }
 
 export async function sendInviteMail({ to, data }) {
-  const { subject, text } = inviteEmail(data);
-  return sendMail({ to, subject, text, eventType: "user_invite" });
+  const { subject, text, html } = inviteEmail(data);
+  return sendMail({ to, subject, text, html, eventType: "user_invite" });
 }
 
 export function buildInviteMailData({ user, token, expiresAt, invitedBy }) {
+  const base = appBaseUrl().replace(/\/$/, "");
   return {
     name: user.name,
     roleLabel: roleLabel(user.role),
@@ -155,6 +157,7 @@ export function buildInviteMailData({ user, token, expiresAt, invitedBy }) {
     inviteUrl: inviteAppUrl(token),
     alternateInviteUrls: inviteAlternateUrls(token),
     expiresAt,
+    logoUrl: `${base}/logo-wordmark-white.png`,
   };
 }
 

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  FOG SIGNAL STRATEGIES — "Keel" workspace invitation email
+  Send-ready, table-based HTML. Tested pattern for Gmail, Apple Mail, Outlook.
+  ============================================================================
+
+  MERGE TOKENS — replace these (or map them in your ESP: Postmark, SendGrid,
+  Customer.io, Mailchimp, etc.). They appear as {{ token }} below.
+
+    {{recipient_name}}   Luke O'Connell
+    {{inviter_name}}     Carter James
+    {{role}}             Staff  |  Admin  |  Client
+    {{role_line_1}}      first "Your Role" sentence  (see table below)
+    {{role_line_2}}      second "Your Role" sentence (see table below)
+    {{primary_url}}      https://keel.fogsignalstrategies.com/?invite=TOKEN
+    {{secondary_url}}    https://keel.fogsignal.com/?invite=TOKEN
+    {{expiry_date}}      July 13, 2026
+    {{logo_url}}         Absolute https:// URL to the reversed white logo PNG.
+                         Host it once (~200px wide). Email clients cannot read
+                         local/attached files reliably — use a public URL.
+
+  ROLE COPY — set role_line_1 / role_line_2 per {{role}}:
+
+    Staff
+      1) Work across client accounts on design requests, polling, voter data,
+         calendar, and team resources.
+      2) Collaborate with strategists, designers, and data leads inside one
+         workspace.
+    Admin
+      1) Manage members, permissions, and account settings across every client
+         workspace.
+      2) Keep billing, integrations, and shared resources in order for the
+         whole firm.
+    Client
+      1) Follow your account's workstreams, review deliverables, and track
+         progress in one place.
+      2) Message your Fog Signal team and approve work without the endless
+         email thread.
+
+  SUBJECT:   You're invited to Keel — the Fog Signal Strategies workspace
+  ============================================================================
+-->
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
+  <title>You're invited to Keel</title>
+  <!--[if mso]>
+  <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+  <![endif]-->
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background: #EDECE3; }
+    a { color: #1A3A5C; }
+    a:hover { color: #0E2238; }
+    .keel-cta:hover { background: #0E2238 !important; }
+    .keel-alt:hover { text-decoration-thickness: 2px; }
+    @media only screen and (max-width: 620px) {
+      .keel-wrap { width: 100% !important; }
+      .keel-pad { padding-left: 28px !important; padding-right: 28px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background:#EDECE3;">
+
+  <!-- Preheader (hidden preview text) -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#EDECE3;">
+    {{inviter_name}} invited you to join Keel. Set your password to get started.&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EDECE3;">
+    <tr>
+      <td align="center" style="padding:40px 16px 64px;">
+
+        <table role="presentation" class="keel-wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#ffffff; border-collapse:collapse;">
+
+          <!-- Header band -->
+          <tr>
+            <td bgcolor="#1A3A5C" class="keel-pad" style="background:#1A3A5C; padding:34px 48px 30px;">
+              <img src="{{logo_url}}" alt="Fog Signal Strategies" width="204" style="display:block; width:204px; max-width:204px; height:auto; border:0;" />
+            </td>
+          </tr>
+          <!-- Gold beacon rule -->
+          <tr><td bgcolor="#EFC53F" style="background:#EFC53F; height:3px; font-size:0; line-height:0;">&nbsp;</td></tr>
+
+          <!-- Intro -->
+          <tr>
+            <td class="keel-pad" style="padding:44px 48px 8px;">
+              <div style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#B08D1F; font-weight:700; margin-bottom:16px;">Workspace Invitation</div>
+              <h1 style="margin:0 0 22px; font-family:Georgia,'Times New Roman',serif; font-weight:700; font-size:32px; line-height:1.15; color:#1A3A5C; letter-spacing:-0.01em;">You've been invited to Keel</h1>
+              <p style="margin:0 0 16px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:16px; line-height:1.6; color:#2A3742;">Hi {{recipient_name}},</p>
+              <p style="margin:0 0 8px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:16px; line-height:1.6; color:#2A3742;">{{inviter_name}} has invited you to join Keel — the internal workspace for Fog Signal Strategies, and a steady signal through noisy weeks.</p>
+            </td>
+          </tr>
+
+          <!-- What is Keel -->
+          <tr>
+            <td class="keel-pad" style="padding:24px 48px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td style="border-top:1px solid rgba(26,58,92,0.14); padding-top:24px;">
+                  <div style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#1A3A5C; font-weight:700; margin-bottom:10px;">What Is Keel</div>
+                  <p style="margin:0; font-family:'Helvetica Neue',Arial,sans-serif; font-size:15px; line-height:1.65; color:#3A4653;">Keel is the internal portal for the firm. It brings client workstreams, design requests, polling, calendar, and team resources into one place — so the work stays visible and the noise stays out.</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Your role -->
+          <tr>
+            <td class="keel-pad" style="padding:24px 48px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td style="border-top:1px solid rgba(26,58,92,0.14); padding-top:24px;">
+                  <div style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#1A3A5C; font-weight:700; margin-bottom:10px;">Your Role &middot; {{role}}</div>
+                  <p style="margin:0 0 8px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:15px; line-height:1.65; color:#3A4653;">{{role_line_1}}</p>
+                  <p style="margin:0; font-family:'Helvetica Neue',Arial,sans-serif; font-size:15px; line-height:1.65; color:#3A4653;">{{role_line_2}}</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td class="keel-pad" style="padding:34px 48px 6px;">
+              <p style="margin:0 0 18px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:15px; line-height:1.6; color:#3A4653;">Create your account and set a password using the link below.</p>
+              <!--[if mso]>
+              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{primary_url}}" style="height:50px;v-text-anchor:middle;width:230px;" arcsize="8%" fillcolor="#1A3A5C" stroke="f">
+                <w:anchorlock/>
+                <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">Create Your Account &#8594;</center>
+              </v:roundrect>
+              <![endif]-->
+              <!--[if !mso]><!-- -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td bgcolor="#1A3A5C" style="background:#1A3A5C; border-radius:4px;">
+                    <a class="keel-cta" href="{{primary_url}}" style="display:inline-block; padding:15px 34px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:15px; font-weight:700; letter-spacing:0.01em; color:#ffffff; text-decoration:none; border-radius:4px;">Create Your Account &#8594;</a>
+                  </td>
+                </tr>
+              </table>
+              <!--<![endif]-->
+            </td>
+          </tr>
+
+          <!-- Alternate link + expiry -->
+          <tr>
+            <td class="keel-pad" style="padding:26px 48px 0;">
+              {{alternate_link_block}}
+              <p style="margin:0; font-family:'Helvetica Neue',Arial,sans-serif; font-size:13px; line-height:1.6; color:#6A7580;">This link expires on <span style="color:#2A3742; font-weight:700;">{{expiry_date}}</span>.</p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td class="keel-pad" style="padding:36px 48px 40px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td style="border-top:1px solid rgba(26,58,92,0.14); padding-top:22px;">
+                  <p style="margin:0 0 14px; font-family:'Helvetica Neue',Arial,sans-serif; font-size:12px; line-height:1.6; color:#8A97A3;">If you weren't expecting this invitation, you can ignore this email — no account will be created.</p>
+                  <p style="margin:0; font-family:Georgia,'Times New Roman',serif; font-size:14px; color:#1A3A5C;">— Fog Signal Strategies</p>
+                  <p style="margin:12px 0 0; font-family:'Helvetica Neue',Arial,sans-serif; font-size:11px; line-height:1.5; color:#A6B0BA;">Fog Signal Strategies &middot; Public Affairs &amp; Strategic Communications</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
