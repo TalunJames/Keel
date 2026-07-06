@@ -22,7 +22,7 @@ let activeConfig = null;
 let lastLogLines = [];
 
 const DEFAULTS = {
-  eid: "124432",
+  eid: "126592",
   enforcePollsClose: false,
   pollSeconds: 7,
   watchdogMinutes: 20,

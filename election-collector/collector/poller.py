@@ -76,7 +76,7 @@ def run():
         format="%(asctime)s %(levelname)s %(message)s",
     )
     log.info("starting poller: EID=%s base=%s every %ss",
-             config.EID, config.BASE, config.POLL_SECONDS)
+             config.EID, feed.feed_base(), config.POLL_SECONDS)
     conn = db.init_db()
     last = None
     last_change = datetime.datetime.now(datetime.timezone.utc)
