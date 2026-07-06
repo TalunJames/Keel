@@ -230,7 +230,10 @@ function migrate(db) {
   ensureClientColumns(db);
   ensureDesignColumns(db);
   ensureDesignTables(db);
+  ensureDesignApprovalsTable(db);
   ensureDesignProofColumns(db);
+  migrateDesignStatuses(db);
+  migrateDesignPriorities(db);
   ensureProposalColumns(db);
   ensureProposalTables(db);
   ensureIndexes(db);
@@ -414,6 +417,58 @@ function ensureDesignProofColumns(db) {
   if (!cols.includes("periscope_share_id")) {
     db.exec("ALTER TABLE design_proofs ADD COLUMN periscope_share_id TEXT");
   }
+}
+
+function ensureDesignApprovalsTable(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS design_approvals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES design_requests(id) ON DELETE CASCADE,
+      UNIQUE(request_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_design_approvals_request ON design_approvals(request_id);
+  `);
+}
+
+function migrateDesignStatuses(db) {
+  const done = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("design_status_v2_migrated");
+  if (done?.value === "1") return;
+  const map = {
+    Intake: "Submitted",
+    "Brief Review": "Assigned",
+    Proofing: "Final Proof",
+    Approved: "Closed",
+  };
+  for (const [oldStatus, newStatus] of Object.entries(map)) {
+    db.prepare("UPDATE design_requests SET status = ? WHERE status = ?").run(newStatus, oldStatus);
+  }
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('design_status_v2_migrated', '1', datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = datetime('now')`
+  ).run();
+}
+
+function migrateDesignPriorities(db) {
+  const done = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("design_priority_v2_migrated");
+  if (done?.value === "1") return;
+  const map = {
+    "Election critical": "Urgent",
+    Rush: "Important",
+    Standard: "Normal",
+    normal: "Normal",
+  };
+  for (const [oldPriority, newPriority] of Object.entries(map)) {
+    db.prepare("UPDATE design_requests SET priority = ? WHERE priority = ?").run(newPriority, oldPriority);
+  }
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('design_priority_v2_migrated', '1', datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = datetime('now')`
+  ).run();
 }
 
 // Older builds seeded sample design requests under a placeholder "demo"

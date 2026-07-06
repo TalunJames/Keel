@@ -1,25 +1,23 @@
 export const DESIGN_STATUSES = [
   "draft",
-  "Intake",
-  "Brief Review",
+  "Submitted",
+  "Assigned",
   "In Design",
-  "Proofing",
+  "Final Proof",
   "Revisions",
-  "Approved",
+  "Closed",
 ];
 
-export const CLIENT_VISIBLE_STATUSES = ["Proofing", "Revisions", "Approved"];
+export const CLIENT_VISIBLE_STATUSES = ["Final Proof", "Revisions", "Closed"];
 
-export const POOL_STATUSES = ["Intake", "Brief Review"];
+export const POOL_STATUSES = ["Submitted"];
 
-// Statuses a designer-assignee may set directly. Excludes 'Approved' (client
-// approval only), 'draft'/'Intake' (would hide the request from clients), and
-// 'Brief Review' (claim/intake stage). Staff/admins retain full control.
-export const DESIGNER_SETTABLE_STATUSES = ["In Design", "Proofing", "Revisions"];
+// Statuses a designer-assignee may set directly.
+export const DESIGNER_SETTABLE_STATUSES = ["Assigned", "In Design", "Final Proof", "Revisions"];
 
-export const ACTIVE_STATUSES = DESIGN_STATUSES.filter((s) => s !== "Approved" && s !== "draft");
+export const ACTIVE_STATUSES = DESIGN_STATUSES.filter((s) => s !== "Closed" && s !== "draft");
 
-export const RUSH_PRIORITIES = ["Rush", "Election critical"];
+export const HIGH_PRIORITIES = ["Urgent", "Important"];
 
 export function isDesigner(user) {
   return !!(user?.isDesigner || user?.is_designer);

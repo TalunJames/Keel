@@ -4,11 +4,11 @@ import { statusTone } from "../../lib/design-status.js";
 export function StatusStrip({ stats, onFilter, activeFilter }) {
   if (!stats) return null;
   const cards = [
-    { key: "Intake", label: "Intake", count: stats.intake, tone: "outline" },
-    { key: "Brief Review", label: "Brief Review", count: stats.briefReview, tone: "navy" },
+    { key: "Submitted", label: "Submitted", count: stats.intake, tone: "outline" },
+    { key: "Assigned", label: "Assigned", count: stats.briefReview, tone: "navy" },
     { key: "In Design", label: "In Design", count: stats.inDesign, tone: "warning" },
-    { key: "Proofing", label: "Proofing", count: stats.proofing, tone: "gold" },
-    { key: "approvedWeek", label: "Approved this week", count: stats.approvedWeek, tone: "success" },
+    { key: "Final Proof", label: "Final Proof", count: stats.proofing, tone: "gold" },
+    { key: "approvedWeek", label: "Closed this week", count: stats.approvedWeek, tone: "success" },
   ];
   return (
     <div style={{
@@ -69,12 +69,13 @@ export function DeskSummaryStrip({ stats }) {
 }
 
 export function PriorityBadge({ priority }) {
-  if (priority === "Election critical") return <Tag tone="danger">Election critical</Tag>;
-  if (priority === "Rush") return <Tag tone="warning">Rush</Tag>;
+  if (priority === "Urgent") return <Tag tone="danger">Urgent</Tag>;
+  if (priority === "Important") return <Tag tone="warning">Important</Tag>;
+  if (priority === "Backburner") return <Tag tone="outline">Backburner</Tag>;
   return null;
 }
 
-export function RequestTable({ items, role, isDesigner, onOpen, onAssign, designers, showAssignee = true }) {
+export function RequestTable({ items, role, isDesigner, onOpen, onAssign, onClaim, designers, showAssignee = true }) {
   if (!items?.length) {
     return (
       <div className="card card-pad mut" style={{ fontSize: 13, textAlign: "center", padding: 40 }}>
@@ -95,7 +96,7 @@ export function RequestTable({ items, role, isDesigner, onOpen, onAssign, design
             {showAssignee && !isClient && <th>Assignee</th>}
             <th>Due</th>
             {!isClient && <th>Priority</th>}
-            {!isClient && onAssign && <th></th>}
+            {!isClient && (onAssign || onClaim) && <th></th>}
           </tr>
         </thead>
         <tbody>
@@ -119,24 +120,30 @@ export function RequestTable({ items, role, isDesigner, onOpen, onAssign, design
               {!isClient && (
                 <td>
                   <PriorityBadge priority={r.priority} />
-                  {!["Rush", "Election critical"].includes(r.priority) && (
-                    <span className="mut" style={{ fontSize: 12 }}>{r.priority || "Standard"}</span>
+                  {!["Urgent", "Important", "Backburner"].includes(r.priority) && (
+                    <span className="mut" style={{ fontSize: 12 }}>{r.priority || "Normal"}</span>
                   )}
                 </td>
               )}
-              {!isClient && onAssign && (
+              {!isClient && (onAssign || onClaim) && (
                 <td onClick={(e) => e.stopPropagation()}>
-                  <select
-                    className="input"
-                    style={{ fontSize: 12, padding: "4px 8px", minWidth: 120 }}
-                    value={r.assigneeId || ""}
-                    onChange={(e) => onAssign(r, e.target.value || null)}
-                  >
-                    <option value="">Unassigned</option>
-                    {(designers || []).map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                  {onAssign ? (
+                    <select
+                      className="input"
+                      style={{ fontSize: 12, padding: "4px 8px", minWidth: 120 }}
+                      value={r.assigneeId || ""}
+                      onChange={(e) => onAssign(r, e.target.value || null)}
+                    >
+                      <option value="">Unassigned</option>
+                      {(designers || []).map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  ) : !r.assigneeId && onClaim ? (
+                    <button type="button" className="btn primary sm" onClick={() => onClaim(r)}>
+                      Claim
+                    </button>
+                  ) : null}
                 </td>
               )}
             </tr>
