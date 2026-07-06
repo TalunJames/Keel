@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Icon, Avatar, Tag } from "../components/ui.jsx";
-import { api, ApiError } from "../lib/api.js";
+import { api, ApiError, usersAdminApi } from "../lib/api.js";
 import { Loading } from "../components/Loading.jsx";
 import { useModalA11y } from "../lib/useModalA11y.js";
 
@@ -10,12 +10,22 @@ const ROLE_OPTIONS = [
   { value: "client", label: "Client" },
 ];
 
-const EMPTY_FORM = { email: "", password: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false, isDesigner: false };
+const EMPTY_FORM = { email: "", name: "", team: "", role: "staff", clientId: "", systemAdmin: false, isDesigner: false };
 
 function roleTag(u) {
-  if (u.systemAdmin) return <Tag tone="gold">System admin</Tag>;
   const tones = { admin: "gold", client: "outline", staff: "navy" };
   const labels = { admin: "Admin / Partner", client: "Client", staff: "Staff" };
+  if (u.pendingInvite) {
+    return (
+      <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <Tag tone={tones[u.role] || "navy"}>{labels[u.role] || u.role}</Tag>
+        <Tag tone={u.inviteExpired ? "outline" : "gold"}>
+          {u.inviteExpired ? "Expired" : "Pending"}
+        </Tag>
+      </span>
+    );
+  }
+  if (u.systemAdmin) return <Tag tone="gold">System admin</Tag>;
   return (
     <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
       <Tag tone={tones[u.role] || "navy"}>{labels[u.role] || u.role}</Tag>
@@ -63,10 +73,16 @@ function AdminModal({ title, children, onClose, wide }) {
   );
 }
 
-function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, onSubmit, onCancel, editingSelf }) {
+function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, onSubmit, onCancel, editingSelf, editingUser }) {
   const isEdit = mode === "edit";
+  const isInvite = mode === "invite";
   return (
     <form className="col" style={{ gap: 0 }} onSubmit={onSubmit}>
+      {isInvite && (
+        <p className="mut" style={{ fontSize: 13, margin: "0 0 16px" }}>
+          They'll receive an email with an overview of Keel, their role, and a link to create their account.
+        </p>
+      )}
       <div className="field">
         <label>Full name</label>
         <input className="input" required value={form.name}
@@ -79,16 +95,18 @@ function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, 
             value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </div>
       )}
-      <div className="field">
-        <label>{isEdit ? "New password" : "Password"}</label>
-        <input className="input" type="password" required={!isEdit} autoComplete="new-password"
-          placeholder={isEdit ? "Leave blank to keep current" : ""}
-          value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        {isEdit && <div className="help">Only fill in to reset their password.</div>}
-      </div>
+      {!isInvite && (
+        <div className="field">
+          <label>{isEdit ? "New password" : "Password"}</label>
+          <input className="input" type="password" required={!isEdit} autoComplete="new-password"
+            placeholder={isEdit ? "Leave blank to keep current" : ""}
+            value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          {isEdit && <div className="help">Only fill in to reset their password.</div>}
+        </div>
+      )}
       <div className="field">
         <label>Role</label>
-        <select className="input" value={form.role} disabled={editingSelf}
+        <select className="input" value={form.role} disabled={editingSelf || (isEdit && editingUser?.pendingInvite)}
           onChange={(e) => setForm({ ...form, role: e.target.value, systemAdmin: e.target.value === "admin" ? form.systemAdmin : false })}>
           {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
@@ -131,7 +149,7 @@ function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, 
       <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
         <button type="button" className="btn secondary" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn primary" disabled={saving}>
-          {saving ? "Saving…" : isEdit ? "Save changes" : "Create user"}
+          {saving ? "Saving…" : isInvite ? "Send invitation" : isEdit ? "Save changes" : "Create user"}
         </button>
       </div>
     </form>
@@ -141,11 +159,14 @@ function UserForm({ mode, form, setForm, clients, isSystemAdmin, saving, error, 
 export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmin, onReload, onFlash }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [showInvite, setShowInvite] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [createForm, setCreateForm] = useState(EMPTY_FORM);
-  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [inviteForm, setInviteForm] = useState(EMPTY_FORM);
+  const [createForm, setCreateForm] = useState({ ...EMPTY_FORM, password: "" });
+  const [editForm, setEditForm] = useState({ ...EMPTY_FORM, password: "" });
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(null);
   const [formError, setFormError] = useState("");
 
   const filtered = useMemo(() => {
@@ -175,10 +196,32 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
   };
 
   const closeModals = () => {
+    setShowInvite(false);
     setShowCreate(false);
     setEditing(null);
-    setCreateForm(EMPTY_FORM);
+    setInviteForm(EMPTY_FORM);
+    setCreateForm({ ...EMPTY_FORM, password: "" });
     setFormError("");
+  };
+
+  const handleInvite = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      const result = await usersAdminApi.invite(inviteForm);
+      closeModals();
+      onReload();
+      if (result.emailSent === false && result.mailError) {
+        onFlash("Invite created but email failed — use Resend invite");
+      } else {
+        onFlash("Invitation sent to " + inviteForm.email);
+      }
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not send invitation");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCreate = async (e) => {
@@ -194,6 +237,23 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       setFormError(err instanceof ApiError ? err.message : "Could not create user");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResend = async (u) => {
+    setResending(u.id);
+    try {
+      const result = await usersAdminApi.resendInvite(u.id);
+      onReload();
+      if (result.emailSent === false && result.mailError) {
+        onFlash("Could not send email — check SMTP settings");
+      } else {
+        onFlash("Invitation resent to " + u.email);
+      }
+    } catch (err) {
+      onFlash(err instanceof ApiError ? err.message : "Could not resend invitation");
+    } finally {
+      setResending(null);
     }
   };
 
@@ -234,8 +294,11 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
         <div className="card-head">
           <h3>People · {(users || []).length}</h3>
           <div className="row" style={{ gap: 6 }}>
-            <button type="button" className="btn primary sm" onClick={() => { setFormError(""); setShowCreate(true); }}>
-              <Icon name="plus" size={12} /> Add user
+            <button type="button" className="btn primary sm" onClick={() => { setFormError(""); setShowInvite(true); }}>
+              <Icon name="plus" size={12} /> Invite user
+            </button>
+            <button type="button" className="btn secondary sm" onClick={() => { setFormError(""); setShowCreate(true); }}>
+              Set password manually
             </button>
           </div>
         </div>
@@ -265,7 +328,7 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
         ) : filtered.length === 0 ? (
           <div style={{ padding: "40px 24px", textAlign: "center" }}>
             <p className="mut" style={{ fontSize: 13, margin: 0 }}>
-              {search || roleFilter !== "all" ? "No users match your filters." : "No users yet — add someone to get started."}
+              {search || roleFilter !== "all" ? "No users match your filters." : "No users yet — invite someone to get started."}
             </p>
           </div>
         ) : (
@@ -297,9 +360,23 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
                   <td className="mut" style={{ fontFamily: "var(--fs-font-mono)", fontSize: 12 }}>{u.email}</td>
                   <td className="mut" style={{ fontSize: 12 }}>{formatDate(u.createdAt)}</td>
                   <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="btn ghost sm" onClick={() => openEdit(u)} aria-label="Edit user">
-                      <Icon name="pen" size={14} />
-                    </button>
+                    <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
+                      {u.pendingInvite && (
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          disabled={resending === u.id}
+                          onClick={() => handleResend(u)}
+                          aria-label="Resend invitation"
+                          title="Resend invitation email"
+                        >
+                          <Icon name="rotate-ccw" size={14} />
+                        </button>
+                      )}
+                      <button type="button" className="btn ghost sm" onClick={() => openEdit(u)} aria-label="Edit user">
+                        <Icon name="pen" size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -308,8 +385,27 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
         )}
       </div>
 
+      {showInvite && (
+        <AdminModal title="Invite user" onClose={closeModals} wide>
+          <UserForm
+            mode="invite"
+            form={inviteForm}
+            setForm={setInviteForm}
+            clients={clients}
+            isSystemAdmin={isSystemAdmin}
+            saving={saving}
+            error={formError}
+            onSubmit={handleInvite}
+            onCancel={closeModals}
+          />
+        </AdminModal>
+      )}
+
       {showCreate && (
-        <AdminModal title="Add user" onClose={closeModals} wide>
+        <AdminModal title="Create user with password" onClose={closeModals} wide>
+          <p className="mut" style={{ fontSize: 13, margin: "0 0 16px" }}>
+            Skip the email invite and set their password directly. They can sign in immediately.
+          </p>
           <UserForm
             mode="create"
             form={createForm}
@@ -327,6 +423,13 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       {editing && (
         <AdminModal title={"Edit · " + editing.name} onClose={closeModals} wide>
           <p className="mut" style={{ fontSize: 13, margin: "0 0 16px" }}>{editing.email}</p>
+          {editing.pendingInvite && (
+            <div style={{ marginBottom: 16, padding: "10px 12px", background: "var(--fs-bone-50)", borderRadius: 4, fontSize: 13 }}>
+              {editing.inviteExpired
+                ? "Their invitation expired. Use the resend button to send a new link."
+                : "Waiting for them to accept the invitation email."}
+            </div>
+          )}
           <UserForm
             mode="edit"
             form={editForm}
@@ -338,6 +441,7 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
             onSubmit={handleEdit}
             onCancel={closeModals}
             editingSelf={editing.id === user?.id}
+            editingUser={editing}
           />
         </AdminModal>
       )}

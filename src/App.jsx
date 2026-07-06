@@ -9,6 +9,7 @@ import { Sidebar, TopBar } from "./components/shell.jsx";
 import { PageHead, Icon } from "./components/ui.jsx";
 import { LoginView } from "./views/login.jsx";
 import { SetupView } from "./views/setup.jsx";
+import { InviteView } from "./views/invite.jsx";
 import { HomeView } from "./views/home.jsx";
 import { CalendarView } from "./views/calendar.jsx";
 import { DesignView } from "./views/design.jsx";
@@ -57,6 +58,10 @@ function ModuleLockOut({ clientName }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [setup, setSetup] = useState(null);
+  const [inviteToken, setInviteToken] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("invite");
+  });
   const [booting, setBooting] = useState(true);
   const [clients, setClients] = useState([]);
   const [clientsError, setClientsError] = useState(null);
@@ -178,6 +183,10 @@ export default function App() {
 
   if (setup?.needsSetup) {
     return <SetupView setup={setup} onComplete={handleLogin} />;
+  }
+
+  if (inviteToken && !user) {
+    return <InviteView token={inviteToken} onComplete={(u) => { setInviteToken(null); handleLogin(u); }} />;
   }
 
   if (!user) return <LoginView onLogin={handleLogin} />;

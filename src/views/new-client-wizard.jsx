@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Icon, Tag } from "../components/ui.jsx";
-import { clientsApi, teamApi } from "../lib/api.js";
+import { clientsApi, teamApi, usersAdminApi } from "../lib/api.js";
 import {
   STANDARD_TYPE_PRESETS,
   CUSTOM_TYPE_PRESET,
@@ -212,7 +212,21 @@ export function ClientWizard({ client, onCancel, onCreated, onSaved }) {
     setError("");
     try {
       const result = await clientsApi.create(buildClientPayload(draft));
-      onCreated?.(result.id);
+      const clientId = result.id;
+      const contacts = draft.contacts.filter((c) => c.email?.trim());
+      for (const contact of contacts) {
+        try {
+          await usersAdminApi.invite({
+            email: contact.email.trim(),
+            name: contact.name.trim() || contact.email.trim(),
+            role: "client",
+            clientId,
+          });
+        } catch {
+          // Client was created; individual invite failures are non-fatal.
+        }
+      }
+      onCreated?.(clientId);
     } catch (err) {
       setError(err.message || "Could not create client.");
     } finally {

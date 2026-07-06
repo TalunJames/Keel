@@ -1,0 +1,42 @@
+# TrueNAS Custom App compose — Seawolf pool, LAN port 33001.
+# Paste into TrueNAS Apps → Keel → Edit Compose, or use as reference.
+#
+# Before first invite email:
+#   1. Google Workspace Admin → Gmail → Routing → SMTP relay service
+#      - Allowed senders: Only addresses in my domains
+#      - Only accept mail from IP 47.176.146.227 (TrueNAS egress — re-check if ISP changes)
+#      - Require TLS encryption
+#   2. Merge PR #34 (or deploy an image that includes user invites + SMTP relay)
+#   3. Restart the container after saving env changes
+
+services:
+  keel:
+    container_name: keel
+    image: ghcr.io/talunjames/keel:latest
+    pull_policy: always
+    restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "33001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      SERVE_STATIC: "true"
+      DATABASE_PATH: /app/data/keel.db
+      VOTER_DATA_DIR: /app/data/voter
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN_SECONDS: "28800"
+      BOOTSTRAP_ADMIN_EMAIL: cjames@fogsignalstrategies.com
+      BOOTSTRAP_ADMIN_NAME: Carter James
+      # Both public hostnames — comma-separated, no spaces
+      CORS_ORIGIN: https://keel.fogsignalstrategies.com,https://keel.fogsignal.com
+      APP_URL: https://keel.fogsignalstrategies.com,https://keel.fogsignal.com
+      # Google Workspace SMTP relay (IP allowlist — no SMTP_USER/PASS)
+      MAIL_ENABLED: "1"
+      SMTP_HOST: smtp-relay.gmail.com
+      SMTP_PORT: "587"
+      SMTP_SECURE: "0"
+      SMTP_FROM: Keel <keel@fogsignal.co>
+    volumes:
+      - /mnt/Seawolf/Keel/data:/app/data
+      - /mnt/Seawolf/Keel/uploads:/app/uploads

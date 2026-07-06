@@ -224,6 +224,17 @@ function migrate(db) {
       category TEXT NOT NULL DEFAULT 'System',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_invitations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      invited_by TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      accepted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
 
   ensureUserColumns(db);
@@ -344,6 +355,7 @@ function ensureIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_design_comments_request ON design_comments(request_id);
     CREATE INDEX IF NOT EXISTS idx_voter_cuts_client ON voter_cuts(client_id);
     CREATE INDEX IF NOT EXISTS idx_voter_files_client ON voter_files(client_id, active);
+    CREATE INDEX IF NOT EXISTS idx_user_invitations_user ON user_invitations(user_id, accepted_at);
   `);
 }
 
