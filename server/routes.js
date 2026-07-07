@@ -60,7 +60,7 @@ import {
 } from "./voter/warehouse.js";
 import { registerDesignRoutes } from "./design-routes.js";
 import { registerPeriscopeRoutes } from "./periscope-routes.js";
-import { registerProposalRoutes } from "./proposal-routes.js";
+import { registerProposalsAppRoutes } from "./proposals-app-routes.js";
 import { registerCleatusRoutes } from "./cleatus-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
 import { loadUserPreferences, parsePreferences, serializePreferences } from "./user-prefs.js";
@@ -696,7 +696,7 @@ export function registerRoutes(app, db) {
 
   registerDesignRoutes(app, db, auth);
   registerPeriscopeRoutes(app, auth);
-  registerProposalRoutes(app, db, auth);
+  registerProposalsAppRoutes(app, db, auth);
   registerCleatusRoutes(app, db, auth);
 
   app.get("/api/media/mentions", auth, list("media_mentions", mapMediaMention));

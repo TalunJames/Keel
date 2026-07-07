@@ -268,6 +268,7 @@ function ensureProposalColumns(db) {
   add("owner_id", "owner_id TEXT");
   add("template_id", "template_id TEXT");
   add("due_at", "due_at TEXT");
+  add("updated_at", "updated_at TEXT");
 }
 
 function ensureProposalTables(db) {

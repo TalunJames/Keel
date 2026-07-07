@@ -30,12 +30,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       workerSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "https:"],
-      fontSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       frameAncestors: ["'self'"],
     },
@@ -100,7 +100,7 @@ app.get("/api/version", (_req, res) => {
 if (process.env.SERVE_STATIC === "true" || process.env.NODE_ENV === "production") {
   const dist = path.join(root, "dist");
   app.use(express.static(dist));
-  app.get(/^(?!\/api)(?!\/periscope).*/, (_req, res) => {
+  app.get(/^(?!\/api)(?!\/periscope)(?!\/proposals).*/, (_req, res) => {
     res.sendFile(path.join(dist, "index.html"));
   });
 }
