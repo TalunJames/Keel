@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVITE_HTML_TEMPLATE = readFileSync(
-  join(__dirname, "..", "keel-invite.email.html"),
+  join(__dirname, "templates", "keel-invite.email.html"),
   "utf8",
 );
 
