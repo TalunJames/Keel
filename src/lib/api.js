@@ -182,50 +182,6 @@ const crudApi = (base) => ({
 });
 
 export const calendarApi = crudApi("/calendar/events");
-export const proposalsApi = {
-  list: (clientId, opts = {}) => {
-    const params = new URLSearchParams();
-    if (clientId) params.set("clientId", clientId);
-    if (opts.triage) params.set("triage", opts.triage);
-    const q = params.toString();
-    return api("/proposals" + (q ? `?${q}` : ""));
-  },
-  get: (id) => api(`/proposals/${id}`),
-  create: (body) => api("/proposals", { method: "POST", body: JSON.stringify(body) }),
-  update: (id, body) => api(`/proposals/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  remove: (id) => api(`/proposals/${id}`, { method: "DELETE" }),
-  templates: (clientType) => {
-    const q = clientType ? `?type=${encodeURIComponent(clientType)}` : "";
-    return api(`/proposals/templates${q}`);
-  },
-  blocks: (clientType) => {
-    const q = clientType ? `?type=${encodeURIComponent(clientType)}` : "";
-    return api(`/proposals/blocks${q}`);
-  },
-  notes: {
-    list: (id) => api(`/proposals/${id}/notes`),
-    add: (id, body) => api(`/proposals/${id}/notes`, { method: "POST", body: JSON.stringify(body) }),
-  },
-  comments: {
-    list: (id) => api(`/proposals/${id}/comments`),
-    add: (id, body) => api(`/proposals/${id}/comments`, { method: "POST", body: JSON.stringify(body) }),
-    update: (id, commentId, body) =>
-      api(`/proposals/${id}/comments/${commentId}`, { method: "PATCH", body: JSON.stringify(body) }),
-    remove: (id, commentId) => api(`/proposals/${id}/comments/${commentId}`, { method: "DELETE" }),
-  },
-  revisions: {
-    list: (id) => api(`/proposals/${id}/revisions`),
-    snapshot: (id, label) =>
-      api(`/proposals/${id}/revisions`, { method: "POST", body: JSON.stringify({ label }) }),
-    restore: (id, revId) => api(`/proposals/${id}/revisions/${revId}/restore`, { method: "POST" }),
-  },
-  suggestions: {
-    list: (id, status = "pending") => api(`/proposals/${id}/suggestions?status=${status}`),
-    add: (id, body) => api(`/proposals/${id}/suggestions`, { method: "POST", body: JSON.stringify(body) }),
-    accept: (id, sid) => api(`/proposals/${id}/suggestions/${sid}/accept`, { method: "POST" }),
-    reject: (id, sid) => api(`/proposals/${id}/suggestions/${sid}/reject`, { method: "POST" }),
-  },
-};
 export const mediaApi = crudApi("/media/mentions");
 export const stakeholdersApi = crudApi("/stakeholders");
 export const resourcesApi = crudApi("/resources");

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
-import { createProposalFromCleatus } from "./proposal-routes.js";
+import { createProposalFromCleatus } from "./cleatus-proposals.js";
 
 function verifyCleatusSignature(rawBody, signature, secret) {
   // Fail closed: without a configured secret, a raw body, or a signature we cannot verify.

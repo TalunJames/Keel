@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: `http://localhost:${process.env.PORT || 3001}`, changeOrigin: true },
       "/periscope": { target: `http://localhost:${process.env.PORT || 3001}`, changeOrigin: true },
+      "/proposals": { target: `http://localhost:${process.env.PORT || 3001}`, changeOrigin: true },
     },
   },
   build: {
