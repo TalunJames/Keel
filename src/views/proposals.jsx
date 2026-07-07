@@ -9,7 +9,7 @@ export function ProposalsView({ clientId }) {
     const params = new URLSearchParams();
     if (clientId && clientId !== "all") params.set("clientId", clientId);
     const q = params.toString();
-    return `/proposals/app${q ? `?${q}` : ""}`;
+    return `/proposals/app/${q ? `?${q}` : ""}`;
   }, [clientId]);
 
   return (
