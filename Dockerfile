@@ -60,6 +60,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build     /app/dist         ./dist
 COPY package.json ./
 COPY server ./server
+COPY vendor ./vendor
 COPY election-collector ./election-collector
 COPY docker-entrypoint.sh ./
 
