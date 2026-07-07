@@ -63,6 +63,17 @@ COPY server ./server
 COPY election-collector ./election-collector
 COPY docker-entrypoint.sh ./
 
+# Vendored sub-apps are served by the Node API at runtime (/periscope, /proposals/app).
+# They are not part of the Vite dist bundle and must be present in the image.
+COPY vendor/periscope ./vendor/periscope
+COPY vendor/proposals ./vendor/proposals
+
+# Fail the image build if a vendored shell is missing (avoids "shell missing" at runtime).
+RUN test -f vendor/periscope/index-keel.html \
+ && test -f vendor/proposals/index-keel.html \
+ && test -f vendor/proposals/js/main.js \
+ && test -f vendor/proposals/css/app.css
+
 # Run as a dedicated non-root user. UID/GID 568 matches the TrueNAS Scale
 # built-in `apps` user, so the image default lines up with docker-compose.yml
 # (`user: "568:568"`) and the chown'd host bind mounts. The writable dirs are

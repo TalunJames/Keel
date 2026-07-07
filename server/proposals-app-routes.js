@@ -442,7 +442,10 @@ export function registerProposalsAppRoutes(app, db, auth) {
   const sendShell = (_req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(indexPath, (err) => {
-      if (err && !res.headersSent) res.status(500).send("Proposals builder shell missing");
+      if (err && !res.headersSent) {
+        console.error("[proposals] shell missing:", indexPath, err.message);
+        res.status(500).send("Proposals builder shell missing");
+      }
     });
   };
   app.get(`${BASE}`, sendShell);
