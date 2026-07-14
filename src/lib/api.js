@@ -86,6 +86,7 @@ export const inviteApi = {
 export const usersAdminApi = {
   invite: (body) => api("/admin/users/invite", { method: "POST", body: JSON.stringify(body) }),
   resendInvite: (userId) => api("/admin/users/" + encodeURIComponent(userId) + "/resend-invite", { method: "POST" }),
+  remove: (userId) => api("/admin/users/" + encodeURIComponent(userId), { method: "DELETE" }),
 };
 
 export const accountApi = {
