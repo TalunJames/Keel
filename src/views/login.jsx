@@ -104,6 +104,7 @@ export function LoginView({ onLogin }) {
             <label htmlFor="email">Email</label>
             <input id="email" className="input" type="email" autoComplete="username" required
               placeholder="name@fogsignal.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <div className="help">@fogsignal.com and @fogsignalstrategies.com both work</div>
           </div>
           <div className="field">
             <label htmlFor="password">Password</label>

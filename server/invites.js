@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { hashPassword } from "./auth.js";
+import { findUserByEmail } from "./email-aliases.js";
 
 /** Sentinel stored until the invitee completes account setup. Never valid bcrypt. */
 export const INVITE_PENDING_HASH = "!INVITE_PENDING!";
@@ -107,9 +108,11 @@ export async function createUserInvite(db, {
     throw Object.assign(new Error("Client account required for client role"), { status: 400 });
   }
 
-  const existing = db.prepare(
-    "SELECT id, password_hash AS passwordHash FROM users WHERE email = ? COLLATE NOCASE"
-  ).get(trimmedEmail);
+  const existing = findUserByEmail(
+    db,
+    trimmedEmail,
+    "SELECT id, password_hash AS passwordHash, email FROM users"
+  );
 
   let userId;
   if (existing) {
