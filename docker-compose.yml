@@ -73,6 +73,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-Keel <keel@fogsignal.co>}
+      # Claude (Anthropic) API key for the proposal-editor AI features.
+      # Without it, the AI controls stay hidden / return a "not configured" notice.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - /mnt/tank/apps/keel/data:/app/data
       - /mnt/tank/apps/keel/uploads:/app/uploads

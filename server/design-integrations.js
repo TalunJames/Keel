@@ -1,11 +1,12 @@
 import { createDesignProjectFolder, isDriveConfigured } from "./google-drive.js";
+import { getSecret } from "./integration-settings.js";
 
 export function isZapierConfigured() {
-  return !!process.env.ZAPIER_DESIGN_WEBHOOK_URL?.trim();
+  return !!getSecret("zapier_design_webhook_url");
 }
 
 async function sendZapierEvent(event, payload) {
-  const url = process.env.ZAPIER_DESIGN_WEBHOOK_URL?.trim();
+  const url = getSecret("zapier_design_webhook_url");
   if (!url) return { status: "skipped" };
 
   const res = await fetch(url, {

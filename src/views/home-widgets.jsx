@@ -213,7 +213,9 @@ export function LatestPollWidget({ title, role, clientId, onNavigate }) {
           <div className="mut" style={{ fontSize: 13 }}>{pollHeadline(poll)}</div>
           {poll.n != null && (
             <div className="mut" style={{ fontSize: 11, marginTop: 8 }}>
-              n={poll.n}{poll.moe != null ? ` · ±${poll.moe}%` : ""}
+              {/* moe is stored fully decorated (e.g. "±3.3%") — normalize so we
+                  never render "±±3.3%%" regardless of the stored format. */}
+              n={poll.n}{poll.moe != null ? ` · ±${String(poll.moe).replace(/^±/, "").replace(/%$/, "")}%` : ""}
             </div>
           )}
         </div>

@@ -112,6 +112,17 @@ export async function sendMail({ to, subject, text, html, eventType = "general" 
   let error = null;
   let sent = false;
 
+  // Mail disabled: report honestly (sent: false) instead of pretending the
+  // message went out — otherwise invites flash "sent" and the link is lost
+  // forever. Print the body so the operator can copy the invite URL from logs.
+  if (process.env.MAIL_ENABLED !== "1") {
+    console.log(`[mail:dev] MAIL_ENABLED is off — ${eventType} → ${to} NOT sent. Body:\n${text}`);
+    return {
+      sent: false,
+      error: "Email delivery is disabled (MAIL_ENABLED is not set). The message, including any invite link, was printed to the server log.",
+    };
+  }
+
   try {
     const tx = await getTransporter();
     if (tx) {
@@ -134,9 +145,6 @@ export async function sendMail({ to, subject, text, html, eventType = "general" 
     console.error(`[mail] failed ${eventType} → ${to} (EHLO ${smtpEhloName()}):`, error);
   }
 
-  if (process.env.MAIL_ENABLED !== "1") {
-    return { sent: true, error: null };
-  }
   return { sent: sent && !error, error };
 }
 

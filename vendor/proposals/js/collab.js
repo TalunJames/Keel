@@ -343,9 +343,178 @@ function updateRailCounts() {
 function renderRail() {
   const host = $('#railBody');
   if (!host) return;
-  if (App.railTab === 'suggestions') renderSuggestionRail(host);
+  if (App.railTab === 'ai') renderChatRail(host);
+  else if (App.railTab === 'suggestions') renderSuggestionRail(host);
   else renderCommentRail(host);
   updateRailCounts();
+}
+
+/* =================== ASK CLAUDE (chat) =================== */
+/* Chat history lives per-doc in memory (App.aiChat[docId]). Read-only Q&A —
+   the model answers about the RFP, this proposal, and the firm context; it
+   never mutates the document. */
+function chatHistory() {
+  App.aiChat = App.aiChat || {};
+  const id = App.doc ? App.doc.id : '_';
+  if (!App.aiChat[id]) App.aiChat[id] = [];
+  return App.aiChat[id];
+}
+
+function renderChatRail(host) {
+  const hist = chatHistory();
+  const unavailable = window.AI && AI.available === false;
+  host.innerHTML = `
+  <div class="ai-chat">
+    <div class="ai-chat-log" id="aiChatLog">
+      ${unavailable
+        ? `<div class="rail-empty">Claude isn’t configured on the server yet. An administrator can add an API key to enable this.</div>`
+        : (hist.length
+            ? hist.map(m => `<div class="ai-msg ai-${m.role}">${m.role === 'assistant' ? mdish(m.content) : esc(m.content)}</div>`).join('')
+            : `<div class="rail-empty">Ask about the RFP, this proposal, or the firm. Claude sees the current document, its RFP notes, and your saved firm context.<br><br>Try: “What does the RFP require that we haven’t addressed yet?”</div>`)}
+    </div>
+    <div class="ai-chat-input">
+      <textarea id="aiChatText" rows="2" placeholder="Ask Claude about this proposal…" ${unavailable ? 'disabled' : ''}></textarea>
+      <button class="btn primary" id="aiChatSend" ${unavailable ? 'disabled' : ''} title="Send (Enter)">${icon('send', 15)}</button>
+    </div>
+  </div>`;
+
+  const log = host.querySelector('#aiChatLog');
+  const ta = host.querySelector('#aiChatText');
+  const send = host.querySelector('#aiChatSend');
+  if (!ta) return;
+  const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+  scrollDown();
+
+  let busy = false;
+  const doSend = async () => {
+    const text = ta.value.trim();
+    if (!text || busy) return;
+    busy = true;
+    hist.push({ role: 'user', content: text });
+    ta.value = '';
+    // render the user turn + a streaming assistant bubble
+    log.insertAdjacentHTML('beforeend', `<div class="ai-msg ai-user">${esc(text)}</div><div class="ai-msg ai-assistant" id="aiStreaming"><span class="ai-typing">…</span></div>`);
+    scrollDown();
+    const bubble = host.querySelector('#aiStreaming');
+    try {
+      const full = await AI.chat(hist.map(m => ({ role: m.role, content: m.content })), (_d, sofar) => {
+        bubble.innerHTML = mdish(sofar);
+        scrollDown();
+      });
+      bubble.innerHTML = mdish(full);
+      bubble.removeAttribute('id');
+      hist.push({ role: 'assistant', content: full });
+    } catch (e) {
+      bubble.innerHTML = `<span class="ai-err">${esc(e.message || 'Something went wrong')}</span>`;
+      bubble.removeAttribute('id');
+    } finally {
+      busy = false;
+      scrollDown();
+    }
+  };
+  send.addEventListener('click', doSend);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+  });
+}
+
+/* =================== PROOFREAD WITH CLAUDE =================== */
+const CLAUDE_AUTHOR = { author: 'Claude', initials: 'AI', color: '#B8932A' };
+
+async function runProofread() {
+  if (window.AI && AI.available === false) { toast('Claude isn’t configured on the server'); return; }
+  if (!App.doc) return;
+  const btn = $('#proofreadBtn');
+  if (btn) { btn.disabled = true; }
+  toast('Claude is proofreading the proposal…', 8000);
+  try {
+    const { edits } = await AI.proofread({});
+    if (!edits || !edits.length) { toast('Claude found nothing to flag'); return; }
+    setMode('suggesting');
+    let applied = 0;
+    const touched = new Set();
+    edits.forEach((ed) => {
+      const res = applyProofEdit(ed);
+      if (res) {
+        applied++;
+        touched.add(res.blockId);
+        addClaudeComment(res.blockId, ed.find, `[${ed.severity || 'edit'}] ${ed.reason || ''}`.trim());
+      }
+    });
+    touched.forEach((bid) => {
+      const b = App.doc.blocks.find((x) => x.id === bid);
+      if (b) refreshBlock(b);
+    });
+    saveDoc();
+    App.railTab = 'suggestions';
+    renderRailChrome();
+    renderRail();
+    toast(applied
+      ? `Claude suggested ${applied} change${applied === 1 ? '' : 's'} — review in Suggestions; rationale in Comments`
+      : 'Claude’s edits could not be placed precisely (text may have changed)');
+  } catch (e) {
+    toast(e.message || 'Proofread failed');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* Insert one find→replace as an atomic tracked change into a content region.
+   Returns {sid, blockId} on success, or null if `find` wasn't located verbatim. */
+function applyProofEdit(edit) {
+  const key = String(edit.blockKey || '');
+  const find = String(edit.find || '');
+  if (!key || !find) return null;
+  let html = App.doc.content[key];
+  if (html == null) {
+    const ed = $(`#canvas .ed[data-key="${CSS.escape(key)}"]`);
+    if (!ed) return null;
+    html = ed.innerHTML;
+  }
+  // Skip if the change was already applied (e.g. duplicate edit) or the text
+  // already sits inside a suggestion.
+  const idx = html.indexOf(find);
+  if (idx < 0) return null;
+  const sid = uid('sg');
+  const attrs = `data-sid="${sid}" data-author="${esc(ME.name)}" data-ts="${Date.now()}"`;
+  const original = html.slice(idx, idx + find.length); // preserve exact bytes
+  const del = `<del ${attrs}>${original}</del>`;
+  const ins = `<ins ${attrs}>${esc(String(edit.replace || ''))}</ins>`;
+  App.doc.content[key] = html.slice(0, idx) + del + ins + html.slice(idx + find.length);
+  return { sid, blockId: key.split('.')[0] };
+}
+
+function addClaudeComment(blockId, quote, text) {
+  if (!text) return;
+  App.doc.comments.unshift({
+    id: uid('c'),
+    blockId,
+    quote: String(quote || '').slice(0, 160),
+    text,
+    author: CLAUDE_AUTHOR.author,
+    initials: CLAUDE_AUTHOR.initials,
+    color: CLAUDE_AUTHOR.color,
+    ts: Date.now(),
+    resolved: false,
+    replies: [],
+    assignee: null,
+  });
+}
+
+/* Tiny, safe markdown-ish renderer for assistant text (bold, code, lists, paras).
+   Escapes first, so no HTML injection. */
+function mdish(s) {
+  let t = esc(String(s || ''));
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const lines = t.split('\n');
+  let html = '', inList = false;
+  for (const ln of lines) {
+    const li = ln.match(/^\s*[-*]\s+(.*)$/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${li[1]}</li>`; }
+    else { if (inList) { html += '</ul>'; inList = false; } if (ln.trim()) html += `<p>${ln}</p>`; }
+  }
+  if (inList) html += '</ul>';
+  return html || '<p></p>';
 }
 
 function anchorYFor(blockId, cid) {

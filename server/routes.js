@@ -65,6 +65,16 @@ import { registerProposalsAppRoutes } from "./proposals-app-routes.js";
 import { registerCleatusRoutes } from "./cleatus-routes.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
 import { loadUserPreferences, parsePreferences, serializePreferences } from "./user-prefs.js";
+import {
+  INTEGRATIONS,
+  initIntegrationSettings,
+  listIntegrations,
+  setSecret,
+  clearSecret,
+  getSecret,
+} from "./integration-settings.js";
+import { getClient as getAnthropicClient, MODELS as AI_MODELS } from "./ai/claude.js";
+import { getSpendLimit, setSpendLimit, checkAiBudget } from "./ai/spend-limit.js";
 
 const ALL_CLIENT = {
   id: "all",
@@ -77,7 +87,10 @@ const ALL_CLIENT = {
 };
 
 function clientScope(user, clientId) {
-  if (user.role === "client") return user.clientId;
+  // A client-role user with no assigned client must match NOTHING — returning
+  // null here would skip the client_id WHERE clause and leak every client's
+  // data to them. The sentinel is not a real client id, so queries come back empty.
+  if (user.role === "client") return user.clientId || "__unassigned__";
   if (!clientId || clientId === "all") return null;
   return clientId;
 }
@@ -110,6 +123,7 @@ function slugifyClientId(tag) {
 
 export function registerRoutes(app, db) {
   const auth = requireAuth(db);
+  initIntegrationSettings(db);
 
   // Throttle unauthenticated credential endpoints to blunt online brute force.
   const authLimiter = rateLimit({
@@ -178,9 +192,11 @@ export function registerRoutes(app, db) {
       phone: row.phone || "",
       photo: row.photo ?? null,
       isDesigner: false,
+      tokenVersion: row.tokenVersion ?? 0,
       preferences: {},
     };
     const token = signToken(user, { remember: true });
+    delete user.tokenVersion;
     setAuthCookie(res, token, { remember: true, req });
     res.json({ user, token });
   });
@@ -226,9 +242,11 @@ export function registerRoutes(app, db) {
       phone: row.phone || "",
       photo: row.photo ?? null,
       isDesigner: !!row.isDesigner,
+      tokenVersion: row.tokenVersion ?? 0,
       preferences: {},
     };
     const token = signToken(user, { remember: true });
+    delete user.tokenVersion;
     setAuthCookie(res, token, { remember: true, req });
     res.json({ user, token });
   });
@@ -251,6 +269,7 @@ export function registerRoutes(app, db) {
       email,
       `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
               system_admin AS systemAdmin, is_designer AS isDesigner,
+              token_version AS tokenVersion,
               title, location, about, phone, photo,
               preferences_json AS preferencesJson
        FROM users`
@@ -282,7 +301,11 @@ export function registerRoutes(app, db) {
     user.isDesigner = !!user.isDesigner;
     user.preferences = parsePreferences(user.preferencesJson);
     delete user.preferencesJson;
+    // Sign with the user's CURRENT token_version — signing tv:0 after an admin
+    // bumped the version would mint tokens requireAuth immediately rejects,
+    // permanently locking the account out (login "succeeds" then bounces).
     const token = signToken(user, { remember: !!remember });
+    delete user.tokenVersion;
     setAuthCookie(res, token, { remember: !!remember, req });
     res.json({ user, token });
   });
@@ -317,6 +340,86 @@ export function registerRoutes(app, db) {
       "System"
     );
     res.json({ announcement: next });
+  });
+
+  // ---------- Integrations / API keys (system_admin only) ----------
+  // Secrets are stored in app_settings and take effect immediately (no restart).
+  // Reads only ever return a masked preview — the raw value never leaves the server.
+  app.get("/api/admin/integrations", auth, requireSystemAdmin, (_req, res) => {
+    res.json({ integrations: listIntegrations() });
+  });
+
+  app.put("/api/admin/integrations/:key", auth, requireSystemAdmin, (req, res) => {
+    const { key } = req.params;
+    if (!INTEGRATIONS[key]) return res.status(404).json({ error: "Unknown integration" });
+    const value = typeof req.body?.value === "string" ? req.body.value.trim() : "";
+    if (!value) return res.status(400).json({ error: "value required" });
+    if (value.length > 4096) return res.status(400).json({ error: "value too long" });
+    setSecret(db, key, value);
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Updated integration key: ${INTEGRATIONS[key].label}`,
+      "System"
+    );
+    res.json({ ok: true, integrations: listIntegrations() });
+  });
+
+  app.delete("/api/admin/integrations/:key", auth, requireSystemAdmin, (req, res) => {
+    const { key } = req.params;
+    if (!INTEGRATIONS[key]) return res.status(404).json({ error: "Unknown integration" });
+    clearSecret(db, key);
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Removed integration key: ${INTEGRATIONS[key].label}`,
+      "System"
+    );
+    res.json({ ok: true, integrations: listIntegrations() });
+  });
+
+  // Live connection test. Currently supported for the Claude key: a token-count
+  // call validates the key against the real API without spending any tokens.
+  app.post("/api/admin/integrations/:key/test", auth, requireSystemAdmin, async (req, res) => {
+    const { key } = req.params;
+    if (!INTEGRATIONS[key]) return res.status(404).json({ error: "Unknown integration" });
+    if (key !== "anthropic_api_key") {
+      return res.status(400).json({ error: "This integration does not support a connection test" });
+    }
+    if (!getSecret(key)) return res.status(400).json({ error: "No key configured yet" });
+    try {
+      const client = getAnthropicClient();
+      await client.messages.countTokens({
+        model: AI_MODELS.fast,
+        messages: [{ role: "user", content: "ping" }],
+      });
+      res.json({ ok: true, message: "Key is valid — connected to the Claude API." });
+    } catch (e) {
+      const status = e?.status;
+      const msg =
+        status === 401 ? "The API key was rejected (401 authentication error)."
+        : status === 403 ? "The key authenticated but lacks permission (403)."
+        : e?.message || "Connection test failed";
+      res.status(502).json({ error: msg });
+    }
+  });
+
+  // ---------- AI monthly spend limit (system_admin only) ----------
+  app.get("/api/admin/ai-budget", auth, requireSystemAdmin, (_req, res) => {
+    res.json({ ...getSpendLimit(db), ...checkAiBudget(db) });
+  });
+
+  app.put("/api/admin/ai-budget", auth, requireSystemAdmin, (req, res) => {
+    const { enabled, monthlyUsd } = req.body || {};
+    const usd = Number(monthlyUsd);
+    if (!Number.isFinite(usd) || usd < 1 || usd > 10000) {
+      return res.status(400).json({ error: "monthlyUsd must be between 1 and 10000" });
+    }
+    const saved = setSpendLimit(db, { enabled: !!enabled, monthlyUsd: usd });
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Set AI monthly budget: ${saved.enabled ? `$${saved.monthlyUsd}/month` : "disabled"}`,
+      "System"
+    );
+    res.json({ ...saved, ...checkAiBudget(db) });
   });
 
   // ---------- Account profile (self-service) ----------
@@ -1304,6 +1407,9 @@ export function registerRoutes(app, db) {
     if (systemAdmin && !req.user.systemAdmin) {
       return res.status(403).json({ error: "Only a system admin can grant system_admin" });
     }
+    if (role === "client" && !clientId) {
+      return res.status(400).json({ error: "Client users must be assigned to a client" });
+    }
     if (findUserByEmail(db, email, "SELECT id, email FROM users")) {
       return res.status(409).json({ error: "Email already exists" });
     }
@@ -1331,11 +1437,19 @@ export function registerRoutes(app, db) {
 
   app.patch("/api/admin/users/:id", auth, requireRole("admin"), async (req, res) => {
     const target = db.prepare(
-      "SELECT id, role, email, system_admin AS systemAdmin FROM users WHERE id = ?"
+      "SELECT id, role, email, client_id AS clientId, system_admin AS systemAdmin FROM users WHERE id = ?"
     ).get(req.params.id);
     if (!target) return res.status(404).json({ error: "Not found" });
 
     const { name, team, role, clientId, password, systemAdmin, isDesigner } = req.body || {};
+
+    // A client-role user must always have a client assignment — an unassigned
+    // client would otherwise fall outside every client_id scope filter.
+    const effectiveClientRole = role !== undefined ? role : target.role;
+    const effectiveClientId = clientId !== undefined ? clientId : target.clientId;
+    if (effectiveClientRole === "client" && !effectiveClientId) {
+      return res.status(400).json({ error: "Client users must be assigned to a client" });
+    }
     const updates = [];
     const args = [];
     const changes = [];

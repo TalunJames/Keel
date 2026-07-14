@@ -98,6 +98,7 @@ function buildBlockEl(b) {
     </div>
     <div class="btool bt-right" contenteditable="false">
       <span class="bt-label">${esc(catalogItem(b.type).label)}</span>
+      ${blockAiEditable(b) ? `<button class="bt-btn ai" data-bact="ai" title="Ask Claude to tailor this section">${icon('bolt', 14)}</button>` : ''}
       ${blockHasSettings(b.type) ? `<button class="bt-btn" data-bact="settings" title="Block settings">${icon('gear', 14)}</button>` : ''}
       <button class="bt-btn" data-bact="assign" title="Assign this section">${icon('users', 14)}</button>
       <button class="bt-btn" data-bact="comment" title="Comment on block">${icon('comment', 14)}</button>
@@ -172,6 +173,81 @@ function openAssignMenu(b, anchor) {
   }));
 }
 
+/* ---------- Ask Claude to tailor a block ---------- */
+/* Blocks whose main editable body lives under the `b.id` content key — those
+   are the ones Claude can rewrite in place. */
+const AI_BLOCK_TYPES = [
+  'coverLetter', 'divider', 'about', 'approach', 'why', 'understanding',
+  'workplan', 'schedule', 'terms', 'exceptions', 'conclusion', 'team',
+  'experience', 'heading', 'text', 'quote', 'blankpage', 'signature',
+];
+function blockAiEditable(b) {
+  if (window.AI && AI.available === false) return false;
+  if (AI_BLOCK_TYPES.includes(b.type)) return true;
+  return !!(typeof Settings !== 'undefined' && Settings.data && Settings.customBlock && Settings.customBlock(b.type));
+}
+
+function openBlockAI(b, anchor) {
+  selectBlock(b.id);
+  const card = popover(anchor, `
+    <div class="menu-kicker">${icon('bolt', 13)} Ask Claude to tailor “${esc(catalogItem(b.type).label)}”</div>
+    <textarea class="set-input" id="blkAiInstr" rows="3" placeholder="e.g. Make this more tailored toward a bond-measure strategy; tighten it to two paragraphs."></textarea>
+    <div class="ai-blk-foot">
+      <span class="set-hint" id="blkAiStatus" style="margin:0"></span>
+      <button class="btn tiny primary" id="blkAiGo">Rewrite</button>
+    </div>
+    <p class="set-hint" style="margin-top:6px">${App.mode === 'suggesting' ? 'Suggesting mode is on — the rewrite lands as a tracked change to accept or reject.' : 'The rewrite replaces the current text. Switch to Suggesting mode first to review it as a tracked change.'}</p>`, { width: 320 });
+
+  const instr = card.querySelector('#blkAiInstr');
+  const status = card.querySelector('#blkAiStatus');
+  const go = card.querySelector('#blkAiGo');
+  instr.focus();
+
+  const run = async () => {
+    const instruction = instr.value.trim();
+    if (!instruction) { instr.focus(); return; }
+    const ed = blockEls.get(b.id)?.querySelector(`.ed[data-key="${b.id}"]`);
+    const oldHtml = ed ? ed.innerHTML : (App.doc.content[b.id] || '');
+    go.disabled = true;
+    status.textContent = 'Claude is writing…';
+    try {
+      const r = await AI.block({ blockId: b.id, blockType: b.type, html: oldHtml, instruction });
+      const newHtml = (r.html || '').trim();
+      if (!newHtml) throw new Error('Claude returned nothing');
+      applyBlockRewrite(b, oldHtml, newHtml);
+      closePopovers();
+      toast(App.mode === 'suggesting' ? 'Rewrite added as a tracked suggestion' : 'Section rewritten');
+    } catch (e) {
+      go.disabled = false;
+      status.textContent = e.message || 'Rewrite failed';
+    }
+  };
+  go.addEventListener('click', run);
+  instr.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run(); });
+}
+
+/* Apply a full-body rewrite. In Suggesting mode it becomes one atomic tracked
+   change (shared data-sid on the <del>/<ins> pair, so accept/reject flips the
+   whole thing via the existing resolveSuggestion path). Otherwise a direct
+   replace. */
+function applyBlockRewrite(b, oldHtml, newHtml) {
+  if (App.mode === 'suggesting') {
+    const sid = uid('sg');
+    const ts = Date.now();
+    const attrs = `data-sid="${sid}" data-author="${esc(ME.name)}" data-ts="${ts}"`;
+    App.doc.content[b.id] = `<del ${attrs}>${oldHtml}</del><ins ${attrs}>${newHtml}</ins>`;
+    refreshBlock(b);
+    saveDoc();
+    if (App.railTab !== 'ai') { App.railTab = 'suggestions'; }
+    renderRailChrome();
+    renderRail();
+  } else {
+    App.doc.content[b.id] = newHtml;
+    refreshBlock(b);
+    saveDoc();
+  }
+}
+
 function updateAssignTag(b, wrapEl) {
   const wrap = wrapEl || blockEls.get(b.id);
   if (!wrap) return;
@@ -209,6 +285,7 @@ function bindBlockEvents(wrap, b) {
   wrap.querySelector('[data-bact="comment"]')?.addEventListener('click', () => { selectBlock(b.id); startComment(); });
   wrap.querySelector('[data-bact="assign"]')?.addEventListener('click', (e) => openAssignMenu(b, e.currentTarget));
   wrap.querySelector('[data-bact="settings"]')?.addEventListener('click', (e) => openBlockSettings(b, e.currentTarget));
+  wrap.querySelector('[data-bact="ai"]')?.addEventListener('click', (e) => openBlockAI(b, e.currentTarget));
 }
 
 function bindEditable(ed) {

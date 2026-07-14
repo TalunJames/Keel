@@ -15,7 +15,18 @@ export function safeUrl(url) {
   const raw = String(url).trim();
   if (!raw) return null;
 
-  // Root-relative, protocol-relative, or plain relative paths → same origin.
+  // Protocol-relative ("//evil.com/x") resolves to an EXTERNAL host, not same
+  // origin — treat it like an absolute URL by resolving it below, not here.
+  if (raw.startsWith("//")) {
+    try {
+      const resolved = new URL(raw, window.location.origin);
+      return SAFE_ABSOLUTE.test(resolved.href) ? resolved.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Root-relative or plain relative paths → same origin.
   if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) return raw;
 
   // Absolute URL: only allow http(s).

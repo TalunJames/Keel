@@ -18,6 +18,7 @@ const ADMIN_SECTIONS = [
   ['covers',    'Cover Templates',     'image',       'Shared cover art & saved cover layouts'],
   ['templates', 'Document Templates',  'doc',         'What “New Proposal” can start from'],
   ['pricing',   'Pricing & Calculator','calc',        'Cost calculator defaults & suggested prices'],
+  ['firm',      'Firm Context (AI)',   'bolt',        'Context Claude uses to draft & answer'],
 ];
 
 function renderAdmin() {
@@ -70,6 +71,7 @@ function renderAdminBody() {
     covers: adminCoversSection,
     templates: adminTemplatesSection,
     pricing: adminPricingSection,
+    firm: adminFirmSection,
   }[App.adminTab] || adminAccessSection)(host);
 }
 
@@ -977,5 +979,95 @@ function adminPricingSection(host) {
   Object.entries(adders).forEach(([act, fn]) => {
     const btn = host.querySelector(`[data-act="${act}"]`);
     if (btn) btn.addEventListener('click', () => { fn(); Settings.save(); adminPricingSection(host); });
+  });
+}
+
+/* =================== FIRM CONTEXT (AI) =================== */
+/* Shared text extraction for firm-context uploads. Reuses the zip + pdf.js
+   helpers from importfile.js (loaded earlier in the shell). */
+async function extractFileText(file) {
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.txt') || name.endsWith('.md') || file.type.startsWith('text/')) {
+    return await file.text();
+  }
+  if (name.endsWith('.docx')) {
+    const entries = zipEntries(await file.arrayBuffer());
+    const xml = await zipText(entries, 'word/document.xml');
+    if (!xml) throw new Error('Could not read the .docx');
+    return xml
+      .replace(/<\/w:p>/g, '\n')
+      .replace(/<w:tab[^>]*\/>/g, '\t')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  if (name.endsWith('.pdf')) {
+    const pdfjs = await loadPdfJs();
+    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    let out = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      out += tc.items.map((it) => it.str).join(' ') + '\n\n';
+    }
+    return out.trim();
+  }
+  throw new Error('Use a .txt, .md, .docx, or .pdf file');
+}
+
+function adminFirmSection(host) {
+  host.innerHTML = `
+  ${adminHead('Firm Context for Claude', 'A profile of Fog Signal Strategies — who we are, what we do, our voice, differentiators, and boilerplate. Claude uses this whenever it drafts a proposal, answers questions, tailors a block, or proofreads. Paste text or load it from a file. This is shared across the workspace.')}
+  <div class="admin-card">
+    <div class="set-label">Firm profile</div>
+    <textarea id="firmCtxText" class="set-input" style="min-height:340px;line-height:1.5;font-size:13px" placeholder="Example:&#10;Fog Signal Strategies is a public-affairs and campaign-services firm specializing in ballot-measure and bond campaigns for public agencies…&#10;&#10;Voice: confident, specific, plain-spoken.&#10;Differentiators: …&#10;Standard terms / boilerplate: …"></textarea>
+    <div class="pn-2col" style="grid-template-columns:auto auto 1fr auto;align-items:center;gap:10px;margin-top:10px">
+      <button class="btn" id="firmCtxLoad">${icon('upload', 14)} Load from file</button>
+      <span class="set-hint" id="firmCtxMeta" style="margin:0"></span>
+      <span></span>
+      <button class="btn primary" id="firmCtxSave">Save firm context</button>
+    </div>
+    <p class="set-hint" id="firmCtxStatus" style="margin-top:8px"></p>
+  </div>`;
+
+  const ta = host.querySelector('#firmCtxText');
+  const meta = host.querySelector('#firmCtxMeta');
+  const status = host.querySelector('#firmCtxStatus');
+  const setMeta = () => { meta.textContent = (ta.value.length ? ta.value.length.toLocaleString() + ' characters' : 'Empty'); };
+
+  ta.addEventListener('input', setMeta);
+
+  if (typeof AI !== 'undefined') {
+    AI.getFirmContext().then((fc) => {
+      ta.value = (fc && fc.text) || '';
+      setMeta();
+      if (fc && fc.updatedAt) status.textContent = 'Last saved ' + timeAgo(fc.updatedAt);
+    }).catch(() => { status.textContent = 'Could not load saved context.'; });
+  }
+
+  host.querySelector('#firmCtxLoad').addEventListener('click', async () => {
+    const f = await pickFile('.txt,.md,.docx,.pdf');
+    if (!f) return;
+    status.textContent = 'Reading ' + f.name + '…';
+    try {
+      const text = await extractFileText(f);
+      ta.value = ta.value ? (ta.value.trim() + '\n\n' + text) : text;
+      setMeta();
+      status.textContent = 'Loaded ' + f.name + ' — review, then Save.';
+    } catch (e) {
+      status.textContent = e.message || 'Could not read that file.';
+    }
+  });
+
+  host.querySelector('#firmCtxSave').addEventListener('click', async () => {
+    status.textContent = 'Saving…';
+    try {
+      const fc = await AI.setFirmContext(ta.value);
+      status.textContent = 'Saved.' + (fc && fc.updatedAt ? ' (' + timeAgo(fc.updatedAt) + ')' : '');
+      toast('Firm context saved');
+    } catch (e) {
+      status.textContent = e.message || 'Save failed.';
+    }
   });
 }

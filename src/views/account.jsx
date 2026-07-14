@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PageHead, Icon, Avatar, Eyebrow } from "../components/ui.jsx";
 import { accountApi } from "../lib/api.js";
 import { sortClientsByOrder } from "../lib/clients.js";
@@ -213,6 +213,15 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
 
   const cancelEdit = () => { setEditing(false); setDraft(null); };
 
+  // Track the timer so a rapid second save doesn't have its message cleared
+  // early by the first save's timeout.
+  const msgTimer = useRef(null);
+  const flashMsg = (text, ms) => {
+    setMsg(text);
+    clearTimeout(msgTimer.current);
+    msgTimer.current = setTimeout(() => setMsg(""), ms);
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -220,11 +229,9 @@ export function AccountView({ user: parentUser, onUserUpdate }) {
       setUser(u);
       onUserUpdate?.(u);
       setEditing(false);
-      setMsg("Saved");
-      setTimeout(() => setMsg(""), 2200);
+      flashMsg("Saved", 2200);
     } catch (e) {
-      setMsg(e?.message || "Could not save your changes.");
-      setTimeout(() => setMsg(""), 4000);
+      flashMsg(e?.message || "Could not save your changes.", 4000);
     } finally {
       setSaving(false);
     }
