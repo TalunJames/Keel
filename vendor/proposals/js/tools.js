@@ -97,7 +97,7 @@ function openFindReplace() {
     const m = ms[S.idx];
     const repl = card.querySelector('#frRepl').value;
     m.node.nodeValue = m.node.nodeValue.slice(0, m.start) + repl + m.node.nodeValue.slice(m.end);
-    syncEditable(m.ed); saveDoc(); scheduleAfterEdit();
+    syncEditable(m.ed); saveDoc({ history: 'seal' }); scheduleAfterEdit();
     S.idx--;
     findNext();
   });
@@ -118,7 +118,7 @@ function openFindReplace() {
       touched.add(ed);
     });
     touched.forEach(ed => syncEditable(ed));
-    if (count) { saveDoc(); scheduleAfterEdit(); }
+    if (count) { saveDoc({ history: 'seal' }); scheduleAfterEdit(); }
     status(count ? `Replaced ${count}` : 'No matches');
     S.idx = -1;
   });
@@ -286,7 +286,7 @@ function openListOptions(anchor) {
   const nested = () => card.querySelector('[data-lo-nested]').checked;
   const targets = () => nested() ? [list, ...list.querySelectorAll('ul,ol')] : [list];
   const items = () => targets().flatMap(l => [...l.children].filter(n => n.tagName === 'LI'));
-  const apply = () => { syncEditable(ed); saveDoc(); scheduleAfterEdit(); };
+  const apply = () => { syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit(); };
 
   card.querySelectorAll('[data-lostyle]').forEach(b => b.addEventListener('click', () => {
     list.style.listStyleType = b.dataset.lostyle;
@@ -299,7 +299,7 @@ function openListOptions(anchor) {
     if (k === 'gap') items().forEach(li => { li.style.marginBottom = v + 'px'; });
     if (k === 'indent') targets().forEach(l => { l.style.paddingLeft = v + 'px'; });
     if (k === 'lh') items().forEach(li => { li.style.lineHeight = String(v); });
-    apply();
+    syncEditable(ed); saveDoc(); scheduleAfterEdit();
   }));
 }
 

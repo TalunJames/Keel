@@ -177,7 +177,7 @@ function renderEditor() {
   <div class="editor">
     <!-- ===== top bar ===== -->
     <div class="topbar">
-      <button class="iconbtn back" id="backHome" title="All proposals">${icon('back', 17)}</button>
+      <button class="btn ghost back" id="backHome" title="Back to proposal workspace">${icon('back', 15)} Workspace</button>
       <img src="assets/logo-horizontal-blue.png" class="topbar-logo" alt="FSS">
       <div class="vr"></div>
       <div class="title-wrap">
@@ -347,7 +347,7 @@ function bindTopbar() {
   const title = $('#docTitle');
   title.addEventListener('blur', () => {
     App.doc.title = title.textContent.trim() || 'Untitled Proposal';
-    saveDoc();
+    saveDoc({ history: 'seal' });
   });
   title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); title.blur(); } });
 

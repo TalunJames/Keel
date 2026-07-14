@@ -167,7 +167,7 @@ const Sync = {
       App.doc = fresh;
       Store.writeDoc(fresh);
       renderEditor();
-      if (typeof History !== 'undefined') History.onChange();   // teammate's state becomes an undo step
+      if (typeof History !== 'undefined') History.onChange('seal');   // teammate's state becomes an undo step
       const sc2 = $('#canvasScroll');
       if (sc2) requestAnimationFrame(() => { sc2.scrollTop = keep; });
       toast('Updated with a teammate’s changes');

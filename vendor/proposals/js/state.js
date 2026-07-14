@@ -140,16 +140,33 @@ function saveDoc(opts = {}) {
   if (typeof Sync !== 'undefined') Sync.push();
   _settleSave();
   if (!opts.silent) maybeAutoVersion();
-  History.onChange();
+  if (opts.history !== 'skip') History.onChange(opts.history || 'other');
+}
+
+/* Classify contenteditable InputEvents into Word-style undo units.
+   Typing coalesces within a word; whitespace / paste / format seals a step. */
+function historyKindFromInput(e) {
+  const t = (e && e.inputType) || '';
+  if (t === 'historyUndo' || t === 'historyRedo') return 'skip';
+  if (t === 'insertFromPaste' || t === 'insertFromDrop' || t === 'insertFromYank') return 'seal';
+  if (t === 'insertParagraph' || t === 'insertLineBreak') return 'seal';
+  if (t === 'insertText' || t === 'insertCompositionText' || t === 'insertReplacementText') {
+    const d = e.data || '';
+    if (!d || /[\s\u00A0\u2002\u2003]/.test(d)) return 'seal';
+    return 'typing';
+  }
+  if (t.startsWith('delete')) return 'typing';
+  if (t.startsWith('format')) return 'seal';
+  return 'seal';
 }
 
 /* ---------- undo / redo ----------
-   Snapshot history over the editable doc state (title, blocks, content,
-   floats). Every mutation funnels through saveDoc, which schedules a
-   commit on a short debounce — so a typing burst collapses into a single
-   undo step, while a drag/delete/settings change commits at its next
-   quiet moment. Unchanged parts share the previous step's JSON string,
-   so big docs (imported PDF pages) don't multiply in memory. */
+   Word-style snapshot history over the editable doc (title, blocks, content,
+   floats). Typing coalesces into word-sized units: characters within a word
+   share one pending step, sealed on whitespace, Enter, paste, formatting,
+   blur, or ~1s idle — so ⌘Z undoes a whole word, not each pause/keystroke.
+   Non-typing edits debounce lightly (sliders) or seal immediately. Unchanged
+   parts share the previous step's JSON string to keep memory flat. */
 const History = {
   stack: [], idx: -1, docId: null, LIMIT: 60,
 
@@ -169,23 +186,50 @@ const History = {
     return s;
   },
   same(a, b) { return !!a && !!b && a.t === b.t && a.b === b.b && a.c === b.c && a.f === b.f; },
+  hasPending() {
+    if (!App.doc || App.doc.id !== this.docId || this.idx < 0) return false;
+    return !this.same(this.snap(), this.stack[this.idx]);
+  },
 
   init(doc) {
     this.docId = doc.id;
     this.commitSoon.cancel();
+    this.idleSeal.cancel();
     this.stack = [];
     this.idx = -1;
     this.stack.push(this.snap());
     this.idx = 0;
   },
 
-  onChange() {
+  onChange(kind = 'other') {
     if (this._applying || !App.doc || App.doc.id !== this.docId) return;
-    this.commitSoon();
+    if (kind === 'skip') return;
+
+    // Mid-word typing: keep live, don't push until the word seals.
+    if (kind === 'typing') {
+      if (this.idx < this.stack.length - 1) this.stack.splice(this.idx + 1);
+      this.commitSoon.cancel();
+      this.idleSeal.cancel();
+      this.idleSeal();
+      return;
+    }
+
+    // Word boundary / paste / format / blur / remote — one discrete step now.
+    if (kind === 'seal') {
+      this.commit();
+      return;
+    }
+
+    // Other UI churn (sliders, etc.): if a word is in flight, seal it with
+    // this edit; otherwise debounce so a drag doesn't flood the stack.
+    this.idleSeal.cancel();
+    if (this.hasPending()) this.commit();
+    else this.commitSoon();
   },
 
   commit() {
     this.commitSoon.cancel();
+    this.idleSeal.cancel();
     if (!App.doc || App.doc.id !== this.docId) return;
     const s = this.snap();
     if (this.same(s, this.stack[this.idx])) return;
@@ -197,14 +241,22 @@ const History = {
 
   undo() {
     if (App.mode === 'viewing') { toast('Switch to Editing to undo'); return; }
-    this.commit();                     // flush any pending burst first
+    this.commitSoon.cancel();
+    this.idleSeal.cancel();
+    // In-progress word: one ⌘Z drops it (Word), without sealing it first.
+    if (this.hasPending()) {
+      this.apply(this.stack[this.idx]);
+      return;
+    }
     if (this.idx <= 0) { toast('Nothing to undo'); return; }
     this.idx--;
     this.apply(this.stack[this.idx]);
   },
   redo() {
     if (App.mode === 'viewing') { toast('Switch to Editing to redo'); return; }
-    this.commit();                     // a fresh edit clears the redo trail
+    this.commitSoon.cancel();
+    this.idleSeal.cancel();
+    if (this.hasPending()) this.commit();   // typed after undo → clears redo trail
     if (this.idx >= this.stack.length - 1) { toast('Nothing to redo'); return; }
     this.idx++;
     this.apply(this.stack[this.idx]);
@@ -219,9 +271,10 @@ const History = {
     App.selectedBlock = null;
     App.selFloat = null;
     this._applying = true;
-    saveDoc({ silent: true });
+    saveDoc({ silent: true, history: 'skip' });
     this._applying = false;
     this.commitSoon.cancel();
+    this.idleSeal.cancel();
     closePopovers();
     const t = $('#docTitle');
     if (t && t.textContent !== d.title) t.textContent = d.title;
@@ -230,6 +283,7 @@ const History = {
   },
 };
 History.commitSoon = debounce(() => History.commit(), 500);
+History.idleSeal = debounce(() => History.commit(), 1000);
 
 function updateSaveBadge() {
   const b = $('#saveBadge');
