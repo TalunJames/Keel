@@ -3,6 +3,11 @@
    vendored proposal builder. Loaded after data.js, before settings.js. */
 'use strict';
 
+/* This file only ships in the Keel shell (index-keel.html), so its presence IS
+   the embed signal. Keel's CSP blocks inline scripts, so the flag must be set
+   from an external script — not from the HTML. */
+window.__KEEL_EMBED__ = true;
+
 const KeelBridge = {
   ready: false,
   workspace: null,

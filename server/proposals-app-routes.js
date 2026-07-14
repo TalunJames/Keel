@@ -341,7 +341,7 @@ export function registerProposalsAppRoutes(app, db, auth) {
     res.json(doc);
   });
 
-  api.put("/proposals/:id", auth, requireStaff, (req, res) => {
+  const saveDocHandler = (req, res) => {
     const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: "not found" });
 
@@ -361,7 +361,12 @@ export function registerProposalsAppRoutes(app, db, auth) {
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
-  });
+  };
+
+  api.put("/proposals/:id", auth, requireStaff, saveDocHandler);
+  // sendBeacon can only POST — the tab-close flush uses this twin of the PUT
+  // above. (Flushing to POST /proposals would create a duplicate row.)
+  api.post("/proposals/:id/flush", auth, requireStaff, saveDocHandler);
 
   api.delete("/proposals/:id", auth, requireStaff, (req, res) => {
     const row = db.prepare("SELECT id FROM proposals WHERE id = ?").get(req.params.id);

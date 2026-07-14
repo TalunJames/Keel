@@ -158,6 +158,7 @@ function migrateCoverBoxes(doc) {
 async function openEditor(id) {
   const doc = await Sync.openDoc(id);
   if (!doc) { toast('Could not open that proposal'); location.hash = ''; renderHome(); return; }
+  Store.normalize(doc);
   migrateCoverBoxes(doc);
   cleanOrphanCommentMarks(doc);
   App.doc = doc;
@@ -166,8 +167,8 @@ async function openEditor(id) {
   App.pendingComment = null;
   location.hash = 'doc/' + id;
   History.init(doc);
+  Sync.connect(id);   // join the live room before rendering — a render error must not cost us presence/sync
   renderEditor();
-  Sync.connect(id);
 }
 
 function renderEditor() {

@@ -79,6 +79,10 @@ const captureRaw = (req, _res, buf) => { req.rawBody = buf; };
 // ONLY on that endpoint. Everything else (incl. unauthenticated login/setup) is
 // capped small so a 25 MB body can't be used as a cheap memory/CPU DoS.
 app.use("/api/design/uploads", express.json({ limit: "25mb", verify: captureRaw }));
+// Proposal documents embed cover art / signatures as data URIs and routinely
+// exceed 1 MB — without this carve-out the global parser 413s their saves and
+// live sync silently stalls (the client keeps retrying forever).
+app.use("/proposals/app/api", express.json({ limit: "25mb", verify: captureRaw }));
 app.use(express.json({ limit: "1mb", verify: captureRaw }));
 app.use(cookieParser());
 
