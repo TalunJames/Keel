@@ -51,6 +51,26 @@ const Store = {
     return doc;
   },
 
+  /* Docs can arrive from the server (Cleatus ingest, older builds, manual DB
+     edits) missing collection fields the editor assumes exist. A single
+     undefined `.replies` or `.rfp.items` would otherwise throw mid-render and
+     abort openEditor before it joins the live-sync room — collaboration dies
+     silently. Fill the gaps instead. */
+  normalize(doc) {
+    if (!doc || typeof doc !== 'object') return doc;
+    if (!Array.isArray(doc.blocks)) doc.blocks = [];
+    if (!doc.content || typeof doc.content !== 'object') doc.content = {};
+    if (!Array.isArray(doc.comments)) doc.comments = [];
+    doc.comments.forEach(c => { if (!Array.isArray(c.replies)) c.replies = []; });
+    if (!Array.isArray(doc.floats)) doc.floats = [];
+    if (!Array.isArray(doc.versions)) doc.versions = [];
+    if (!doc.rfp || typeof doc.rfp !== 'object') doc.rfp = {};
+    if (!Array.isArray(doc.rfp.items)) doc.rfp.items = [];
+    if (!doc.proofing || typeof doc.proofing !== 'object') doc.proofing = {};
+    if (!doc.proofing.signoffs || typeof doc.proofing.signoffs !== 'object') doc.proofing.signoffs = {};
+    return doc;
+  },
+
   metaOf(doc) {
     return { id: doc.id, title: doc.title, agency: doc.agency, clientType: doc.clientType,
       rfpNumber: doc.rfpNumber, deadline: doc.deadline, updatedAt: doc.updatedAt, createdAt: doc.createdAt };

@@ -161,6 +161,7 @@ const Sync = {
       const fresh = await r.json();
       if (!App.doc || fresh.id !== App.doc.id) return;         // navigated away mid-fetch
       if (this.dirty) { this._pendingApply = true; return; }   // raced with a local edit
+      Store.normalize(fresh);
       const sc = $('#canvasScroll');
       const keep = sc ? sc.scrollTop : 0;
       App.doc = fresh;
@@ -196,12 +197,13 @@ const Sync = {
   flushOnExit() {
     if (!this.remote || !this.dirty || !App.doc) return;
     const body = JSON.stringify(App.doc);
+    const url = 'api/proposals/' + encodeURIComponent(App.doc.id) + '/flush?client=' + this.cid;
     let sent = false;
     if (navigator.sendBeacon) {
-      try { sent = navigator.sendBeacon('api/proposals?client=' + this.cid, new Blob([body], { type: 'application/json' })); } catch (e) {}
+      try { sent = navigator.sendBeacon(url, new Blob([body], { type: 'application/json' })); } catch (e) {}
     }
     if (sent) { this.dirty = false; return; }
-    fetch('api/proposals?client=' + this.cid, {
+    fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
     }).then(() => { Sync.dirty = false; }).catch(() => {});
   },
