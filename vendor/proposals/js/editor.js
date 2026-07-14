@@ -170,15 +170,15 @@ function bindEditable(ed) {
   ed.contentEditable = (App.mode !== 'viewing');
   ed.spellcheck = spellcheckEnabled();
   ed.addEventListener('beforeinput', edBeforeInput);
-  ed.addEventListener('input', () => {
+  ed.addEventListener('input', (e) => {
     syncEditable(ed);
     const wrap = ed.closest('.blockwrap');
     if (wrap) clearSignoffs(wrap.dataset.bid, true);
-    saveDoc();
+    saveDoc({ history: historyKindFromInput(e) });
     scheduleAfterEdit();
     if (App.railTab === 'suggestions') renderRail();
   });
-  ed.addEventListener('blur', () => { syncEditable(ed); saveDoc(); });
+  ed.addEventListener('blur', () => { syncEditable(ed); saveDoc({ history: 'seal' }); });
   ed.addEventListener('keydown', (e) => {
     // Tab / Shift+Tab inside a list = indent / outdent (sub-bullets)
     if (e.key !== 'Tab' || App.mode === 'viewing') return;
@@ -186,7 +186,7 @@ function bindEditable(ed) {
     if (li && ed.contains(li)) {
       e.preventDefault();
       document.execCommand(e.shiftKey ? 'outdent' : 'indent');
-      syncEditable(ed); saveDoc(); scheduleAfterEdit();
+      syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit();
     }
   });
 }
@@ -531,7 +531,7 @@ function execFont(key) {
   document.execCommand('styleWithCSS', false, false);
   const sel = document.getSelection();
   const ed = sel.anchorNode ? closestTag(sel.anchorNode, '.ed') : null;
-  if (ed) { syncEditable(ed); saveDoc(); scheduleAfterEdit(); }
+  if (ed) { syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit(); }
 }
 
 function updatePageMeta() {
@@ -602,7 +602,7 @@ function execFmt(cmd, val = null) {
   }
   const sel = document.getSelection();
   const ed = sel.anchorNode ? closestTag(sel.anchorNode, '.ed') : null;
-  if (ed) { syncEditable(ed); saveDoc(); scheduleAfterEdit(); }
+  if (ed) { syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit(); }
 }
 
 /* Numeric font size on the current selection (font-tag hack → clean spans). */
@@ -621,7 +621,7 @@ function execFontSize(px) {
     while (f.firstChild) span.appendChild(f.firstChild);
     f.replaceWith(span);
   });
-  syncEditable(ed); saveDoc(); scheduleAfterEdit();
+  syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit();
   const inp = $('#fontSizeInput');
   if (inp) inp.value = px;
 }
@@ -634,7 +634,7 @@ function execColor(kind, color) {
   document.execCommand('styleWithCSS', false, false);
   const sel = document.getSelection();
   const ed = sel.anchorNode ? closestTag(sel.anchorNode, '.ed,.ed-float') : null;
-  if (ed) { syncEditable(ed); saveDoc(); scheduleAfterEdit(); }
+  if (ed) { syncEditable(ed); saveDoc({ history: 'seal' }); scheduleAfterEdit(); }
   const chip = $(kind === 'fore' ? '#foreColorBar' : '#hiliteColorBar');
   if (chip && color !== 'transparent') chip.style.background = color;
 }

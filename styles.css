@@ -470,6 +470,16 @@ a { color: inherit; }
   display: flex;
   flex-direction: column;
 }
+.proposals-embed-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.proposals-embed-wrap iframe {
+  flex: 1;
+  min-height: 0;
+}
 
 .page-head {
   display: flex; align-items: flex-end; justify-content: space-between;

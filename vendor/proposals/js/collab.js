@@ -108,7 +108,7 @@ function edBeforeInput(e) {
     }
   }
   syncEditable(e.currentTarget);
-  saveDoc();          // preventDefault suppresses the input event that normally saves
+  saveDoc({ history: historyKindFromInput(e) }); // preventDefault suppresses the input event that normally saves
   scheduleAfterEdit();
   renderRail();
 }

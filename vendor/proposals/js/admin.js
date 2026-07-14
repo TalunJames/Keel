@@ -27,7 +27,7 @@ function renderAdmin() {
   $('#app').innerHTML = `
   <div class="admin">
     <div class="topbar">
-      <button class="iconbtn back" id="adminBack" title="Back to proposals">${icon('back', 17)}</button>
+      <button class="btn ghost back" id="adminBack" title="Back to proposal workspace">${icon('back', 15)} Workspace</button>
       <img src="assets/logo-horizontal-blue.png" class="topbar-logo" alt="FSS">
       <div class="vr"></div>
       <div class="title-wrap">
