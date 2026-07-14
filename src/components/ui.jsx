@@ -138,9 +138,9 @@ function PageHead({ eyebrow, title, sub, actions }) {
   );
 }
 
-function Tag({ tone, children, dot }) {
+function Tag({ tone, children, dot, style }) {
   return (
-    <span className={"tag " + (tone || "")}>
+    <span className={"tag " + (tone || "")} style={style}>
       {dot && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: 0.9 }} />}
       {children}
     </span>

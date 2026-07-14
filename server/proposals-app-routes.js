@@ -6,6 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 import express from "express";
+import { registerAiRoutes } from "./ai/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = path.join(__dirname, "..", "vendor", "proposals");
@@ -438,6 +439,8 @@ export function registerProposalsAppRoutes(app, db, auth) {
       broadcastPresence(docId);
     });
   });
+
+  registerAiRoutes(api, db, { requireStaff, createEditorProposal, editorClientType });
 
   app.use(`${BASE}/api`, auth, api);
 

@@ -1,9 +1,12 @@
 const BASE = "/api";
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data = null) {
     super(message);
     this.status = status;
+    // Full JSON error body (e.g. { needsSetup: true }) for callers that need
+    // more than the message string.
+    this.data = data;
   }
 }
 
@@ -27,7 +30,7 @@ export async function api(path, options = {}) {
     data = null;
   }
   if (!res.ok) {
-    throw new ApiError(data?.error || res.statusText || "Request failed", res.status);
+    throw new ApiError(data?.error || res.statusText || "Request failed", res.status, data);
   }
   return data;
 }

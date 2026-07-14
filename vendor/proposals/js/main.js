@@ -90,6 +90,11 @@ function newProposalWizard() {
         ${Settings.allTemplates().map((t, i) => `<button class="tpl-card ${i === 0 ? 'on' : ''}" data-tpl="${esc(t.key)}"><b>${esc(t.label)}</b><small>${esc(t.desc)}</small></button>`).join('')}
       </div>
       <button class="btn primary wide lg" id="wCreate">Create proposal</button>
+      <div class="ai-wiz-or" id="wDraftWrap">
+        <div class="ai-wiz-rule"><span>or</span></div>
+        <button class="btn wide" id="wDraftAI">${icon('bolt', 14)} Draft from an RFP with Claude</button>
+        <p class="set-hint" style="margin-top:6px">Upload the RFP (PDF, Word, or text). Claude drafts the narrative sections from your firm context and extracts the submission checklist. Pick a client type and agency above first.</p>
+      </div>
     </div>`, { width: 620, sticky: true });
 
   let ct = null, tpl = 'full';
@@ -131,6 +136,53 @@ function newProposalWizard() {
     closePopovers();
     openEditor(doc.id);
     toast(`Library curated for ${CLIENTS[ct].label} clients`);
+  });
+
+  /* ---- Draft from RFP with Claude ---- */
+  const draftBtn = card.querySelector('#wDraftAI');
+  const draftWrap = card.querySelector('#wDraftWrap');
+  if (draftBtn && window.AI && AI.available === false && draftWrap) draftWrap.style.display = 'none';
+  if (draftBtn) draftBtn.addEventListener('click', async () => {
+    if (!ct) { toast('Pick a client type first — it curates the template'); return; }
+    const keelCtx = window.KeelBridge?.ready
+      ? KeelBridge.resolveClientForWizard(agencyInput, ct)
+      : { clientId: null, clientType: ct };
+    if (window.__KEEL_EMBED__ && !keelCtx.clientId) {
+      toast('Select a Keel client from the switcher or pick a matching agency name');
+      return;
+    }
+    const f = await pickFile('.pdf,.docx,.txt,.md,application/pdf');
+    if (!f) return;
+    const prog = importProgress('Claude is drafting your proposal');
+    try {
+      prog.set('Reading the RFP…', 0.15);
+      const payload = { clientId: keelCtx.clientId, clientType: keelCtx.clientType || ct, fileName: f.name };
+      const name = f.name.toLowerCase();
+      if (name.endsWith('.pdf')) {
+        payload.pdfBase64 = await fileToBase64(f);
+        payload.mediaType = 'application/pdf';
+      } else {
+        payload.rfpText = await extractFileText(f);
+      }
+      prog.set('Drafting sections & extracting requirements… this can take a minute.', 0.55);
+      const r = await AI.draft(payload);
+      prog.done();
+      openEditor(r.id);
+      toast('Draft created from the RFP — review and refine');
+    } catch (e) {
+      prog.done();
+      toast(e.message || 'Could not draft from that RFP');
+    }
+  });
+}
+
+/* Read a file as base64 (no data: prefix) for the AI draft upload. */
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => rej(new Error('Could not read the file'));
+    fr.readAsDataURL(file);
   });
 }
 
@@ -194,6 +246,7 @@ function renderEditor() {
       <button class="btn ghost" id="rfpBtn" title="RFP details & submission checklist">${icon('rfp', 15)} <span id="rfpBadge"></span></button>
       <button class="btn ghost sq" id="historyBtn" title="Version history">${icon('clock', 15)}</button>
       <button class="btn ghost" id="railToggle" title="Comments & suggestions">${icon('comment', 15)} <span id="commentCount">0</span></button>
+      <button class="btn ghost" id="proofreadBtn" title="Proofread with Claude — flags issues as tracked changes">${icon('bolt', 15)} Proofread</button>
       <button class="btn ghost" id="shareBtn" title="Share">${icon('users', 15)} Share</button>
       <button class="btn ghost" id="saveBtn" title="Save now">${icon('check', 15)} Save</button>
       <button class="btn primary" id="exportBtn">Export <span class="caret">▾</span></button>
@@ -281,6 +334,7 @@ function renderEditor() {
           <div class="rail-tabs" id="railTabs">
             <button class="railtab ${App.railTab === 'comments' ? 'on' : ''}" data-tab="comments">Comments</button>
             <button class="railtab ${App.railTab === 'suggestions' ? 'on' : ''}" data-tab="suggestions">Suggestions</button>
+            <button class="railtab ${App.railTab === 'ai' ? 'on' : ''}" data-tab="ai">Ask Claude</button>
           </div>
           <button class="iconbtn" id="railCollapse" title="Collapse">${icon('panelR', 16)}</button>
         </div>
@@ -371,6 +425,11 @@ function bindTopbar() {
   $('#rfpBtn').addEventListener('click', (e) => openRfpPanel(e.currentTarget));
   $('#historyBtn').addEventListener('click', (e) => openHistoryPanel(e.currentTarget));
   $('#railToggle').addEventListener('click', () => { App.showRail = !App.showRail; renderRailChrome(); });
+  const proofBtn = $('#proofreadBtn');
+  if (proofBtn) {
+    if (window.AI && AI.available === false) proofBtn.style.display = 'none';
+    proofBtn.addEventListener('click', () => runProofread());
+  }
   $('#shareBtn').addEventListener('click', openShareModal);
   $('#saveBtn').addEventListener('click', () => {
     if (!App.doc) return;

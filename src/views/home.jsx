@@ -284,7 +284,9 @@ export function HomeView({ user, role, onNavigate, client, clientId, effectiveMo
       .catch(() => {});
   };
 
-  if (loading) return <Loading label="Loading workspace…" />;
+  // Full-page spinner only on first load — reloads (e.g. checking a task off)
+  // keep the current dashboard rendered instead of unmounting every widget.
+  if (loading && !data) return <Loading label="Loading workspace…" />;
   if (error) {
     return (
       <div className="card card-pad" style={{ maxWidth: 480 }}>

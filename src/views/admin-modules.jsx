@@ -95,8 +95,12 @@ export function AdminModulesTab({ allRoles, user, onFlash }) {
   }, [selectedUserId, overrideClientId]);
 
   const saveRoleModules = async (role) => {
-    await modulesApi.set(role, roleModules[role] || allRoles[role]);
-    onFlash(`Role defaults saved for ${ROLE_LABELS[role] || role}`);
+    try {
+      await modulesApi.set(role, roleModules[role] || allRoles[role]);
+      onFlash(`Role defaults saved for ${ROLE_LABELS[role] || role}`);
+    } catch (e) {
+      onFlash(e?.message || "Could not save role defaults");
+    }
   };
 
   const saveClientModules = async () => {
@@ -115,6 +119,8 @@ export function AdminModulesTab({ allRoles, user, onFlash }) {
           : c
       )));
       onFlash(`Workspace updated for ${selectedClient?.name || selectedClientId}`);
+    } catch (e) {
+      onFlash(e?.message || "Could not save workspace modules");
     } finally {
       setSavingClient(false);
     }
@@ -136,6 +142,8 @@ export function AdminModulesTab({ allRoles, user, onFlash }) {
         body: JSON.stringify({ clientId: overrideClientId, modules: sparse }),
       });
       onFlash(`Access overrides saved for ${selectedUser.name}`);
+    } catch (e) {
+      onFlash(e?.message || "Could not save access overrides");
     } finally {
       setSavingOverride(false);
     }
@@ -151,6 +159,8 @@ export function AdminModulesTab({ allRoles, user, onFlash }) {
       });
       setOverrideDraft({ ...overrideBase });
       onFlash("Overrides cleared — back to client defaults");
+    } catch (e) {
+      onFlash(e?.message || "Could not clear overrides");
     } finally {
       setSavingOverride(false);
     }

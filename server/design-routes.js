@@ -108,7 +108,9 @@ function assertRequestAccess(req, row) {
 }
 
 function clientScope(user, clientId) {
-  if (user.role === "client") return user.clientId;
+  // A client-role user with no assigned client must match NOTHING, not skip
+  // the client_id filter (which would expose every client's requests).
+  if (user.role === "client") return user.clientId || "__unassigned__";
   if (!clientId || clientId === "all") return null;
   return clientId;
 }

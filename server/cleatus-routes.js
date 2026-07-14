@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { createProposalFromCleatus } from "./cleatus-proposals.js";
+import { getSecret } from "./integration-settings.js";
 
 function verifyCleatusSignature(rawBody, signature, secret) {
   // Fail closed: without a configured secret, a raw body, or a signature we cannot verify.
@@ -25,7 +26,7 @@ const cleatusWebhookLimiter = rateLimit({
 
 export function registerCleatusRoutes(app, db, auth) {
   app.post("/api/integrations/cleatus/webhook", cleatusWebhookLimiter, (req, res) => {
-    const secret = process.env.CLEATUS_WEBHOOK_SECRET || "";
+    const secret = getSecret("cleatus_webhook_secret");
     if (!secret) {
       return res.status(503).json({ error: "Webhook not configured" });
     }
@@ -84,7 +85,7 @@ export function registerCleatusRoutes(app, db, auth) {
     ).get()?.n || 0;
 
     res.json({
-      configured: !!(process.env.CLEATUS_WEBHOOK_SECRET),
+      configured: !!getSecret("cleatus_webhook_secret"),
       webhookUrl: "/api/integrations/cleatus/webhook",
       lastEvent: last || null,
       pendingUnassigned: pending,

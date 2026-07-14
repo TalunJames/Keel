@@ -280,6 +280,7 @@ export async function acceptInvite(db, token, { password, name }) {
   return db.prepare(
     `SELECT id, email, name, team, role, client_id AS clientId,
             system_admin AS systemAdmin, is_designer AS isDesigner,
+            token_version AS tokenVersion,
             title, location, about, phone, photo
      FROM users WHERE id = ?`
   ).get(row.userId);

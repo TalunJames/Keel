@@ -225,11 +225,17 @@ function getReplayResults() {
 function loadPrecinctMap() {
   if (statenumToPrecinct) return statenumToPrecinct;
   const geoPath = path.join(root, "public/election-data/Precincts.geojson");
-  const fc = JSON.parse(fs.readFileSync(geoPath, "utf8"));
   statenumToPrecinct = new Map();
-  for (const f of fc.features) {
-    const sn = String(f.properties.STATENUM);
-    statenumToPrecinct.set(sn, String(f.properties.PRECINCT));
+  // A missing/corrupt geojson (e.g. a deploy that omits public/election-data)
+  // must degrade to empty results, not 500 every /api/election/live call.
+  try {
+    const fc = JSON.parse(fs.readFileSync(geoPath, "utf8"));
+    for (const f of fc.features) {
+      const sn = String(f.properties.STATENUM);
+      statenumToPrecinct.set(sn, String(f.properties.PRECINCT));
+    }
+  } catch (e) {
+    console.error(`[election] could not load ${geoPath}:`, e?.message || e);
   }
   return statenumToPrecinct;
 }
@@ -237,10 +243,15 @@ function loadPrecinctMap() {
 function loadOverlayPrecinctIds() {
   if (overlayPrecinctIds) return overlayPrecinctIds;
   const geoPath = path.join(root, "public/election-data/overlay-precincts.geojson");
-  const fc = JSON.parse(fs.readFileSync(geoPath, "utf8"));
-  overlayPrecinctIds = new Set(
-    fc.features.map((f) => String(f.properties.PRECINCT))
-  );
+  overlayPrecinctIds = new Set();
+  try {
+    const fc = JSON.parse(fs.readFileSync(geoPath, "utf8"));
+    for (const f of fc.features) {
+      overlayPrecinctIds.add(String(f.properties.PRECINCT));
+    }
+  } catch (e) {
+    console.error(`[election] could not load ${geoPath}:`, e?.message || e);
+  }
   return overlayPrecinctIds;
 }
 

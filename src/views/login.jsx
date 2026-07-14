@@ -31,7 +31,9 @@ export function LoginView({ onLogin }) {
       localStorage.setItem("keel_remember", remember ? "1" : "0");
       onLogin(user);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
+      // Only the first-boot-setup 403 has a setup screen to refresh into.
+      // Invite-pending 403s already carry their own guidance ("check your email").
+      if (err instanceof ApiError && err.status === 403 && err.data?.needsSetup) {
         setError(err.message + " Refresh the page to open the setup screen.");
       } else {
         setError(err instanceof ApiError ? err.message : "Sign in failed");

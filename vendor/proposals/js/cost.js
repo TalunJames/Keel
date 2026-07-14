@@ -75,15 +75,50 @@ function renderCostBody(b) {
 
 /* ---------- calculator modal ---------- */
 function openCostCalculator(b) {
+  const aiOn = !(window.AI && AI.available === false);
   const card = modal(`
     <div class="pophead">
-      ${icon('calc', 16)}<div><b>Cost Proposal Calculator</b><small class="muted-block">Internal — not shown in the document. Suggested prices will come from the pricing database.</small></div>
+      ${icon('calc', 16)}<div><b>Cost Proposal Calculator</b><small class="muted-block">Internal — not shown in the document. Suggested prices come from the pricing database or Claude.</small></div>
+      ${aiOn ? `<button class="btn tiny" id="costAiBtn" title="Ask Claude to suggest prices for this engagement">${icon('bolt', 13)} Ask Claude</button>` : ''}
       <button class="iconbtn close-pop" title="Close">${icon('x', 16)}</button>
     </div>
+    <div class="cost-ai-note" id="costAiNote" hidden></div>
     <div class="popbody calcbody" id="calcBody"></div>
     <div class="calcfoot" id="calcFoot"></div>`, { width: 640 });
   card.querySelector('.close-pop').onclick = closePopovers;
+  const aiBtn = card.querySelector('#costAiBtn');
+  if (aiBtn) aiBtn.addEventListener('click', () => askCostAI(card, b, aiBtn));
   renderCalc(card, b);
+}
+
+/* Ask Claude for suggested prices; fill each matching category's `rec` field so
+   the existing "Suggested {price}" chip lights up (staff click to apply). */
+async function askCostAI(card, b, btn) {
+  const note = card.querySelector('#costAiNote');
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  btn.innerHTML = 'Thinking…';
+  note.hidden = false;
+  note.textContent = 'Claude is reviewing the scope and current pricing…';
+  try {
+    const data = await AI.cost({ costModel: b.cost, instruction: '' });
+    const byName = {};
+    (b.cost.cats || []).forEach((c) => { byName[c.name.trim().toLowerCase()] = c; });
+    let hits = 0;
+    (data.lines || []).forEach((ln) => {
+      const c = byName[String(ln.name || '').trim().toLowerCase()];
+      const val = Math.round(Number(ln.suggested) || 0);
+      if (c && val > 0) { c.rec = val; hits++; }
+    });
+    saveDoc();
+    renderCalc(card, b);
+    note.innerHTML = `${icon('bolt', 12)} ${esc(data.summary || 'Suggestions ready.')} ${hits ? `<b>${hits}</b> category price${hits === 1 ? '' : 's'} suggested — click a “Suggested” chip to apply.` : 'No matching categories to update.'}`;
+  } catch (e) {
+    note.textContent = e.message || 'Could not get suggestions.';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
 }
 
 function renderCalc(card, b) {

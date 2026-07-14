@@ -214,6 +214,7 @@ export function ClientWizard({ client, onCancel, onCreated, onSaved }) {
       const result = await clientsApi.create(buildClientPayload(draft));
       const clientId = result.id;
       const contacts = draft.contacts.filter((c) => c.email?.trim());
+      const failedInvites = [];
       for (const contact of contacts) {
         try {
           await usersAdminApi.invite({
@@ -222,9 +223,18 @@ export function ClientWizard({ client, onCancel, onCreated, onSaved }) {
             role: "client",
             clientId,
           });
-        } catch {
-          // Client was created; individual invite failures are non-fatal.
+        } catch (err) {
+          // Client was created; invite failures are non-fatal but must be
+          // surfaced — a silently-dropped invite looks identical to a sent one.
+          failedInvites.push(`${contact.email.trim()} (${err?.message || "invite failed"})`);
         }
+      }
+      if (failedInvites.length) {
+        window.alert(
+          "Client created, but some portal invitations could not be sent:\n\n" +
+          failedInvites.join("\n") +
+          "\n\nYou can re-invite them from Admin → Users."
+        );
       }
       onCreated?.(clientId);
     } catch (err) {

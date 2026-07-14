@@ -418,7 +418,10 @@ export function DesignProof({ requestId, user, role, onBack, onUpdated }) {
                   {currentProof ? (currentProof.label || currentProof.version) : "No proof"}
                 </div>
               )}
-              {(comments || []).filter((c) => c.marker).map((c, i) => (
+              {/* Only pins dropped on THIS proof version — a v1 pin rendered on
+                  v2 artwork points at the wrong thing. Legacy comments without
+                  a proofId still show everywhere (no way to know their target). */}
+              {(comments || []).filter((c) => c.marker && (!c.proofId || c.proofId === currentProof?.id)).map((c, i) => (
                 <div
                   key={c.id}
                   style={{

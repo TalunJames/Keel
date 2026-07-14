@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Suspense, lazy } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
 import { PageHead, Icon, Stat, Tag } from "../components/ui.jsx";
 import { api, withClient, downloadExport } from "../lib/api.js";
 import { EmptyState } from "../components/EmptyState.jsx";
@@ -26,9 +26,11 @@ export function VoterView({ role, clientId, client }) {
   const [exportCount, setExportCount] = useState(null);
   const [mapExportCount, setMapExportCount] = useState(null);
 
+  const flashTimer = useRef(null);
   const flash = (msg) => {
     setNotice(msg);
-    setTimeout(() => setNotice(null), 3200);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setNotice(null), 3200);
   };
 
   const loadMeta = useCallback(() => {

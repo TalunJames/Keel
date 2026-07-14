@@ -117,6 +117,7 @@ Then in the **Environment Variables** section, set the required values:
 | `BOOTSTRAP_ADMIN_EMAIL`| **Required.** Email of the initial administrator (no default).     |
 | `BOOTSTRAP_ADMIN_NAME` | (optional) Display name for the bootstrap admin.                   |
 | `TUNNEL_TOKEN`         | The Cloudflare tunnel token from step 4.                           |
+| `ANTHROPIC_API_KEY`    | (optional) Claude API key. Enables the proposal-editor AI features (draft from RFP, Ask Claude, block tailoring, cost help, AI proofread). Without it those controls stay hidden. |
 
 There is **no** `ADMIN_PASSWORD` env var — the admin password is chosen on the
 first-boot setup screen (see step 6).

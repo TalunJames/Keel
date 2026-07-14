@@ -72,6 +72,7 @@ export function findBootstrapUser(db) {
   const email = getBootstrapEmail();
   const byEmail = db.prepare(
     `SELECT id, email, name, password_hash AS passwordHash, role, system_admin AS systemAdmin,
+            token_version AS tokenVersion,
             team, client_id AS clientId, title, location, about, phone, photo
      FROM users WHERE email = ? COLLATE NOCASE`
   ).get(email);
@@ -80,6 +81,7 @@ export function findBootstrapUser(db) {
   if (!isSetupComplete(db)) {
     const firstAdmin = db.prepare(
       `SELECT id, email, name, password_hash AS passwordHash, role, system_admin AS systemAdmin,
+              token_version AS tokenVersion,
               team, client_id AS clientId, title, location, about, phone, photo
        FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1`
     ).get();
@@ -88,6 +90,7 @@ export function findBootstrapUser(db) {
 
   const admins = db.prepare(
     `SELECT id, email, name, password_hash AS passwordHash, role, system_admin AS systemAdmin,
+            token_version AS tokenVersion,
             team, client_id AS clientId, title, location, about, phone, photo
      FROM users WHERE role = 'admin' ORDER BY created_at ASC`
   ).all();
