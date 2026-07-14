@@ -44,6 +44,7 @@ import {
   clearAuthCookie,
   signToken,
 } from "./auth.js";
+import { findUserByEmail } from "./email-aliases.js";
 import {
   queryVoters,
   queryVoterMap,
@@ -245,13 +246,15 @@ export function registerRoutes(app, db) {
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password required" });
     }
-    const user = db.prepare(
+    const user = findUserByEmail(
+      db,
+      email,
       `SELECT id, email, password_hash, name, team, role, client_id AS clientId,
               system_admin AS systemAdmin, is_designer AS isDesigner,
               title, location, about, phone, photo,
               preferences_json AS preferencesJson
-       FROM users WHERE email = ? COLLATE NOCASE`
-    ).get(email.trim());
+       FROM users`
+    );
     if (!user) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
@@ -1300,6 +1303,9 @@ export function registerRoutes(app, db) {
     }
     if (systemAdmin && !req.user.systemAdmin) {
       return res.status(403).json({ error: "Only a system admin can grant system_admin" });
+    }
+    if (findUserByEmail(db, email, "SELECT id, email FROM users")) {
+      return res.status(409).json({ error: "Email already exists" });
     }
     const id = randomUUID();
     try {
