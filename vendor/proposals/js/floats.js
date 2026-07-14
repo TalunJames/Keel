@@ -76,6 +76,7 @@ function bindFloat(el, f) {
   });
   const ed = el.querySelector('.ed-float');
   if (ed) {
+    ed.addEventListener('paste', handleEditablePaste);
     ed.addEventListener('input', () => { f.html = ed.innerHTML; saveDoc(); });
     ed.addEventListener('blur', () => { f.html = ed.innerHTML; saveDoc(); });
   }

@@ -15,9 +15,10 @@ const fmtMoney = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
 const fmtMoney2 = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function debounce(fn, ms) {
-  let t;
-  const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-  d.cancel = () => clearTimeout(t);
+  let t, lastArgs;
+  const d = (...a) => { lastArgs = a; clearTimeout(t); t = setTimeout(() => { t = null; fn(...lastArgs); }, ms); };
+  d.cancel = () => { clearTimeout(t); t = null; };
+  d.flush = () => { if (t == null) return; clearTimeout(t); t = null; fn(...lastArgs); };
   return d;
 }
 

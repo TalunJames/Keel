@@ -12,7 +12,6 @@ function renderHome() {
       <img src="assets/logo-horizontal-blue.png" class="home-logo" alt="Fog Signal Strategies">
       <div class="home-top-right">
         ${Settings.isAdmin() ? `<button class="btn ghost" id="adminBtn" title="Workspace settings — templates, colors, fonts, blocks, pricing">${icon('gear', 14)} Workspace Settings</button>` : ''}
-        <span class="home-kicker">Proposal Workspace</span>
       </div>
     </div>
     <div class="home-head">
@@ -196,6 +195,7 @@ function renderEditor() {
       <button class="btn ghost sq" id="historyBtn" title="Version history">${icon('clock', 15)}</button>
       <button class="btn ghost" id="railToggle" title="Comments & suggestions">${icon('comment', 15)} <span id="commentCount">0</span></button>
       <button class="btn ghost" id="shareBtn" title="Share">${icon('users', 15)} Share</button>
+      <button class="btn ghost" id="saveBtn" title="Save now">${icon('check', 15)} Save</button>
       <button class="btn primary" id="exportBtn">Export <span class="caret">▾</span></button>
     </div>
 
@@ -372,6 +372,12 @@ function bindTopbar() {
   $('#historyBtn').addEventListener('click', (e) => openHistoryPanel(e.currentTarget));
   $('#railToggle').addEventListener('click', () => { App.showRail = !App.showRail; renderRailChrome(); });
   $('#shareBtn').addEventListener('click', openShareModal);
+  $('#saveBtn').addEventListener('click', () => {
+    if (!App.doc) return;
+    saveDoc({ history: 'seal' });
+    if (typeof Sync !== 'undefined' && Sync.remote) Sync._push.flush();
+    toast('Saved');
+  });
   $('#exportBtn').addEventListener('click', (e) => {
     const card = popover(e.currentTarget, `
       <div class="menu-kicker">Download as</div>

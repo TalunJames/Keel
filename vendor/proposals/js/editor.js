@@ -38,6 +38,51 @@ function syncEditable(ed) {
   App.doc.content[ed.dataset.key] = ed.innerHTML;
 }
 
+/* Strip foreign typography from clipboard HTML so pasted text inherits
+   the proposal's block styles (Claude/Docs/Word often bring 16px+ faces). */
+const PASTE_KEEP = /^(P|BR|DIV|SPAN|B|STRONG|I|EM|U|S|STRIKE|A|UL|OL|LI|H[1-6]|SUB|SUP|BLOCKQUOTE)$/i;
+function cleanPastedHtml(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = String(html || '');
+  const root = tpl.content;
+  root.querySelectorAll('meta,style,script,link,title,noscript,iframe,object,embed,img,svg,button,input,textarea,select,form').forEach(n => n.remove());
+  [...root.querySelectorAll('*')].reverse().forEach(el => {
+    [...el.attributes].forEach(a => {
+      if (el.tagName === 'A' && a.name.toLowerCase() === 'href') return;
+      el.removeAttribute(a.name);
+    });
+    if (el.tagName === 'FONT' || !PASTE_KEEP.test(el.tagName)) {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+      return;
+    }
+    if (el.tagName === 'SPAN' && !el.attributes.length) {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    }
+  });
+  return tpl.innerHTML;
+}
+
+function plainTextToPasteHtml(text) {
+  return esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+}
+
+function handleEditablePaste(e) {
+  if (App.mode === 'viewing' || App.mode === 'suggesting' || App.mode === 'proofing') return;
+  const html = e.clipboardData?.getData('text/html') || '';
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (!html && !text) return;
+  e.preventDefault();
+  let insert = html ? cleanPastedHtml(html) : '';
+  if (!insert.replace(/<[^>]*>/g, '').trim()) insert = plainTextToPasteHtml(text);
+  document.execCommand('insertHTML', false, insert);
+}
+
 const scheduleAfterEdit = debounce(() => {
   paginate();
   positionCommentCards();
@@ -170,6 +215,7 @@ function bindEditable(ed) {
   ed.contentEditable = (App.mode !== 'viewing');
   ed.spellcheck = spellcheckEnabled();
   ed.addEventListener('beforeinput', edBeforeInput);
+  ed.addEventListener('paste', handleEditablePaste);
   ed.addEventListener('input', () => {
     syncEditable(ed);
     const wrap = ed.closest('.blockwrap');
