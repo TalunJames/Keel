@@ -162,6 +162,7 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
   const [showInvite, setShowInvite] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [inviteForm, setInviteForm] = useState(EMPTY_FORM);
   const [createForm, setCreateForm] = useState({ ...EMPTY_FORM, password: "" });
   const [editForm, setEditForm] = useState({ ...EMPTY_FORM, password: "" });
@@ -199,9 +200,22 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
     setShowInvite(false);
     setShowCreate(false);
     setEditing(null);
+    setDeleting(null);
     setInviteForm(EMPTY_FORM);
     setCreateForm({ ...EMPTY_FORM, password: "" });
     setFormError("");
+  };
+
+  const canDelete = (u) => {
+    if (!u || u.id === user?.id) return false;
+    if (u.systemAdmin && !isSystemAdmin) return false;
+    return true;
+  };
+
+  const openDelete = (u) => {
+    if (!canDelete(u)) return;
+    setFormError("");
+    setDeleting(u);
   };
 
   const handleInvite = async (e) => {
@@ -282,6 +296,22 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
       onFlash("User updated");
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Could not update user");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setSaving(true);
+    setFormError("");
+    try {
+      await usersAdminApi.remove(deleting.id);
+      closeModals();
+      onReload();
+      onFlash("Deleted " + deleting.email);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not delete user");
     } finally {
       setSaving(false);
     }
@@ -380,6 +410,17 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
                       <button type="button" className="btn ghost sm" onClick={() => openEdit(u)} aria-label="Edit user">
                         <Icon name="pen" size={14} />
                       </button>
+                      {canDelete(u) && (
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          onClick={() => openDelete(u)}
+                          aria-label="Delete user"
+                          title="Delete account"
+                        >
+                          <Icon name="x" size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -447,6 +488,40 @@ export function AdminUsersTab({ user, users, usersLoading, clients, isSystemAdmi
             editingSelf={editing.id === user?.id}
             editingUser={editing}
           />
+          {canDelete(editing) && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--fs-border)" }}>
+              <button
+                type="button"
+                className="btn danger sm"
+                onClick={() => {
+                  const target = editing;
+                  setEditing(null);
+                  openDelete(target);
+                }}
+              >
+                Delete account
+              </button>
+            </div>
+          )}
+        </AdminModal>
+      )}
+
+      {deleting && (
+        <AdminModal title="Delete account" onClose={closeModals}>
+          <p style={{ fontSize: 13, margin: "0 0 16px" }}>
+            Delete <strong style={{ color: "var(--fs-navy)" }}>{deleting.name}</strong>
+            {" "}(<span style={{ fontFamily: "var(--fs-font-mono)", fontSize: 12 }}>{deleting.email}</span>)?
+            {" "}They will lose access immediately. This cannot be undone.
+          </p>
+          {formError && (
+            <div style={{ fontSize: 13, color: "var(--fs-danger)", marginBottom: 12 }}>{formError}</div>
+          )}
+          <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className="btn secondary" onClick={closeModals}>Cancel</button>
+            <button type="button" className="btn danger" disabled={saving} onClick={handleDelete}>
+              {saving ? "Deleting…" : "Delete account"}
+            </button>
+          </div>
         </AdminModal>
       )}
     </>

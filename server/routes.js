@@ -1414,6 +1414,43 @@ export function registerRoutes(app, db) {
     res.json({ ok: true });
   });
 
+  app.delete("/api/admin/users/:id", auth, requireRole("admin"), (req, res) => {
+    const target = db.prepare(
+      "SELECT id, email, role, system_admin AS systemAdmin FROM users WHERE id = ?"
+    ).get(req.params.id);
+    if (!target) return res.status(404).json({ error: "Not found" });
+
+    if (target.id === req.user.id) {
+      return res.status(400).json({ error: "Cannot delete your own account" });
+    }
+    if (target.systemAdmin && !req.user.systemAdmin) {
+      return res.status(403).json({ error: "Only a system admin can delete another system admin" });
+    }
+    if (target.role === "admin") {
+      const adminCount = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
+      if (adminCount <= 1) {
+        return res.status(400).json({ error: "Cannot delete the last admin account" });
+      }
+    }
+
+    // Soft-clear non-FK references so historical design/proposal rows keep
+    // author names but stop pointing at a missing user id.
+    const remove = db.transaction((userId) => {
+      db.prepare("UPDATE design_requests SET assignee_id = NULL WHERE assignee_id = ?").run(userId);
+      db.prepare("UPDATE proposals SET owner_id = NULL WHERE owner_id = ?").run(userId);
+      db.prepare("DELETE FROM design_approvals WHERE user_id = ?").run(userId);
+      db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    });
+    remove(target.id);
+
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `Deleted user ${target.email} (${target.role}${target.systemAdmin ? ", system admin" : ""})`,
+      "Users"
+    );
+    res.json({ ok: true });
+  });
+
   app.get("/api/admin/clients", auth, requireRole("admin"), (_req, res) => {
     const clients = db.prepare("SELECT * FROM clients ORDER BY name").all().map(rowToClient);
     res.json({ clients });
