@@ -77,8 +77,8 @@ function bindFloat(el, f) {
   const ed = el.querySelector('.ed-float');
   if (ed) {
     ed.addEventListener('paste', handleEditablePaste);
-    ed.addEventListener('input', () => { f.html = ed.innerHTML; saveDoc(); });
-    ed.addEventListener('blur', () => { f.html = ed.innerHTML; saveDoc(); });
+    ed.addEventListener('input', (e) => { f.html = ed.innerHTML; saveDoc({ history: historyKindFromInput(e) }); });
+    ed.addEventListener('blur', () => { f.html = ed.innerHTML; saveDoc({ history: 'seal' }); });
   }
   el.querySelector('[data-fact="del"]')?.addEventListener('click', () => removeFloat(f.id));
   el.querySelector('[data-fact="pin"]')?.addEventListener('click', () => pinFloat(f));

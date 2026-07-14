@@ -13,7 +13,7 @@ export function ProposalsView({ clientId }) {
   }, [clientId]);
 
   return (
-    <div className="proposals-embed-wrap" style={{ margin: "-24px -28px", height: "calc(100vh - 56px)" }}>
+    <div className="proposals-embed-wrap">
       <iframe
         title="Proposal builder"
         src={src}

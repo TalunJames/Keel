@@ -10,7 +10,7 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
-#app { height: 100vh; }
+#app { height: 100%; }
 ::selection { background: var(--fs-gold-300); color: var(--fs-ink); }
 button { font-family: inherit; }
 [contenteditable]:focus { outline: none; }
@@ -148,7 +148,7 @@ button { font-family: inherit; }
 .switch input:checked + span:before { left: 16px; }
 
 /* =================== HOME =================== */
-.home { height: 100vh; overflow-y: auto; background: var(--fs-bone-50); }
+.home { height: 100%; overflow-y: auto; background: var(--fs-bone-50); }
 .home-top {
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 42px; background: #fff; border-bottom: 1px solid rgba(26,58,92,.12);
@@ -210,7 +210,7 @@ button { font-family: inherit; }
 .tpl-card small { font-size: 10px; color: var(--fs-ink-400); line-height: 1.35; display: block; }
 
 /* =================== EDITOR CHROME =================== */
-.editor { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.editor { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 
 .topbar {
   flex: none; height: 56px; background: #fff; border-bottom: 1px solid rgba(26,58,92,.14);
@@ -218,6 +218,7 @@ button { font-family: inherit; }
 }
 .topbar-logo { height: 24px; }
 .iconbtn.back { width: 34px; height: 34px; border: 1px solid rgba(26,58,92,.16); }
+.btn.ghost.back { padding: 0 11px 0 9px; flex-shrink: 0; }
 .title-wrap { min-width: 0; }
 .doc-title {
   font: 700 16.5px var(--fs-font-display); color: var(--fs-navy); line-height: 1.15;
@@ -1004,7 +1005,7 @@ body:not([data-mode="proofing"]) .proof-chip:not(.has-signs) { display: none; }
 body[data-mode="viewing"] .btool, body[data-mode="viewing"] .dz, body[data-mode="viewing"] .cost-open-hint { display: none !important; }
 
 /* =================== WORKSPACE SETTINGS (ADMIN PANEL) =================== */
-.admin { height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: #EDEEF0; }
+.admin { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: #EDEEF0; }
 .admin-row { flex: 1; display: flex; min-height: 0; }
 .admin-role-tag {
   font: 600 11px var(--fs-font-sans); color: var(--fs-gold-700); background: var(--fs-gold-100);
