@@ -63,6 +63,14 @@ function exportCleanRoot() {
   return root;
 }
 
+/* Fetch one same-origin asset as a data: URL (null on failure). */
+async function fetchDataURL(url) {
+  try {
+    const blob = await (await fetch(url)).blob();
+    return await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+  } catch (e) { return null; }
+}
+
 /* Fetch same-origin images (e.g. the logo) into data: URLs so they embed. */
 async function embedImages(root) {
   const imgs = [...root.querySelectorAll('img')].filter(im => !(im.getAttribute('src') || '').startsWith('data:'));
@@ -266,6 +274,7 @@ async function exportWord() {
       pageSize: App.doc.pageSize,
       marginPx: pageMargin(),
       pageNums: pageNumCfg(),
+      brandDataUrl: App.doc.pageBrand !== false ? await fetchDataURL('assets/logo-horizontal-blue.png') : null,
     });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

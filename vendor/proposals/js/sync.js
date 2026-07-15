@@ -90,6 +90,21 @@ const Sync = {
     fetch('api/proposals/' + encodeURIComponent(id) + '?client=' + this.cid, { method: 'DELETE' }).catch(() => {});
   },
 
+  /* Set a proposal's lifecycle state / status tag on the server. One field,
+     shared with CLEATUS — see server/proposal-status.js. */
+  async setTriage(id, triage) {
+    if (!this.remote) return { ok: true, triageState: triage };
+    const r = await fetch('api/proposals/' + encodeURIComponent(id) + '/triage?client=' + this.cid, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ triage }),
+    });
+    if (!r.ok) {
+      let msg = 'Could not update status';
+      try { msg = (await r.json()).error || msg; } catch (e) { /* keep default */ }
+      throw new Error(msg);
+    }
+    return r.json();
+  },
+
   /* Debounced full-document push. The doc is the unit of truth; the server
      fans out a light "changed" ping and peers re-fetch. */
   push() {

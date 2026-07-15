@@ -540,6 +540,7 @@ function paginate() {
   const frag = document.createDocumentFragment();
   pages.forEach((pg, pi) => {
     const sheet = makeSheet();
+    if (pg.some(b => BLEED_TYPES.includes(b.type))) sheet.classList.add('bleed');
     const inner = sheet.querySelector('.sheet-inner');
     pg.forEach((b) => {
       const gIdx = blocks.indexOf(b);
@@ -582,6 +583,7 @@ function paginate() {
 
 /* Body-page background art (letterhead / frame), configured in the Pages menu. */
 function applySheetBg(sheet, pi) {
+  applySheetBrand(sheet);
   const cfg = App.doc.pageBg;
   if (!cfg || !cfg.id || (cfg.skipFirst !== false && pi === 0)) { sheet.style.backgroundImage = ''; return; }
   const g = AssetStore.bg(cfg.id);
@@ -589,6 +591,22 @@ function applySheetBg(sheet, pi) {
   sheet.style.backgroundImage = `url(${g.src})`;
   sheet.style.backgroundSize = 'cover';
   sheet.style.backgroundPosition = 'center';
+}
+
+/* Firm lockup at the bottom-left of every body page — the print letterhead.
+   Skipped on full-bleed sheets (cover, imported PDF pages), where the art
+   owns the page. On by default; toggled per document in the Pages menu. */
+function applySheetBrand(sheet) {
+  const on = App.doc.pageBrand !== false && !sheet.classList.contains('bleed');
+  let img = sheet.querySelector(':scope > .sheet-brand');
+  if (!on) { if (img) img.remove(); return; }
+  if (img) return;
+  img = document.createElement('img');
+  img.className = 'sheet-brand';
+  img.src = 'assets/logo-horizontal-blue.png';
+  img.alt = '';
+  img.setAttribute('contenteditable', 'false');
+  sheet.appendChild(img);
 }
 
 /* ---------- page management (Acrobat-style) ---------- */

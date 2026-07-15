@@ -2,10 +2,68 @@
 'use strict';
 
 /* =================== HOME =================== */
+/* A small status pill (Draft / Submitted / Won / Lost / Archived) — the friendly
+   surface over the proposal's triageState, shared with the CLEATUS pipeline. */
+function statusPillHtml(triage) {
+  const t = tagForTriage(triage);
+  return `<span class="status-pill sp-${t.tone}" title="${esc(t.desc)}">${esc(t.label)}</span>`;
+}
+
 function renderHome() {
   App.view = 'home';
   App.doc = null;
   const list = Store.index();
+
+  // Count each filter across every proposal, then narrow to the active chip.
+  if (!STATUS_FILTERS.some(f => f.key === App.homeFilter)) App.homeFilter = 'active';
+  const counts = {};
+  STATUS_FILTERS.forEach(f => { counts[f.key] = 0; });
+  list.forEach(m => {
+    const tag = tagForTriage(m.triageState || 'building');
+    STATUS_FILTERS.forEach(f => { if (f.match(tag)) counts[f.key] += 1; });
+  });
+  const activeFilter = STATUS_FILTERS.find(f => f.key === App.homeFilter);
+  const shown = list.filter(m => activeFilter.match(tagForTriage(m.triageState || 'building')));
+
+  const cardHtml = (m) => {
+    const days = daysUntil(m.deadline);
+    const tag = tagForTriage(m.triageState || 'building');
+    return `<div class="prop-card ${tag.key === 'archived' ? 'is-archived' : ''}" data-id="${m.id}">
+      <div class="prop-card-top">
+        <span class="prop-card-chips">
+          <span class="client-badge ct-${m.clientType}">${esc((CLIENTS[m.clientType] || {}).label || m.clientType)}</span>
+          ${statusPillHtml(m.triageState)}
+          ${m.source === 'cleatus' ? `<span class="cleatus-chip" title="Linked to a CLEATUS pursuit — its status follows the CLEATUS pipeline">${icon('bolt', 10)} Cleatus</span>` : ''}
+        </span>
+        <button class="iconbtn prop-menu" title="Status &amp; actions">${icon('dots', 16)}</button>
+      </div>
+      <div class="prop-card-title">${esc(m.title)}</div>
+      <div class="prop-card-agency">${esc(m.agency || '—')}${m.rfpNumber ? ' · ' + esc(m.rfpNumber) : ''}</div>
+      ${m.needsRfp ? `<button class="btn tiny primary prop-rfp-cta" title="Upload the RFP document — Claude drafts the sections and pulls out the submission checklist">${icon('doc', 12)} Upload RFP &amp; start drafting</button>` : ''}
+      <div class="prop-card-foot">
+        <span>Edited ${timeAgo(m.updatedAt)}</span>
+        ${days != null && !tag.terminal ? `<span class="deadline ${days < 7 ? 'hot' : ''}">${days >= 0 ? days + ' days to submit' : 'past deadline'}</span>` : ''}
+      </div>
+    </div>`;
+  };
+
+  let body;
+  if (!list.length) {
+    body = `<div class="home-empty">
+      <div class="home-empty-icn">${icon('doc', 40, 1.4)}</div>
+      <h3>No proposals yet</h3>
+      <p>Start a new proposal and the block library will curate pre-written content for that client type.</p>
+    </div>`;
+  } else if (!shown.length) {
+    body = `<div class="home-empty">
+      <div class="home-empty-icn">${icon('doc', 40, 1.4)}</div>
+      <h3>No ${esc(activeFilter.label.toLowerCase())} proposals</h3>
+      <p>Nothing here yet — pick a different status filter above.</p>
+    </div>`;
+  } else {
+    body = `<div class="prop-grid">${shown.map(cardHtml).join('')}</div>`;
+  }
+
   $('#app').innerHTML = `
   <div class="home">
     <div class="home-top">
@@ -21,56 +79,131 @@ function renderHome() {
       </div>
       <button class="btn primary lg" id="newProposal">${icon('plus', 16)} New Proposal</button>
     </div>
-    ${list.length ? `<div class="prop-grid">
-      ${list.map(m => {
-        const days = daysUntil(m.deadline);
-        return `<div class="prop-card" data-id="${m.id}">
-          <div class="prop-card-top">
-            <span class="prop-card-chips">
-              <span class="client-badge ct-${m.clientType}">${esc((CLIENTS[m.clientType] || {}).label || m.clientType)}</span>
-              ${m.source === 'cleatus' ? `<span class="cleatus-chip" title="Created automatically when this pursuit moved to Building Proposal in CLEATUS">${icon('bolt', 10)} Cleatus</span>` : ''}
-            </span>
-            <button class="iconbtn danger prop-del" title="Delete proposal">${icon('trash', 14)}</button>
-          </div>
-          <div class="prop-card-title">${esc(m.title)}</div>
-          <div class="prop-card-agency">${esc(m.agency || '—')}${m.rfpNumber ? ' · ' + esc(m.rfpNumber) : ''}</div>
-          ${m.needsRfp ? `<button class="btn tiny primary prop-rfp-cta" title="Upload the RFP document — Claude drafts the sections and pulls out the submission checklist">${icon('doc', 12)} Upload RFP &amp; start drafting</button>` : ''}
-          <div class="prop-card-foot">
-            <span>Edited ${timeAgo(m.updatedAt)}</span>
-            ${days != null ? `<span class="deadline ${days < 7 ? 'hot' : ''}">${days >= 0 ? days + ' days to submit' : 'past deadline'}</span>` : ''}
-          </div>
-        </div>`;
-      }).join('')}
-    </div>` : `
-    <div class="home-empty">
-      <div class="home-empty-icn">${icon('doc', 40, 1.4)}</div>
-      <h3>No proposals yet</h3>
-      <p>Start a new proposal and the block library will curate pre-written content for that client type.</p>
-    </div>`}
+    ${list.length ? `<div class="home-filters">
+      ${STATUS_FILTERS.map(f => `<button class="ct-chip lg ${App.homeFilter === f.key ? 'on' : ''}" data-filter="${f.key}">${esc(f.label)}<span class="chip-count">${counts[f.key]}</span></button>`).join('')}
+    </div>` : ''}
+    ${body}
   </div>`;
 
   $('#newProposal').addEventListener('click', newProposalWizard);
   const adminBtn = $('#adminBtn');
   if (adminBtn) adminBtn.addEventListener('click', () => { location.hash = 'admin'; });
+
+  $$('.home-filters .ct-chip').forEach(chip => chip.addEventListener('click', () => {
+    App.homeFilter = chip.dataset.filter;
+    renderHome();
+  }));
+
   $$('.prop-card').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.prop-del')) return;
+      if (e.target.closest('.prop-menu')) return;
       if (e.target.closest('.prop-rfp-cta')) return;
       openEditor(card.dataset.id);
     });
     const rfpCta = card.querySelector('.prop-rfp-cta');
     if (rfpCta) rfpCta.addEventListener('click', () => uploadRfpIntoProposal(card.dataset.id));
-    card.querySelector('.prop-del').addEventListener('click', () => {
+    card.querySelector('.prop-menu').addEventListener('click', (e) => {
+      e.stopPropagation();
       const m = list.find(x => x.id === card.dataset.id);
-      const c = modal(`
-        <div class="pophead"><b>Delete “${esc(m.title)}”?</b></div>
-        <div class="popbody"><p class="set-hint" style="font-size:13px">This permanently removes the proposal, its comments, and its version history.</p>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-          <button class="btn" id="delNo">Cancel</button><button class="btn danger" id="delYes">Delete</button></div></div>`, { width: 400 });
-      c.querySelector('#delNo').onclick = closePopovers;
-      c.querySelector('#delYes').onclick = () => { Store.remove(m.id); closePopovers(); renderHome(); toast('Proposal deleted'); };
+      openProposalMenu(e.currentTarget, m);
     });
   });
+}
+
+/* Per-card actions: set the status tag, open the CLEATUS pursuit, delete. Shared
+   status-setting logic with the editor lives in setProposalStatus(). */
+function openProposalMenu(anchor, m) {
+  const current = tagForTriage(m.triageState || 'building');
+  const rows = STATUS_TAGS.map(t => `
+    <div class="menu-row ${t.key === current.key ? 'on' : ''}" data-tag="${t.key}">
+      <span class="status-dot sp-${t.tone}"></span>
+      <div><b>${esc(t.label)}</b><small>${esc(t.desc)}</small></div>
+      ${t.key === current.key ? `<span class="check">${icon('check', 13, 3)}</span>` : ''}
+    </div>`).join('');
+  const card = popover(anchor, `
+    <div class="menu-kicker">Set status</div>
+    ${rows}
+    <div class="menu-sep"></div>
+    ${m.cleatusUrl ? `<div class="menu-row" data-act="cleatus"><span class="status-dot sp-submitted"></span><div><b>View in CLEATUS</b><small>Open the linked pursuit</small></div></div>` : ''}
+    <div class="menu-row danger" data-act="delete"><span class="menu-ic">${icon('trash', 14)}</span><div><b>Delete proposal</b><small>Removes it and its history</small></div></div>`,
+    { width: 288, align: 'right', maxHeight: '78vh' });
+
+  card.querySelectorAll('[data-tag]').forEach(row => row.addEventListener('click', () => {
+    const tag = row.dataset.tag;
+    closePopovers();
+    if (triageForTag(tag) === (m.triageState || 'building')) return;
+    setProposalStatus(m.id, tag, { onDone: renderHome });
+  }));
+  const cle = card.querySelector('[data-act="cleatus"]');
+  if (cle) cle.addEventListener('click', () => { closePopovers(); window.open(m.cleatusUrl, '_blank'); });
+  card.querySelector('[data-act="delete"]').addEventListener('click', () => {
+    closePopovers();
+    confirmDeleteProposal(m);
+  });
+}
+
+/* Apply a status tag to a proposal, with a friendly toast and CLEATUS caveat. */
+function setProposalStatus(id, tag, { onDone } = {}) {
+  const triage = triageForTag(tag);
+  if (!triage) return;
+  const label = (STATUS_BY_KEY[tag] || {}).label || tag;
+  Promise.resolve(setProposalTriage(id, triage)).then(() => {
+    toast(`Marked ${label}`);
+    if (onDone) onDone();
+  }).catch((e) => {
+    toast(e.message || 'Could not update status');
+    if (onDone) onDone();
+  });
+}
+
+function confirmDeleteProposal(m) {
+  const c = modal(`
+    <div class="pophead"><b>Delete “${esc(m.title)}”?</b></div>
+    <div class="popbody"><p class="set-hint" style="font-size:13px">This permanently removes the proposal, its comments, and its version history. To keep it out of the way without deleting, use <b>Archive</b> instead.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="delNo">Cancel</button><button class="btn danger" id="delYes">Delete</button></div></div>`, { width: 420 });
+  c.querySelector('#delNo').onclick = closePopovers;
+  c.querySelector('#delYes').onclick = () => { Store.remove(m.id); closePopovers(); renderHome(); toast('Proposal deleted'); };
+}
+
+/* Editor topbar status menu — set the open proposal's tag, with a CLEATUS note
+   and deep-link when the proposal is linked to a pursuit. */
+function openStatusMenu(anchor) {
+  const d = App.doc;
+  if (!d) return;
+  const current = tagForTriage(d.triageState);
+  const cleatusUrl = (d.cleatus && d.cleatus.rfpUrl) || (d.rfp && d.rfp.cleatusUrl) || null;
+  const rows = STATUS_TAGS.map(t => `
+    <div class="menu-row ${t.key === current.key ? 'on' : ''}" data-tag="${t.key}">
+      <span class="status-dot sp-${t.tone}"></span>
+      <div><b>${esc(t.label)}</b><small>${esc(t.desc)}</small></div>
+      ${t.key === current.key ? `<span class="check">${icon('check', 13, 3)}</span>` : ''}
+    </div>`).join('');
+  const card = popover(anchor, `
+    <div class="menu-kicker">Proposal status</div>
+    ${rows}
+    ${d.source === 'cleatus' ? `<div class="menu-sep"></div>
+      <div class="menu-note">${icon('bolt', 11)} Linked to a CLEATUS pursuit — a later CLEATUS sync can move this status to match the pipeline.</div>
+      ${cleatusUrl ? `<div class="menu-row" data-act="cleatus"><span class="status-dot sp-submitted"></span><div><b>View in CLEATUS</b><small>Open the linked pursuit</small></div></div>` : ''}` : ''}`,
+    { width: 300, maxHeight: '78vh' });
+
+  card.querySelectorAll('[data-tag]').forEach(row => row.addEventListener('click', () => {
+    const tag = row.dataset.tag;
+    closePopovers();
+    if (triageForTag(tag) === d.triageState) return;
+    setProposalStatus(d.id, tag, { onDone: refreshStatusBadge });
+  }));
+  const cle = card.querySelector('[data-act="cleatus"]');
+  if (cle) cle.addEventListener('click', () => { closePopovers(); if (cleatusUrl) window.open(cleatusUrl, '_blank'); });
+}
+
+/* Repaint the topbar status pill after a change without a full re-render. */
+function refreshStatusBadge() {
+  const btn = $('#statusBtn');
+  if (!btn || !App.doc) return;
+  const t = tagForTriage(App.doc.triageState);
+  btn.className = `status-pill sp-${t.tone} status-btn`;
+  btn.innerHTML = `${esc(t.label)} <span class="caret">▾</span>`;
 }
 
 function newProposalWizard() {
@@ -256,6 +389,11 @@ async function openEditor(id) {
   App.view = 'editor';
   App.selectedBlock = null;
   App.pendingComment = null;
+  // The comments/suggestions rail earns its space: start open only when the
+  // document has an open thread or pending tracked changes. (Suggestions live
+  // in the stored content as <ins/del data-sid> — checkable before render.)
+  App.showRail = doc.comments.some(c => !c.resolved)
+    || Object.values(doc.content || {}).some(h => typeof h === 'string' && h.includes('data-sid'));
   location.hash = 'doc/' + id;
   History.init(doc);
   Sync.connect(id);   // join the live room before rendering — a render error must not cost us presence/sync
@@ -277,6 +415,8 @@ function renderEditor() {
           <span class="save-badge is-saved" id="saveBadge"><span class="dot"></span>All changes saved</span>
           <span class="sep">·</span>
           <span class="client-badge ct-${d.clientType}">${esc((CLIENTS[d.clientType] || {}).label || '')}</span>
+          <span class="sep">·</span>
+          <button class="status-pill sp-${tagForTriage(d.triageState).tone} status-btn" id="statusBtn" title="Set the proposal's status — Draft, Submitted, Won, Lost, or Archived">${esc(tagForTriage(d.triageState).label)} <span class="caret">▾</span></button>
           ${d.rfpNumber ? `<span class="sep">·</span><span class="muted">${esc(d.rfpNumber)}</span>` : ''}
         </div>
       </div>
@@ -461,6 +601,9 @@ function bindTopbar() {
       setMode(r.dataset.mode); closePopovers(); renderRail();
     }));
   });
+
+  const statusBtn = $('#statusBtn');
+  if (statusBtn) statusBtn.addEventListener('click', (e) => openStatusMenu(e.currentTarget));
 
   $('#rfpBtn').addEventListener('click', (e) => openRfpPanel(e.currentTarget));
   $('#historyBtn').addEventListener('click', (e) => openHistoryPanel(e.currentTarget));
@@ -810,6 +953,12 @@ function openPagesMenu(anchor) {
       </div>
     </div>
     <div class="menu-sep"></div>
+    <div class="menu-kicker">Body page letterhead</div>
+    <div class="pn-body">
+      <label class="set-toggle"><label class="switch"><input type="checkbox" data-pgbrand ${App.doc.pageBrand !== false ? 'checked' : ''}><span></span></label> Firm lockup, bottom-left</label>
+      <p class="set-hint" style="margin-top:2px">The letterhead mark on every body page — never on the cover or imported PDF pages.</p>
+    </div>
+    <div class="menu-sep"></div>
     <div class="menu-kicker">Body page background</div>
     <div class="pn-body">
       <div class="bg-grid">
@@ -887,6 +1036,11 @@ function openPagesMenu(anchor) {
   if (pgSkip) pgSkip.addEventListener('change', () => {
     App.doc.pageBg = App.doc.pageBg || { id: null };
     App.doc.pageBg.skipFirst = pgSkip.checked;
+    apply();
+  });
+  const pgBrand = card.querySelector('[data-pgbrand]');
+  if (pgBrand) pgBrand.addEventListener('change', () => {
+    App.doc.pageBrand = pgBrand.checked;
     apply();
   });
 }

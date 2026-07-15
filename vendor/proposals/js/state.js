@@ -23,12 +23,14 @@ const Store = {
       serviceTitle: meta.serviceTitle || 'Public Education & Community Outreach Services',
       deadline: meta.deadline || '',
       pageSize: 'letter',
+      pageBrand: true,
       createdAt: Date.now(), updatedAt: Date.now(),
       blocks: [], content: {},
       comments: [],
       rfp: { items: defaultRfpItems() },
       versions: [],
       keelClientId: meta.keelClientId || null,
+      triageState: meta.triageState || 'building',   // shows as the "Draft" tag
     };
     doc.blocks = (typeof Settings !== 'undefined' && Settings.buildTemplate(meta.template, doc))
       || (TEMPLATES[meta.template] || TEMPLATES.full).build(doc);
@@ -72,8 +74,13 @@ const Store = {
   },
 
   metaOf(doc) {
+    const triageState = doc.triageState || 'building';
     return { id: doc.id, title: doc.title, agency: doc.agency, clientType: doc.clientType,
-      rfpNumber: doc.rfpNumber, deadline: doc.deadline, updatedAt: doc.updatedAt, createdAt: doc.createdAt };
+      rfpNumber: doc.rfpNumber, deadline: doc.deadline, updatedAt: doc.updatedAt, createdAt: doc.createdAt,
+      triageState, tag: (typeof tagForTriage === 'function' ? tagForTriage(triageState).key : 'draft'),
+      source: doc.source || 'manual',
+      cleatusUrl: (doc.cleatus && doc.cleatus.rfpUrl) || (doc.rfp && doc.rfp.cleatusUrl) || null,
+      needsRfp: !!(doc.cleatus && doc.cleatus.needsRfp) };
   },
 
   read(id) {
@@ -110,6 +117,7 @@ const Store = {
 /* ---------- app runtime state ---------- */
 const App = {
   view: 'home',          // 'home' | 'editor'
+  homeFilter: 'active',  // status filter chip on the home grid (see STATUS_FILTERS)
   doc: null,
   mode: 'editing',       // 'editing' | 'suggesting' | 'viewing'
   zoom: 0.9,
@@ -141,6 +149,22 @@ function saveDoc(opts = {}) {
   _settleSave();
   if (!opts.silent) maybeAutoVersion();
   if (opts.history !== 'skip') History.onChange(opts.history || 'other');
+}
+
+/* Change a proposal's lifecycle tag/state (Draft, Submitted, Won, Lost,
+   Archived). Works whether the proposal is open in the editor or just listed on
+   the home grid. Optimistically updates the local index + cached doc, then
+   writes through to the server, which fans the change out to teammates. */
+function setProposalTriage(id, triage) {
+  const tag = (typeof tagForTriage === 'function') ? tagForTriage(triage).key : triage;
+  const list = Store.index();
+  const i = list.findIndex(m => m.id === id);
+  if (i >= 0) { list[i].triageState = triage; list[i].tag = tag; Store.writeIndex(list); }
+  const cached = Store.read(id);
+  if (cached) { cached.triageState = triage; Store.writeDoc(cached); }
+  if (App.doc && App.doc.id === id) App.doc.triageState = triage;
+  if (typeof Sync !== 'undefined' && Sync.remote) return Sync.setTriage(id, triage);
+  return Promise.resolve({ ok: true, triageState: triage, tag });
 }
 
 /* Classify contenteditable InputEvents into Word-style undo units.

@@ -1,15 +1,68 @@
 import { createEditorProposal, editorClientType } from "./proposals-app-routes.js";
 
-/** Map Cleatus triage labels / pursuit phases to Keel proposal triage_state values. */
-export function normalizeCleatusTriage(raw) {
+// Pursuit-stage proposals need a client to attach to (proposals.client_id is
+// NOT NULL), but the firm doesn't create a real Keel client until a contract is
+// won. So unmatched pursuits land on a house/"internal" client — the same place
+// the firm's own marketing lives — and get reassigned to the real client on win.
+const INTERNAL_CLIENT_ID = "internal";
+const INTERNAL_CLIENT_NAME = "Internal";
+const FALLBACK_SETTING = "cleatus_fallback_client_id";
+
+/**
+ * Resolve the house/"Internal" client, creating it only if truly absent.
+ * Matches an existing one by our stable id OR by the name "Internal" — the
+ * live workspace already has an "Internal" client whose id was derived from
+ * its tag (not literally "internal"), so a name check avoids making a
+ * duplicate. Returns whatever id the existing/created client has.
+ */
+function ensureInternalClient(db) {
+  const byId = db.prepare("SELECT id FROM clients WHERE id = ?").get(INTERNAL_CLIENT_ID);
+  if (byId) return byId.id;
+  const byName = db.prepare(
+    "SELECT id FROM clients WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1"
+  ).get(INTERNAL_CLIENT_NAME);
+  if (byName) return byName.id;
+  db.prepare(
+    `INSERT INTO clients (id, name, tag, initials, account, type, color, audience, active)
+     VALUES (?, ?, 'INT', 'IN', '', 'Internal / House', 'var(--fs-navy)', '', 1)`
+  ).run(INTERNAL_CLIENT_ID, INTERNAL_CLIENT_NAME);
+  return INTERNAL_CLIENT_ID;
+}
+
+/**
+ * Where unmatched pursuits attach. An admin can repoint this at any client via
+ * the app_settings row `cleatus_fallback_client_id`; otherwise it's the
+ * auto-created internal/house client.
+ */
+export function resolveFallbackClientId(db) {
+  try {
+    const override = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(FALLBACK_SETTING)?.value;
+    if (override && db.prepare("SELECT id FROM clients WHERE id = ?").get(override)) return override;
+  } catch { /* fall through to the house client */ }
+  return ensureInternalClient(db);
+}
+
+/**
+ * Map Cleatus triage labels / pursuit phases to Keel proposal triage_state
+ * values (which the builder surfaces as Submitted / Won / Lost / Archived tags).
+ * The column/phase label is the primary signal; `statusHint` is the pipeline
+ * bucket the pursuit was fetched from (active | won | archived) and only
+ * decides ambiguous cases.
+ */
+export function normalizeCleatusTriage(raw, statusHint) {
   const s = String(raw || "").toLowerCase().replace(/[\s_-]+/g, "_");
   if (s.includes("building") && s.includes("proposal")) return "building";
   if (s === "inbox" || s === "new" || s === "triage") return "inbox";
   if (s.includes("review")) return "internal_review";
   if (s === "preparing") return "building";
   if (s === "sent" || s === "submitted") return "sent";
-  if (s === "signed" || s === "won") return "signed";
-  if (s === "declined" || s === "lost") return "declined";
+  if (s === "signed" || s === "won" || s.includes("award")) return "signed";
+  if (s === "declined" || s === "lost" || s.includes("reject")) return "declined";
+  if (s.includes("archiv")) return "archived";
+  // No decisive column label — fall back to the pipeline bucket.
+  const hint = String(statusHint || "").toLowerCase();
+  if (hint === "won") return "signed";
+  if (hint === "archived") return "archived";
   return "inbox";
 }
 
@@ -107,7 +160,7 @@ export function applyCleatusUpdate(db, body) {
        processing_error = NULL`
   ).run(String(externalId), body.event || "pursuit.updated", JSON.stringify(body), row.id);
 
-  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage);
+  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage, body.pipelineStatus);
   if (triageState === row.triage_state) {
     return { proposalId: row.id, triageState, unchanged: true };
   }
@@ -133,24 +186,15 @@ export function createProposalFromCleatus(db, body, { userId } = {}) {
     return { proposalId: existing.proposal_id, duplicate: true };
   }
 
-  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage);
-  const clientId = body.clientId || matchClientByCleatusPayload(db, body) || body.client_id;
-  if (!clientId) {
-    const eventResult = db.prepare(
-      `INSERT INTO cleatus_events (external_id, event_type, payload_json, processing_error)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(external_id) DO UPDATE SET payload_json = excluded.payload_json, processing_error = excluded.processing_error`
-    ).run(
-      String(externalId),
-      body.event || body.eventType || "opportunity.updated",
-      JSON.stringify(body),
-      "no_matching_client",
-    );
-    return { eventId: eventResult.lastInsertRowid, unassigned: true };
-  }
+  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage, body.pipelineStatus);
+  // A real client match wins; unmatched pursuits attach to the house/internal
+  // client so the proposal can exist before the contract is won.
+  const matchedClientId = body.clientId || matchClientByCleatusPayload(db, body) || body.client_id;
+  const usingFallback = !matchedClientId;
+  const clientId = matchedClientId || resolveFallbackClientId(db);
 
   const client = db.prepare("SELECT name, type FROM clients WHERE id = ?").get(clientId);
-  const title = body.title || body.opportunityTitle || `Proposal — ${client?.name || clientId}`;
+  const title = body.title || body.opportunityTitle || `Proposal — ${body.clientName || body.client?.name || client?.name || clientId}`;
 
   const cleatusMeta = {
     rfpUrl: body.rfp?.url || body.rfpUrl || null,
@@ -159,6 +203,9 @@ export function createProposalFromCleatus(db, body, { userId } = {}) {
     staffNotes: body.staffNotes || body.staff_notes || body.notes || null,
     cleatusId: String(externalId),
     rawTriage: body.triage || body.triageState || body.stage,
+    // True when this attached to the house client rather than a real one, so
+    // these can be found and reassigned to the real client once the deal wins.
+    pendingClient: usingFallback,
     // Shows the "upload RFP & start drafting" call to action on the home grid
     // until an RFP is drafted into this proposal (cleared by /ai/draft).
     needsRfp: true,
