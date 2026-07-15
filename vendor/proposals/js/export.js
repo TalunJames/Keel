@@ -1,14 +1,18 @@
 /* ============ Fog Signal Proposals — export ============
-   Word: MHTML container (.doc) with every style inlined element-by-element
-   and images embedded as MIME parts — this is the format Word natively
-   round-trips, so fonts, colors, tables, and pictures survive.
-   PDF: prints the app's actual paginated sheets (WYSIWYG, incl. page numbers).
-   Google Docs: the Word file converts in Drive; rich-clipboard copy also
+   Word: genuine .docx built by js/docx.js (real OOXML — opens in Word,
+   Pages, LibreOffice; converts cleanly in Google Drive; page numbers are
+   live PAGE/NUMPAGES fields).
+   PDF: prints the app's actual paginated sheets (WYSIWYG, incl. page
+   numbers) from a hidden same-origin iframe — popup- and CSP-proof.
+   Google Docs: the .docx converts in Drive; rich-clipboard copy also
    carries inline styles + embedded images for direct pasting.            */
 'use strict';
 
-const W_SERIF = "Baskerville,'Baskerville Old Face',Garamond,'Times New Roman',serif";
-const W_SANS = "'Source Sans 3','Segoe UI',Arial,sans-serif";
+/* Unified document typeface — Arial across body and headings, matching the
+   editor. Both constants point to the same stack; the names are kept so the
+   page-number "serif/sans" toggle and existing rules keep working. */
+const W_SERIF = "Arial,Helvetica,sans-serif";
+const W_SANS = "Arial,Helvetica,sans-serif";
 
 /* ---------- shared: cleaned document root ---------- */
 function exportCleanRoot() {
@@ -55,6 +59,7 @@ function exportCleanRoot() {
     else root.appendChild(el);
   });
   root.querySelectorAll('[data-xbid]').forEach(n => n.removeAttribute('data-xbid'));
+  refreshLiveDates(root);   // cover dates re-stamp to the day of export
   return root;
 }
 
@@ -73,30 +78,34 @@ async function embedImages(root) {
 
 /* ---------- Word: inline every style ---------- */
 const WORD_RULES = [
-  ['p',  `font-family:${W_SANS};font-size:11pt;line-height:1.5;margin:0 0 8pt;color:#0F0F0F`],
-  ['li', `font-family:${W_SANS};font-size:11pt;line-height:1.5;margin:0 0 4pt;color:#0F0F0F`],
+  ['p',  `font-family:${W_SANS};font-size:12pt;line-height:1.5;margin:0 0 8pt;color:#0F0F0F`],
+  ['li', `font-family:${W_SANS};font-size:12pt;line-height:1.5;margin:0 0 4pt;color:#0F0F0F`],
   ['ul', 'margin:0 0 8pt 22pt'], ['ol', 'margin:0 0 8pt 22pt'],
   ['a',  'color:#1A3A5C'],
-  ['h1', `font-family:${W_SERIF};font-size:24pt;line-height:1.2;color:#1A3A5C;font-weight:bold;margin:0 0 12pt`],
-  ['h2', `font-family:${W_SERIF};font-size:16pt;line-height:1.25;color:#1A3A5C;font-weight:bold;margin:16pt 0 8pt;padding-bottom:4pt;border-bottom:1.5pt solid #EFC53F`],
-  ['h3', `font-family:${W_SERIF};font-size:13pt;color:#1A3A5C;font-weight:bold;margin:14pt 0 6pt`],
-  ['h4', `font-family:${W_SANS};font-size:11.5pt;color:#1A3A5C;font-weight:bold;margin:10pt 0 4pt`],
+  ['h1', `font-family:${W_SERIF};font-size:22pt;line-height:1.25;color:#1A3A5C;font-weight:bold;margin:0 0 12pt`],
+  ['h2', `font-family:${W_SERIF};font-size:18pt;line-height:1.3;color:#1A3A5C;font-weight:bold;margin:16pt 0 8pt;padding-bottom:4pt;border-bottom:1.5pt solid #EFC53F`],
+  ['h3', `font-family:${W_SERIF};font-size:15pt;color:#1A3A5C;font-weight:bold;margin:14pt 0 6pt`],
+  ['h4', `font-family:${W_SANS};font-size:13pt;color:#1A3A5C;font-weight:bold;margin:10pt 0 4pt`],
   ['table.ptable', 'border-collapse:collapse;width:100%;margin:6pt 0 12pt'],
   ['table.ptable th', `background:#1A3A5C;color:#FFFFFF;text-align:left;padding:5pt 7pt;font-family:${W_SANS};font-size:9.5pt;font-weight:bold;border:0.75pt solid #1A3A5C`],
   ['table.ptable td', `border:0.75pt solid #C8C7C1;padding:5pt 7pt;vertical-align:top;font-family:${W_SANS};font-size:9.5pt;line-height:1.45;color:#0F0F0F`],
   ['td.num', 'text-align:right'], ['th.num', 'text-align:right'],
   ['tr.total-row td', 'background:#F1F0E8;border-top:1.5pt solid #1A3A5C;font-size:10pt'],
-  ['blockquote.pullquote', `font-family:${W_SERIF};font-style:italic;font-size:14pt;line-height:1.4;color:#1A3A5C;border-left:2.5pt solid #EFC53F;padding:2pt 0 2pt 12pt;margin:10pt 0`],
+  ['blockquote.pullquote', `font-family:${W_SERIF};font-style:italic;font-size:16pt;line-height:1.4;color:#1A3A5C;border-left:2.5pt solid #EFC53F;padding:2pt 0 2pt 12pt;margin:10pt 0`],
   ['figcaption', `font-family:${W_SANS};font-size:8.5pt;color:#7A7975;margin-top:3pt;text-align:center`],
-  ['.bio-name', 'margin:10pt 0 2pt;font-size:12pt'],
+  ['.bio-name', 'margin:10pt 0 2pt;font-size:13pt'],
   ['.case-sub', 'color:#5B5B58;margin-bottom:4pt'],
   ['.muted', 'color:#7A7975;font-weight:normal'],
   ['.cover-page', 'text-align:center'],
-  ['.cover-title', 'font-size:26pt;margin:24pt 0 0'],
+  ['.cover-title', 'font-size:28pt;margin:24pt 0 0'],
   ['.cover-meta p', 'font-size:12pt;margin:9pt 0'],
+  ['.cover-fss', 'text-align:left'],
+  ['.cover-fss-kicker', `font-family:${W_SANS};font-size:13pt;color:#1A3A5C;font-weight:bold;margin:0 0 4pt`],
+  ['.cover-fss-title', `font-family:${W_SANS};font-size:26pt;line-height:1.2;color:#1A3A5C;font-weight:bold;margin:0;border:none;padding:0`],
+  ['.cover-fss-meta p', 'font-size:12pt;margin:0 0 9pt'],
   ['.divider-page', 'text-align:center'],
   ['.divider-eyebrow', `font-family:${W_SANS};font-size:9pt;letter-spacing:3pt;text-transform:uppercase;color:#B8932A;font-weight:bold;margin:170pt 0 10pt`],
-  ['.divider-title', 'font-size:26pt;margin:0'],
+  ['.divider-title', 'font-size:28pt;margin:0'],
   ['.toc-label', ''],
 ];
 
@@ -122,6 +131,23 @@ function applyWordInlineStyles(root) {
     cp.insertBefore(spacer, cp.firstChild);
   });
 
+  // letterhead cover: Word can't draw the full-bleed sidebar (it lives in
+  // CSS pseudo-elements that never reach the export) — keep the left-aligned
+  // logo/title/meta composition and let the spacer push the meta down.
+  root.querySelectorAll('.cover-fss').forEach(cp => {
+    cp.style.padding = ''; cp.style.margin = ''; cp.style.height = '';
+    const spacer = htmlToEl(`<p style="margin:0;font-size:1pt">&nbsp;</p>`);
+    spacer.style.marginTop = '50pt';
+    cp.insertBefore(spacer, cp.firstChild);
+    const gap = cp.querySelector('.cover-fss-spacer');
+    if (gap) gap.outerHTML = `<p style="margin:0 0 260pt;font-size:1pt">&nbsp;</p>`;
+  });
+  root.querySelectorAll('img.cover-fss-logo').forEach(im => { im.setAttribute('width', '250'); im.removeAttribute('class'); });
+  root.querySelectorAll('.cover-fss-meta').forEach(m => {
+    const cols = [...m.querySelectorAll('.cfm-col')].map(c => `<td style="width:50%;vertical-align:top;padding-right:14pt;border:none">${c.innerHTML}</td>`).join('');
+    if (cols) m.outerHTML = `<table width="100%" style="border-collapse:collapse;margin:0"><tr>${cols}</tr></table>`;
+  });
+
   // gold rules (cover/divider) → centered table (Word-safe)
   root.querySelectorAll('.cover-rule,.divider-beam').forEach(el => {
     el.outerHTML = `<table align="center" style="border-collapse:collapse;margin:14pt auto"><tr><td style="width:60pt;border-bottom:2.5pt solid #EFC53F;font-size:2pt">&nbsp;</td></tr></table>`;
@@ -137,8 +163,8 @@ function applyWordInlineStyles(root) {
     </div>`;
   });
   root.querySelectorAll('.cb-kicker').forEach(el => el.setAttribute('style', `font-family:${W_SANS};font-size:9pt;letter-spacing:2.5pt;text-transform:uppercase;color:#B8932A;font-weight:bold;margin:0 0 4pt`));
-  root.querySelectorAll('.cb-title').forEach(el => el.setAttribute('style', `font-family:${W_SERIF};font-size:20pt;color:#1A3A5C;margin:0 0 6pt;border:none;padding:0`));
-  root.querySelectorAll('.cb-meta').forEach(el => el.setAttribute('style', `font-family:${W_SANS};font-size:10.5pt;color:#0F0F0F;margin:0`));
+  root.querySelectorAll('.cb-title').forEach(el => el.setAttribute('style', `font-family:${W_SERIF};font-size:18pt;color:#1A3A5C;margin:0 0 6pt;border:none;padding:0`));
+  root.querySelectorAll('.cb-meta').forEach(el => el.setAttribute('style', `font-family:${W_SANS};font-size:12pt;color:#0F0F0F;margin:0`));
 
   // per-block heading underline overrides (from the heading block's gear settings)
   root.querySelectorAll('.heading-scope').forEach(sc => {
@@ -201,12 +227,12 @@ function applyWordInlineStyles(root) {
       const label = row.querySelector('.toc-label')?.textContent || '';
       const pg = row.querySelector('.toc-pg')?.textContent || '';
       const labStyle = lvl0
-        ? `font-family:${W_SERIF};font-size:12pt;font-weight:bold;color:#1A3A5C;padding:7pt 4pt 2pt 0;white-space:nowrap`
-        : `font-family:${W_SANS};font-size:10.5pt;color:#0F0F0F;padding:3pt 4pt 2pt 14pt;white-space:nowrap`;
+        ? `font-family:${W_SERIF};font-size:13pt;font-weight:bold;color:#1A3A5C;padding:7pt 4pt 2pt 0;white-space:nowrap`
+        : `font-family:${W_SANS};font-size:12pt;color:#0F0F0F;padding:3pt 4pt 2pt 14pt;white-space:nowrap`;
       return `<tr>
         <td style="${labStyle};border:none">${esc(label)}</td>
         <td style="width:100%;border:none;border-bottom:1pt dotted #A4A39E"></td>
-        <td style="border:none;text-align:right;font-family:${W_SANS};font-size:10.5pt;color:#5B5B58;padding:3pt 0 2pt 6pt">${esc(pg)}</td>
+        <td style="border:none;text-align:right;font-family:${W_SANS};font-size:12pt;color:#5B5B58;padding:3pt 0 2pt 6pt">${esc(pg)}</td>
       </tr>`;
     }).join('');
     list.outerHTML = `<table width="100%" style="border-collapse:collapse;margin:8pt 0 0">${rows}</table>`;
@@ -222,60 +248,6 @@ function applyWordInlineStyles(root) {
   root.querySelectorAll('table').forEach(t => { t.setAttribute('cellspacing', '0'); t.setAttribute('cellpadding', '0'); });
 }
 
-/* ---------- Word: document shell with real page-number fields ---------- */
-function wordShell(bodyHTML) {
-  const cfg = pageNumCfg();
-  const dims = { letter: '8.5in 11.0in', a4: '210mm 297mm', legal: '8.5in 14.0in' }[App.doc.pageSize] || '8.5in 11.0in';
-  const isHeader = cfg.pos[0] === 't';
-  const align = { l: 'left', c: 'center', r: 'right' }[cfg.pos[1]] || 'right';
-  const font = cfg.font === 'serif' ? W_SERIF : 'Arial, sans-serif';
-  const fieldHTML = {
-    pageXofY: `Page <span style='mso-field-code:" PAGE "'>1</span> of <span style='mso-field-code:" NUMPAGES "'>1</span>`,
-    nofy: `<span style='mso-field-code:" PAGE "'>1</span> of <span style='mso-field-code:" NUMPAGES "'>1</span>`,
-    n: `<span style='mso-field-code:" PAGE "'>1</span>`,
-    dash: `— <span style='mso-field-code:" PAGE "'>1</span> —`,
-  }[cfg.format];
-  const numChrome = cfg.show ? `
-    <div style="mso-element:${isHeader ? 'header' : 'footer'}" id="${isHeader ? 'h1' : 'f1'}">
-      <p class="${isHeader ? 'MsoHeader' : 'MsoFooter'}" style="text-align:${align};font-family:${font};font-size:${Math.round(cfg.size * 0.75 * 2) / 2}pt;color:${cfg.color};margin:0">${fieldHTML}</p>
-    </div>` : '';
-
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>${esc(App.doc.title)}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
-<style>
-p.MsoFooter, p.MsoHeader { margin:0; }
-@page { size:${dims}; margin:${(pageMargin() / 96).toFixed(2)}in; mso-header-margin:0.45in; mso-footer-margin:0.45in; }
-@page WordSection1 { ${cfg.show ? (isHeader ? 'mso-header:h1;' : 'mso-footer:f1;') : ''} ${cfg.show && cfg.skipFirst ? 'mso-title-page:yes;' : ''} }
-div.WordSection1 { page:WordSection1; }
-</style>
-</head><body style="font-family:${W_SANS}">
-<div class="WordSection1">
-${bodyHTML}
-${numChrome}
-</div></body></html>`;
-}
-
-/* ---------- Word: MHTML packaging (embeds images as MIME parts) ---------- */
-function buildMHT(fullHTML) {
-  const parts = [];
-  let n = 0;
-  const html = fullHTML.replace(/src="data:([^;"]+);base64,([^"]+)"/g, (m, mime, b64) => {
-    const ext = (mime.split('/')[1] || 'png').split('+')[0];
-    const loc = `file:///C:/fss/image${++n}.${ext}`;
-    parts.push({ loc, mime, b64 });
-    return `src="${loc}"`;
-  });
-  const B = '----=_NextPart_FSS';
-  let mht = `MIME-Version: 1.0\r\nContent-Type: multipart/related; type="text/html"; boundary="${B}"\r\n\r\n`;
-  mht += `--${B}\r\nContent-Type: text/html; charset="utf-8"\r\nContent-Location: file:///C:/fss/document.html\r\n\r\n${html}\r\n\r\n`;
-  parts.forEach(p => {
-    mht += `--${B}\r\nContent-Type: ${p.mime}\r\nContent-Transfer-Encoding: base64\r\nContent-Location: ${p.loc}\r\n\r\n${p.b64.replace(/(.{76})/g, '$1\r\n')}\r\n\r\n`;
-  });
-  mht += `--${B}--`;
-  return mht;
-}
-
 function suggestionWarning() {
   const n = collectSuggestions().length;
   if (n) toast(`Note: ${n} open suggestion${n > 1 ? 's were' : ' was'} exported as accepted`);
@@ -286,19 +258,27 @@ function docFilename(ext) {
 
 async function exportWord() {
   toast('Preparing Word document…');
-  const root = exportCleanRoot();
-  await embedImages(root);
-  applyWordInlineStyles(root);
-  const mht = buildMHT(wordShell(root.innerHTML));
-  const blob = new Blob([mht], { type: 'application/msword' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = docFilename('doc');
-  a.click();
-  URL.revokeObjectURL(a.href);
-  snapshotVersion('Exported to Word');
-  suggestionWarning();
-  toast('Word document downloaded — formatting, images & page numbers included');
+  try {
+    const root = exportCleanRoot();
+    await embedImages(root);
+    const blob = await DocxExport.build(root, {
+      title: App.doc.title,
+      pageSize: App.doc.pageSize,
+      marginPx: pageMargin(),
+      pageNums: pageNumCfg(),
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = docFilename('docx');
+    a.click();
+    URL.revokeObjectURL(a.href);
+    snapshotVersion('Exported to Word');
+    suggestionWarning();
+    toast('Word document downloaded — formatting, images & page numbers included');
+  } catch (e) {
+    console.error('docx export failed', e);
+    toast('Word export hit a snag — see the console for details');
+  }
 }
 
 function exportGoogleDocs() {
@@ -351,12 +331,26 @@ function exportPDF() {
     clone.querySelectorAll('.cmk').forEach(n => unwrapEl(n));
     clone.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     clone.querySelectorAll('.blockwrap,.float-obj').forEach(n => n.classList.remove('sel'));
+    refreshLiveDates(clone);   // cover dates re-stamp to the day of export
     return clone.outerHTML;
   }).join('');
 
-  const w = window.open('', '_blank');
-  if (!w) { toast('Pop-up blocked — allow pop-ups to export PDF'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${location.href.split('#')[0]}">
+  // Hidden same-origin iframe, printed from this window. A popup +
+  // inline-script print breaks two ways here: blockers eat the popup
+  // (especially inside the Keel iframe embed), and Keel's CSP has no
+  // script-src 'unsafe-inline', which about:blank documents inherit —
+  // so the popup's window.print() never ran.
+  document.getElementById('fss-print-frame')?.remove();
+  const frame = document.createElement('iframe');
+  frame.id = 'fss-print-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  // visibility:hidden, not display:none — Safari won't print a display:none frame
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;visibility:hidden;pointer-events:none';
+  document.body.appendChild(frame);
+
+  const d = frame.contentDocument;
+  d.open();
+  d.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${location.href.split('#')[0]}">
 <title>${esc(App.doc.title)}</title>
 <link rel="stylesheet" href="css/app.css">
 <style>${Settings.fontFaceCSS()}</style>
@@ -371,12 +365,34 @@ html, body { margin:0; padding:0; background:#fff; overflow:visible; height:auto
 .toc-row:hover { background:transparent; }
 .float-obj { border-color:transparent !important; }
 </style></head>
-<body><div id="canvas" style="--pw:${dims.w}px;--ph:${dims.h}px;--pm:${pageMargin()}px;--contentH:${dims.h - 2 * pageMargin()}px">${pagesHTML}</div>
-<script>
-  const ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
-  ready.then(() => setTimeout(() => window.print(), 350));
-<\/script></body></html>`);
-  w.document.close();
+<body><div id="canvas" style="--pw:${dims.w}px;--ph:${dims.h}px;--pm:${pageMargin()}px;--contentH:${dims.h - 2 * pageMargin()}px">${pagesHTML}</div></body></html>`);
+  d.close();
+
+  toast('Preparing PDF — choose “Save as PDF” in the print dialog');
+  printFrameWhenReady(frame);
   snapshotVersion('Exported to PDF');
   suggestionWarning();
+}
+
+/* Wait (bounded) for the print frame's stylesheet, fonts, and images,
+   then open the print dialog for the frame's document. */
+function printFrameWhenReady(frame) {
+  const d = frame.contentDocument;
+  const links = [...d.querySelectorAll('link[rel="stylesheet"]')].map(l => new Promise(res => {
+    if (l.sheet) return res();
+    l.addEventListener('load', res, { once: true });
+    l.addEventListener('error', res, { once: true });
+  }));
+  const imgs = [...d.images].map(im => im.decode ? im.decode().catch(() => {}) : Promise.resolve());
+  const fonts = (d.fonts && d.fonts.ready) ? d.fonts.ready : Promise.resolve();
+  const timeout = new Promise(res => setTimeout(res, 5000));   // never hang the export
+  Promise.race([Promise.all([...links, ...imgs, fonts]), timeout]).then(() => {
+    setTimeout(() => {
+      const w = frame.contentWindow;
+      if (!w) return;   // frame replaced by a newer export before we got here
+      w.addEventListener('afterprint', () => setTimeout(() => frame.remove(), 250), { once: true });
+      w.focus();
+      w.print();
+    }, 250);   // one more beat for layout after resources settle
+  });
 }

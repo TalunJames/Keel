@@ -680,17 +680,19 @@ function adminCoversSection(host) {
     </div>
     ${S.coverTemplates.length ? S.coverTemplates.map(t => `
     <div class="admin-covertpl" data-tid="${t.id}">
-      <div class="admin-covertpl-thumb ${t.layout === 'custom' ? '' : 'std'}" style="${t.layout === 'custom' && AssetStore.bg(t.bgId) ? `background-image:url(${AssetStore.bg(t.bgId).src})` : ''}">${t.layout === 'custom' ? '' : 'Aa'}</div>
+      <div class="admin-covertpl-thumb ${t.layout === 'custom' ? '' : t.layout === 'letterhead' ? 'fss' : 'std'}" style="${t.layout === 'custom' && AssetStore.bg(t.bgId) ? `background-image:url(${AssetStore.bg(t.bgId).src})` : ''}">${t.layout === 'custom' || t.layout === 'letterhead' ? '' : 'Aa'}</div>
       <div class="admin-covertpl-body">
         <input class="set-input slim" data-f="name" value="${esc(t.name)}" placeholder="Template name">
         <div class="seg">
-          <button class="seg-btn ${t.layout !== 'custom' ? 'on' : ''}" data-layout="standard">Standard</button>
+          <button class="seg-btn ${t.layout === 'letterhead' ? 'on' : ''}" data-layout="letterhead">Letterhead</button>
+          <button class="seg-btn ${t.layout !== 'custom' && t.layout !== 'letterhead' ? 'on' : ''}" data-layout="standard">Standard</button>
           <button class="seg-btn ${t.layout === 'custom' ? 'on' : ''}" data-layout="custom">Custom art</button>
         </div>
         ${t.layout === 'custom' ? `
         <div class="bg-grid" style="margin-top:8px">
           ${bgs.map(g => `<button class="bg-thumb ${t.bgId === g.id ? 'on' : ''}" data-tplbg="${g.id}" style="background-image:url(${g.src})" title="${esc(g.name)}"></button>`).join('') || '<span class="set-hint">Upload art above first.</span>'}
-        </div>` : `
+        </div>` : t.layout === 'letterhead' ? `
+        <p class="set-hint" style="margin:8px 0 0">The firm letterhead — navy sidebar, gold stripe, and horizontal lockup, drawn to fit the page.</p>` : `
         <div class="seg" style="margin-top:8px" title="Cover margins">
           ${[['None', 0], ['Narrow', 48], ['Normal', 84], ['Wide', 120]].map(([l, px]) => `<button class="seg-btn ${(t.marginPx != null ? t.marginPx : 84) === px ? 'on' : ''}" data-tplmargin="${px}">${l}</button>`).join('')}
         </div>`}
@@ -713,7 +715,7 @@ function adminCoversSection(host) {
     toast('Removed from the library — covers already using it keep their art');
   }));
   $('#addCoverTpl').addEventListener('click', () => {
-    S.coverTemplates.push({ id: uid('cvt'), name: 'New cover template', layout: 'standard', bgId: null, marginPx: 84 });
+    S.coverTemplates.push({ id: uid('cvt'), name: 'New cover template', layout: 'letterhead', bgId: null, marginPx: 84 });
     Settings.save(); adminCoversSection(host);
   });
   host.querySelectorAll('.admin-covertpl').forEach(rowEl => {

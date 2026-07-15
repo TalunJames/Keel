@@ -93,6 +93,10 @@ function metaOf(row, payload) {
     deadline: row.due_at || payload.deadline || "",
     updatedAt: rowUpdatedMs(row),
     createdAt: rowUpdatedMs({ created_at: row.created_at }),
+    source: row.source || "manual",
+    // Cleatus-born proposals show an "upload the RFP & start drafting" call to
+    // action on the home grid until an RFP has been drafted into them.
+    needsRfp: !!payload.cleatus?.needsRfp,
   };
 }
 
@@ -146,7 +150,7 @@ function buildFullTemplateBlocks(clientType) {
   let divNum = 1;
   const bumpDiv = (label) => ({ id: uid("b"), type: "divider", num: ++divNum, label });
   return [
-    { id: uid("b"), type: "cover" },
+    { id: uid("b"), type: "cover", layout: "letterhead" },
     { id: uid("b"), type: "coverLetter" },
     { id: uid("b"), type: "toc", pageBreak: true },
     bumpDiv("Firm Qualifications & Experience"),
@@ -515,6 +519,7 @@ export function createEditorProposal(db, {
     triageState,
     template,
     amount,
+    cleatus: cleatus || null,
   };
 
   const rowId = insertDoc(db, doc, { id: ownerId }, { clientId, triageState, source, sourceRef });

@@ -134,3 +134,67 @@ export const PROOFREAD_SCHEMA = {
     },
   },
 };
+
+// Feature 6 — proposal library distillation. Claude reads a FINISHED proposal
+// and extracts the transferable knowledge: structure, voice, persuasion moves,
+// reusable language, pricing shape. Stored per-document; synthesized into the
+// firm playbook that future drafts learn from.
+export const LIBRARY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "agency", "clientType", "summary", "sections", "styleNotes", "winningMoves", "reusableLanguage", "pricingNotes"],
+  properties: {
+    title: { type: "string", description: "The proposal's title or subject." },
+    agency: { type: "string", description: "The client/agency the proposal was written for (empty string if unclear)." },
+    clientType: { type: "string", description: "Best-guess client category, e.g. school district, city, county, special district (empty if unclear)." },
+    summary: { type: "string", description: "3-5 sentence summary of what was proposed and the overall pitch strategy." },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "purpose"],
+        properties: {
+          name: { type: "string" },
+          purpose: { type: "string", description: "What this section accomplishes and how it's constructed." },
+        },
+      },
+    },
+    styleNotes: {
+      type: "array",
+      items: { type: "string" },
+      description: "Concrete observations about voice, tone, formatting, and sentence style.",
+    },
+    winningMoves: {
+      type: "array",
+      items: { type: "string" },
+      description: "Specific persuasive techniques used — framing, proof points, differentiators, how objections are pre-empted.",
+    },
+    reusableLanguage: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label", "snippet"],
+        properties: {
+          label: { type: "string", description: "What the snippet is for (e.g. 'firm introduction', 'community-engagement value prop')." },
+          snippet: { type: "string", description: "A short verbatim passage (1-3 sentences) worth reusing or adapting." },
+        },
+      },
+    },
+    pricingNotes: { type: "string", description: "How cost was structured and framed (categories, flat vs monthly, justification language). Empty if no pricing present." },
+  },
+};
+
+// Feature 7 — the aggregate playbook synthesized from all library insights.
+export const PLAYBOOK_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["playbook"],
+  properties: {
+    playbook: {
+      type: "string",
+      description: "The firm proposal playbook in markdown, max ~1200 words.",
+    },
+  },
+};

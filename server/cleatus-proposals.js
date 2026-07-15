@@ -1,15 +1,55 @@
 import { createEditorProposal, editorClientType } from "./proposals-app-routes.js";
 
-/** Map Cleatus triage labels to Keel proposal triage_state values. */
+/** Map Cleatus triage labels / pursuit phases to Keel proposal triage_state values. */
 export function normalizeCleatusTriage(raw) {
   const s = String(raw || "").toLowerCase().replace(/[\s_-]+/g, "_");
   if (s.includes("building") && s.includes("proposal")) return "building";
-  if (s === "inbox" || s === "new") return "inbox";
+  if (s === "inbox" || s === "new" || s === "triage") return "inbox";
   if (s.includes("review")) return "internal_review";
-  if (s === "sent") return "sent";
+  if (s === "preparing") return "building";
+  if (s === "sent" || s === "submitted") return "sent";
   if (s === "signed" || s === "won") return "signed";
   if (s === "declined" || s === "lost") return "declined";
   return "inbox";
+}
+
+/**
+ * Flatten a CLEATUS pursuit into the flat body createProposalFromCleatus
+ * expects. Handles both shapes the service produces:
+ *   - webhook / Zapier events: { id, event, timestamp, data: { …, contract } }
+ *   - bare REST records from /v1/pipeline/search: { id, phase, …, contract }
+ * Already-flat payloads (no contract/data) pass through unchanged.
+ */
+export function flattenPursuitEvent(evt) {
+  if (!evt || typeof evt !== "object") return evt;
+  const d = evt.data && typeof evt.data === "object" ? evt.data : evt;
+  const c = d.contract || d.opportunity;
+  if (!c && d === evt) return evt; // flat payload — nothing to unwrap
+
+  const contract = c || {};
+  const notes = [
+    d.matchReason ? `Match reason: ${d.matchReason}` : null,
+    d.complianceScore != null ? `Compliance score: ${d.complianceScore}` : null,
+    d.complianceSummary || null,
+    d.pursuitChanges?.description ? `Latest change: ${d.pursuitChanges.description}` : null,
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    id: d.id || d.pursuitId || evt.id,
+    event: evt.event || "pursuit.updated",
+    // Pipeline column is the most specific signal; pursuit phase is the fallback.
+    triage: d.columnTitle || d.column?.title || d.column?.label || d.phase || d.status || "",
+    title: d.pursuitTitle || d.title || contract.title || "",
+    clientName: contract.agencyName || null,
+    rfp: {
+      url: contract.sourceUrl || contract.providerUrl || null,
+      summary: contract.summary || contract.overview || null,
+      // Editor deadlines are date-only strings; trim CLEATUS's full ISO timestamp.
+      dueDate: contract.deadlineDate ? String(contract.deadlineDate).slice(0, 10) : null,
+      number: contract.solicitationNumber || null,
+    },
+    staffNotes: notes || null,
+  };
 }
 
 function emailMatchesDomain(email, domain) {
@@ -41,6 +81,47 @@ function matchClientByCleatusPayload(db, body) {
     }
   }
   return null;
+}
+
+/**
+ * Apply a pursuit.updated event to an existing Cleatus-linked proposal.
+ * Returns null when no proposal is linked to the pursuit (caller may create one).
+ */
+export function applyCleatusUpdate(db, body) {
+  const externalId = body.id || body.opportunityId || body.opportunity_id;
+  if (!externalId) throw new Error("Missing Cleatus opportunity id");
+
+  const row = db.prepare(
+    "SELECT id, triage_state, payload_json FROM proposals WHERE source = 'cleatus' AND source_ref = ?"
+  ).get(String(externalId));
+  if (!row) return null;
+
+  db.prepare(
+    `INSERT INTO cleatus_events (external_id, event_type, payload_json, processed_at, proposal_id)
+     VALUES (?, ?, ?, datetime('now'), ?)
+     ON CONFLICT(external_id) DO UPDATE SET
+       event_type = excluded.event_type,
+       payload_json = excluded.payload_json,
+       processed_at = excluded.processed_at,
+       proposal_id = excluded.proposal_id,
+       processing_error = NULL`
+  ).run(String(externalId), body.event || "pursuit.updated", JSON.stringify(body), row.id);
+
+  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage);
+  if (triageState === row.triage_state) {
+    return { proposalId: row.id, triageState, unchanged: true };
+  }
+
+  let payload = null;
+  try { payload = row.payload_json ? JSON.parse(row.payload_json) : null; } catch { /* keep null */ }
+  if (payload) {
+    payload.triageState = triageState;
+    db.prepare("UPDATE proposals SET triage_state = ?, payload_json = ? WHERE id = ?")
+      .run(triageState, JSON.stringify(payload), row.id);
+  } else {
+    db.prepare("UPDATE proposals SET triage_state = ? WHERE id = ?").run(triageState, row.id);
+  }
+  return { proposalId: row.id, triageState, updated: true };
 }
 
 export function createProposalFromCleatus(db, body, { userId } = {}) {
@@ -78,13 +159,16 @@ export function createProposalFromCleatus(db, body, { userId } = {}) {
     staffNotes: body.staffNotes || body.staff_notes || body.notes || null,
     cleatusId: String(externalId),
     rawTriage: body.triage || body.triageState || body.stage,
+    // Shows the "upload RFP & start drafting" call to action on the home grid
+    // until an RFP is drafted into this proposal (cleared by /ai/draft).
+    needsRfp: true,
   };
 
   const ct = editorClientType(client?.type);
   const { proposalId, doc } = createEditorProposal(db, {
     title,
     clientId,
-    agency: client?.name || "",
+    agency: body.clientName || body.client?.name || client?.name || "",
     clientType: ct,
     rfpNumber: body.rfp?.number || body.rfpNumber || "",
     deadline: cleatusMeta.rfpDueDate || "",

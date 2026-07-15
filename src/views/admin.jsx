@@ -6,6 +6,7 @@ import { AdminUsersTab } from "./admin-users.jsx";
 import { AdminModulesTab } from "./admin-modules.jsx";
 import { AdminClientsTab } from "./admin-clients.jsx";
 import { AdminIntegrationsTab } from "./admin-integrations.jsx";
+import { AdminAiLibraryTab } from "./admin-ai-library.jsx";
 
 export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const isSystemAdmin = !!user?.systemAdmin;
@@ -105,6 +106,7 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
           { id: "voter", label: "Voter" },
           { id: "announce", label: "Announce" },
           { id: "modules", label: "Modules" },
+          { id: "ailibrary", label: "AI Library" },
           ...(isSystemAdmin ? [{ id: "login", label: "Login Screen" }, { id: "integrations", label: "Integrations" }] : []),
           { id: "audit", label: "Audit" },
         ].map((t) => (
@@ -166,6 +168,10 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
 
       {tab === "integrations" && isSystemAdmin && (
         <AdminIntegrationsTab onFlash={flash} />
+      )}
+
+      {tab === "ailibrary" && (
+        <AdminAiLibraryTab onFlash={flash} />
       )}
 
       {tab === "clients" && (

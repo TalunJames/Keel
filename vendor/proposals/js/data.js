@@ -333,7 +333,7 @@ function defaultRfpItems() {
 const TEMPLATES = {
   full:  { label: 'Full RFP Response', desc: 'Cover, letter, qualifications, team, experience, plan, schedule, cost, terms, conclusion',
     build: (doc) => ([
-      { id: uid('b'), type: 'cover' },
+      { id: uid('b'), type: 'cover', layout: 'letterhead' },
       { id: uid('b'), type: 'coverLetter' },
       { id: uid('b'), type: 'toc', pageBreak: true },
       { id: uid('b'), type: 'divider', num: 2, label: 'Firm Qualifications & Experience' },
@@ -353,7 +353,7 @@ const TEMPLATES = {
     ]) },
   letter: { label: 'Letter Proposal', desc: 'Compact: cover, letter, about, team, cost, conclusion',
     build: (doc) => ([
-      { id: uid('b'), type: 'cover' },
+      { id: uid('b'), type: 'cover', layout: 'letterhead' },
       { id: uid('b'), type: 'coverLetter' },
       { id: uid('b'), type: 'about' },
       { id: uid('b'), type: 'team', staff: ['carter', 'luke'], variant: doc.clientType },

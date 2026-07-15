@@ -36,9 +36,26 @@ function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/* Today, as it appears on cover pages (MM/DD/YYYY). */
+function liveDateStr() {
+  return new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+}
+
+/* Cover dates are stored in the document like any other edit, so a doc
+   opened weeks later would show the day it was written. Every render and
+   every export re-stamps [data-live-date] elements to today instead. */
+function refreshLiveDates(scope = document) {
+  const today = liveDateStr();
+  scope.querySelectorAll('[data-live-date]').forEach(el => {
+    if (el.textContent !== today) el.textContent = today;
+  });
+}
+
 function daysUntil(dateStr) {
   if (!dateStr) return null;
-  const d = new Date(dateStr + 'T17:00:00');
+  // Accept both date-only strings and full ISO timestamps (e.g. from Cleatus).
+  const d = new Date(String(dateStr).length > 10 ? dateStr : dateStr + 'T17:00:00');
+  if (isNaN(d)) return null;
   return Math.ceil((d - new Date()) / 86400000);
 }
 
