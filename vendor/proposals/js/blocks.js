@@ -36,6 +36,10 @@ function libBody(type, fallbackHTML) {
 
 /* Blocks that should always start on / own a fresh page. */
 const FULLPAGE_TYPES = ['cover', 'divider', 'blankpage', 'pdfpage'];
+/* Blocks whose art must reach the page edges. Their sheet gets a .bleed
+   class (see paginate) that removes the page padding and lifts the drop
+   zones out of the flow — negative margins alone can't cancel those. */
+const BLEED_TYPES = ['cover', 'pdfpage'];
 const BREAK_BEFORE = ['cover', 'divider', 'pagebreak', 'blankpage', 'pdfpage'];
 function blockBreaksBefore(b) {
   if (b.type === 'toc') return b.pageBreak !== false;

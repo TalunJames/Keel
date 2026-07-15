@@ -419,6 +419,8 @@ function ensureIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_design_requests_assignee ON design_requests(assignee_id, status);
     CREATE INDEX IF NOT EXISTS idx_design_proofs_request ON design_proofs(request_id);
     CREATE INDEX IF NOT EXISTS idx_design_comments_request ON design_comments(request_id);
+    CREATE INDEX IF NOT EXISTS idx_proposals_triage ON proposals(triage_state);
+    CREATE INDEX IF NOT EXISTS idx_proposals_client ON proposals(client_id);
     CREATE INDEX IF NOT EXISTS idx_voter_cuts_client ON voter_cuts(client_id);
     CREATE INDEX IF NOT EXISTS idx_voter_files_client ON voter_files(client_id, active);
     CREATE INDEX IF NOT EXISTS idx_user_invitations_user ON user_invitations(user_id, accepted_at);

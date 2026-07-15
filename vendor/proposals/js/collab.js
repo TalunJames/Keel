@@ -329,15 +329,24 @@ function assignComment(id, who) {
 
 /* =================== RIGHT RAIL =================== */
 function updateRailCounts() {
+  const cCount = App.doc.comments.filter(c => !c.resolved).length;
   const cBtn = $('#commentCount');
-  if (cBtn) cBtn.textContent = App.doc.comments.filter(c => !c.resolved).length;
+  if (cBtn) cBtn.textContent = cCount;
   const tabs = $('#railTabs');
+  let total = cCount;
   if (tabs) {
     const sCount = collectSuggestions().length;
-    const cCount = App.doc.comments.filter(c => !c.resolved).length;
+    total += sCount;
     tabs.querySelector('[data-tab="comments"]').textContent = `Comments (${cCount})`;
     tabs.querySelector('[data-tab="suggestions"]').textContent = `Suggestions (${sCount})`;
   }
+  // First comment/suggestion (yours or a collaborator's) opens the rail; a
+  // deliberate collapse while threads exist is left alone.
+  if (total > 0 && updateRailCounts._last === 0 && !App.showRail) {
+    App.showRail = true;
+    renderRailChrome();
+  }
+  updateRailCounts._last = total;
 }
 
 function renderRail() {

@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 import express from "express";
 import { registerAiRoutes } from "./ai/routes.js";
+import { resolveTriage, tagForTriage, isValidTriage } from "./proposal-status.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = path.join(__dirname, "..", "vendor", "proposals");
@@ -84,6 +85,7 @@ function rowUpdatedMs(row) {
 }
 
 function metaOf(row, payload) {
+  const triageState = row.triage_state || payload.triageState || "inbox";
   return {
     id: String(row.id),
     title: row.title,
@@ -94,6 +96,11 @@ function metaOf(row, payload) {
     updatedAt: rowUpdatedMs(row),
     createdAt: rowUpdatedMs({ created_at: row.created_at }),
     source: row.source || "manual",
+    // Lifecycle: raw state + the friendly tag the builder filters/badges by.
+    triageState,
+    tag: tagForTriage(triageState).key,
+    // Cleatus link travels with the meta so the home grid can badge + deep-link.
+    cleatusUrl: payload.cleatus?.rfpUrl || payload.rfp?.cleatusUrl || null,
     // Cleatus-born proposals show an "upload the RFP & start drafting" call to
     // action on the home grid until an RFP has been drafted into them.
     needsRfp: !!payload.cleatus?.needsRfp,
@@ -373,6 +380,54 @@ export function registerProposalsAppRoutes(app, db, auth) {
   // above. (Flushing to POST /proposals would create a duplicate row.)
   api.post("/proposals/:id/flush", auth, requireStaff, saveDocHandler);
 
+  // Set a proposal's lifecycle state / status tag. One field, shared with
+  // CLEATUS: "Mark Won" here and a CLEATUS pipeline move write the same column.
+  // Accepts { tag } (draft|submitted|won|lost|archived) or a raw { triage }.
+  api.patch("/proposals/:id/triage", auth, requireStaff, (req, res) => {
+    const triage = resolveTriage(req.body || {});
+    if (!triage || !isValidTriage(triage)) {
+      return res.status(400).json({ error: "Unknown status — expected a tag (draft|submitted|won|lost|archived) or triage state" });
+    }
+
+    const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(req.params.id);
+    if (!row) return res.status(404).json({ error: "not found" });
+    if (triage === row.triage_state) {
+      return res.json({ ok: true, triageState: triage, tag: tagForTriage(triage).key, unchanged: true });
+    }
+
+    let payload = parsePayload(row);
+    payload.triageState = triage;
+    db.prepare(
+      "UPDATE proposals SET triage_state = ?, payload_json = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(triage, JSON.stringify(payload), row.id);
+
+    const tag = tagForTriage(triage);
+    const cleatusLinked = row.source === "cleatus";
+    try {
+      db.prepare(
+        `INSERT INTO proposal_notes (proposal_id, author_id, author_name, role, text)
+         VALUES (?, ?, ?, 'staff', ?)`
+      ).run(
+        row.id,
+        req.user.id,
+        req.user.name || "Staff",
+        `Status set to ${tag.label}${cleatusLinked ? " (CLEATUS-linked pursuit — a later CLEATUS sync may update it)" : ""}`,
+      );
+      db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+        req.user.email || req.user.name || "staff",
+        `Proposal #${row.id} “${row.title}” marked ${tag.label}`,
+        "Proposals",
+      );
+    } catch { /* best-effort audit — the state change already committed */ }
+
+    broadcast("doc", { id: String(row.id), by: req.query.client || "" }, {
+      docId: String(row.id),
+      exclude: req.query.client || null,
+    });
+    broadcast("index", { by: req.query.client || "" });
+    res.json({ ok: true, triageState: triage, tag: tag.key });
+  });
+
   api.delete("/proposals/:id", auth, requireStaff, (req, res) => {
     const row = db.prepare("SELECT id FROM proposals WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: "not found" });
@@ -502,6 +557,7 @@ export function createEditorProposal(db, {
     updatedAt: Date.now(),
     marginPx: null,
     pageBg: { id: null, skipFirst: true },
+    pageBrand: true,
     pageNums: { show: true, format: "Page {n}", pos: "bottom-center", font: "source", size: 10, color: "#7A7975", skipFirst: true },
     blocks: blockList,
     content: content || {},

@@ -703,14 +703,20 @@ const DocxExport = (() => {
       n: PAGE,
       dash: textRun('— ', fmt) + PAGE + textRun(' —', fmt),
     }[cfg.format] || (textRun('Page ', fmt) + PAGE + textRun(' of ', fmt) + NUM);
-    const tag = isHeader ? 'hdr' : 'ftr';
     return {
       isHeader,
-      xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>
-</w:${tag}>`,
+      para: `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>`,
     };
+  }
+
+  /* Header/footer parts get their own XML files; images inside them resolve
+     through the part's OWN relationships file, so they carry namespaces for
+     drawings too. */
+  function chromePartXml(tag, paras) {
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+${paras}
+</w:${tag}>`;
   }
 
   /* ---------- static parts ---------- */
@@ -807,13 +813,43 @@ ${lvl(0, 'decimal', '%1.')}${lvl(1, 'lowerLetter', '%2.')}${lvl(2, 'lowerRoman',
 
     const cfg = opts.pageNums || { show: false };
     const chrome = cfg.show ? chromeXml(cfg) : null;
-    const refTag = chrome && chrome.isHeader ? 'headerReference' : 'footerReference';
+
+    /* Firm lockup at the bottom of every body page (mirrors the editor's
+       body-page letterhead; the cover is skipped via <w:titlePg/>). */
+    let brand = null;
+    if (opts.brandDataUrl) {
+      const dec = dataUrlToBytes(opts.brandDataUrl);
+      if (dec) {
+        const nat = await measure(opts.brandDataUrl);
+        const wPx = 159;                                          // ≈ the editor's 19.5% of page width
+        const hPx = Math.max(1, Math.round(wPx * nat.h / Math.max(1, nat.w)));
+        const cx = Math.round(wPx * EMU_PER_PX), cy = Math.round(hPx * EMU_PER_PX);
+        brand = {
+          media: { name: `media/brand.${dec.ext}`, ext: dec.ext, u8: dec.u8, contentType: dec.mime },
+          para: `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="left"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">
+<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>
+<wp:docPr id="9001" name="Letterhead"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<pic:pic><pic:nvPicPr><pic:cNvPr id="9001" name="Letterhead"/><pic:cNvPicPr/></pic:nvPicPr>
+<pic:blipFill><a:blip r:embed="rIdBrandImg"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+        };
+      }
+    }
+
+    const hdrPara = chrome && chrome.isHeader ? chrome.para : null;
+    const ftrParas = [];
+    if (chrome && !chrome.isHeader) ftrParas.push(chrome.para);
+    if (brand) ftrParas.push(brand.para);
+
     const sectPr = `<w:sectPr>
-${chrome ? `<w:${refTag} w:type="default" r:id="rIdChrome"/>` : ''}
+${hdrPara ? `<w:headerReference w:type="default" r:id="rIdHdr"/>` : ''}
+${ftrParas.length ? `<w:footerReference w:type="default" r:id="rIdFtr"/>` : ''}
 <w:pgSz w:w="${pg.w}" w:h="${pg.h}"/>
 <w:pgMar w:top="${marginTw}" w:right="${marginTw}" w:bottom="${marginTw}" w:left="${marginTw}" w:header="648" w:footer="648" w:gutter="0"/>
 <w:cols w:space="708"/>
-${chrome && cfg.skipFirst ? '<w:titlePg/>' : ''}</w:sectPr>`;
+${(chrome && cfg.skipFirst) || (!chrome && brand) ? '<w:titlePg/>' : ''}</w:sectPr>`;
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -824,14 +860,12 @@ ${chrome && cfg.skipFirst ? '<w:titlePg/>' : ''}</w:sectPr>`;
  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 <w:body>${out.join('')}${sectPr}</w:body></w:document>`;
 
-    const chromePart = chrome ? (chrome.isHeader ? 'header1.xml' : 'footer1.xml') : null;
-    const chromeType = chrome ? (chrome.isHeader ? 'header' : 'footer') : null;
-
     let rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 <Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`;
-    if (chrome) rels += `<Relationship Id="rIdChrome" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${chromeType}" Target="${chromePart}"/>`;
+    if (hdrPara) rels += `<Relationship Id="rIdHdr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`;
+    if (ftrParas.length) rels += `<Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`;
     ctx.images.forEach(im => {
       rels += `<Relationship Id="${im.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${im.name}"/>`;
     });
@@ -840,7 +874,7 @@ ${chrome && cfg.skipFirst ? '<w:titlePg/>' : ''}</w:sectPr>`;
     });
     rels += '</Relationships>';
 
-    const exts = [...new Set(ctx.images.map(im => im.ext))];
+    const exts = [...new Set([...ctx.images.map(im => im.ext), ...(brand ? [brand.media.ext] : [])])];
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -849,7 +883,8 @@ ${exts.map(e => `<Default Extension="${e}" ContentType="image/${e === 'jpg' ? 'j
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
-${chrome ? `<Override PartName="/word/${chromePart}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${chromeType}+xml"/>` : ''}
+${hdrPara ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ''}
+${ftrParas.length ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ''}
 <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
 <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>`;
@@ -881,7 +916,20 @@ ${chrome ? `<Override PartName="/word/${chromePart}" ContentType="application/vn
       { name: 'docProps/core.xml', data: enc.encode(coreXml) },
       { name: 'docProps/app.xml', data: enc.encode(appXml) },
     ];
-    if (chrome) files.push({ name: `word/${chromePart}`, data: enc.encode(chrome.xml) });
+    if (hdrPara) files.push({ name: 'word/header1.xml', data: enc.encode(chromePartXml('hdr', hdrPara)) });
+    if (ftrParas.length) {
+      files.push({ name: 'word/footer1.xml', data: enc.encode(chromePartXml('ftr', ftrParas.join('\n'))) });
+      if (brand) {
+        files.push({
+          name: 'word/_rels/footer1.xml.rels',
+          data: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rIdBrandImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${brand.media.name}"/>
+</Relationships>`),
+        });
+        files.push({ name: `word/${brand.media.name}`, data: brand.media.u8 });
+      }
+    }
     ctx.images.forEach(im => files.push({ name: `word/${im.name}`, data: im.u8 }));
 
     return new Blob([zipStore(files)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });

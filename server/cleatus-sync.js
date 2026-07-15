@@ -45,13 +45,16 @@ export function getCleatusSyncState(db) {
   return { lastSync };
 }
 
-function processPursuit(db, pursuit, summary) {
+function processPursuit(db, pursuit, summary, pipelineStatus) {
   const body = flattenPursuitEvent(pursuit);
   const externalId = String(body?.id || "");
   if (!externalId) {
     summary.errors.push("pursuit missing id");
     return;
   }
+  // The bucket this pursuit was fetched from (active|won|archived) disambiguates
+  // wins/losses/archives when the column label alone isn't decisive.
+  body.pipelineStatus = pipelineStatus;
 
   try {
     const updated = applyCleatusUpdate(db, body);
@@ -62,7 +65,7 @@ function processPursuit(db, pursuit, summary) {
     // A pursuit only becomes a Keel proposal once it's moved to the
     // "Building a proposal" column in CLEATUS. Everything earlier (triage,
     // inbox) is watched but not created; once linked, updates flow above.
-    if (normalizeCleatusTriage(body.triage) !== "building") {
+    if (normalizeCleatusTriage(body.triage, body.pipelineStatus) !== "building") {
       summary.watched += 1;
       return;
     }
@@ -118,7 +121,7 @@ export async function runCleatusSync(db, { who = "cleatus-sync" } = {}) {
         if (id && seen.has(id)) continue; // a pursuit may appear under two status filters
         if (id) seen.add(id);
         summary.pursuits += 1;
-        processPursuit(db, pursuit, summary);
+        processPursuit(db, pursuit, summary, status);
       }
     }
 
