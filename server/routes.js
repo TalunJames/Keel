@@ -58,11 +58,16 @@ import {
   iterateVoterExport,
   voterExportCsvHeader,
   voterExportCsvRow,
+  getVoterPerson,
+  getVoterDemographics,
+  exportFormatList,
 } from "./voter/warehouse.js";
 import { registerDesignRoutes } from "./design-routes.js";
 import { registerPeriscopeRoutes } from "./periscope-routes.js";
 import { registerProposalsAppRoutes } from "./proposals-app-routes.js";
 import { registerCleatusRoutes } from "./cleatus-routes.js";
+import { registerCalendarFeedRoutes } from "./calendar-feed-routes.js";
+import { fetchCleatusProfile } from "./cleatus-api.js";
 import { ACTIVE_STATUSES } from "./design-status.js";
 import { loadUserPreferences, parsePreferences, serializePreferences } from "./user-prefs.js";
 import {
@@ -381,11 +386,16 @@ export function registerRoutes(app, db) {
   app.post("/api/admin/integrations/:key/test", auth, requireSystemAdmin, async (req, res) => {
     const { key } = req.params;
     if (!INTEGRATIONS[key]) return res.status(404).json({ error: "Unknown integration" });
-    if (key !== "anthropic_api_key") {
+    if (key !== "anthropic_api_key" && key !== "cleatus_api_key") {
       return res.status(400).json({ error: "This integration does not support a connection test" });
     }
     if (!getSecret(key)) return res.status(400).json({ error: "No key configured yet" });
     try {
+      if (key === "cleatus_api_key") {
+        await fetchCleatusProfile();
+        res.json({ ok: true, message: "Key is valid — connected to the CLEATUS API." });
+        return;
+      }
       const client = getAnthropicClient();
       await client.messages.countTokens({
         model: AI_MODELS.fast,
@@ -800,6 +810,8 @@ export function registerRoutes(app, db) {
 
   app.get("/api/calendar/events", auth, list("calendar_events", mapCalendarEvent));
 
+  registerCalendarFeedRoutes(app, db, auth);
+
   registerDesignRoutes(app, db, auth);
   registerPeriscopeRoutes(app, auth);
   registerProposalsAppRoutes(app, db, auth);
@@ -1130,7 +1142,7 @@ export function registerRoutes(app, db) {
   });
 
   app.post("/api/voter/query", auth, requireRole("staff", "admin"), (req, res) => {
-    const { clientId, filters, query, page = 1, pageSize = 50 } = req.body || {};
+    const { clientId, filters, query, page = 1, pageSize = 50, sort = "name" } = req.body || {};
     const scope = clientScope(req.user, clientId);
     if (!scope) {
       return res.status(400).json({ error: "Select a specific client for voter queries." });
@@ -1150,7 +1162,7 @@ export function registerRoutes(app, db) {
         message: "Voter file is registered but row data is not loaded. Run npm run voter:ingest for this client.",
       });
     }
-    const result = queryVoters(scope, { filters, query, page, pageSize });
+    const result = queryVoters(scope, { filters, query, page, pageSize, sort });
     res.json({ ...result, recordCount: file?.record_count ?? result.total });
   });
 
@@ -1229,7 +1241,7 @@ export function registerRoutes(app, db) {
   });
 
   app.post("/api/voter/export", auth, requireRole("staff", "admin"), (req, res) => {
-    const { name, filters, query, clientId, bbox, scope = "filters" } = req.body || {};
+    const { name, filters, query, clientId, bbox, scope = "filters", format = "standard" } = req.body || {};
     const client = clientScope(req.user, clientId);
     if (!client) {
       return res.status(400).json({ error: "Select a specific client for export." });
@@ -1238,8 +1250,9 @@ export function registerRoutes(app, db) {
       return res.status(400).json({ error: "No ingested voter warehouse for this client." });
     }
 
+    const scopedFilters = { ...(filters || {}), tagClient: client };
     const exportBbox = scope === "map" && Array.isArray(bbox) && bbox.length === 4 ? bbox : undefined;
-    const total = countVoterExport(client, { filters: filters || {}, query: query || "", bbox: exportBbox });
+    const total = countVoterExport(client, { filters: scopedFilters, query: query || "", bbox: exportBbox });
     if (total === 0) {
       return res.status(400).json({ error: "No voters match the current filters." });
     }
@@ -1265,14 +1278,15 @@ export function registerRoutes(app, db) {
 
     (async () => {
       try {
-        await writeChunk("\uFEFF" + voterExportCsvHeader() + "\n");
+        await writeChunk("\uFEFF" + voterExportCsvHeader(format) + "\n");
         for (const row of iterateVoterExport(client, {
-          filters: filters || {},
+          filters: scopedFilters,
           query: query || "",
           bbox: exportBbox,
+          format,
         })) {
           if (aborted) return;
-          await writeChunk(voterExportCsvRow(row) + "\n");
+          await writeChunk(voterExportCsvRow(row, format) + "\n");
         }
         res.end();
       } catch (e) {
@@ -1291,9 +1305,152 @@ export function registerRoutes(app, db) {
     if (!hasWarehouse(client)) {
       return res.json({ total: 0 });
     }
+    const scopedFilters = { ...(filters || {}), tagClient: client };
     const exportBbox = scope === "map" && Array.isArray(bbox) && bbox.length === 4 ? bbox : undefined;
-    const total = countVoterExport(client, { filters: filters || {}, query: query || "", bbox: exportBbox });
+    const total = countVoterExport(client, { filters: scopedFilters, query: query || "", bbox: exportBbox });
     res.json({ total });
+  });
+
+  app.get("/api/voter/export/formats", auth, requireRole("staff", "admin"), (_req, res) => {
+    res.json({ formats: exportFormatList() });
+  });
+
+  // ---------- Individual voter page ----------
+  app.get("/api/voter/person/:id", auth, requireRole("staff", "admin"), (req, res) => {
+    const scope = clientScope(req.user, req.query.clientId);
+    if (!scope || scope === "all") {
+      return res.status(400).json({ error: "Select a specific client." });
+    }
+    if (!hasWarehouse(scope)) {
+      return res.status(404).json({ error: "No voter warehouse for this client." });
+    }
+    const person = getVoterPerson(scope, req.params.id);
+    if (!person) return res.status(404).json({ error: "Voter not found." });
+    res.json({ person });
+  });
+
+  // ---------- Demographics / charts ----------
+  app.post("/api/voter/demographics", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, filters, query } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    if (!scope || scope === "all") {
+      return res.status(400).json({ error: "Select a specific client." });
+    }
+    if (!hasWarehouse(scope)) {
+      return res.json({ demographics: null, message: "No voter warehouse for this client." });
+    }
+    const demographics = getVoterDemographics(scope, { filters: filters || {}, query: query || "" });
+    res.json({ demographics });
+  });
+
+  // ---------- Tags ----------
+  app.get("/api/voter/tags", auth, requireRole("staff", "admin"), (req, res) => {
+    const scope = clientScope(req.user, req.query.clientId);
+    if (!scope || scope === "all") return res.json({ tags: [] });
+    const tags = db.prepare(`
+      SELECT t.id, t.name, t.color, t.description, t.created_at AS createdAt,
+             (SELECT COUNT(*) FROM voter_tag_map m WHERE m.tag_id = t.id AND m.client_id = t.client_id) AS count
+      FROM voter_tags t WHERE t.client_id = ? ORDER BY t.name COLLATE NOCASE
+    `).all(scope);
+    res.json({ tags });
+  });
+
+  app.post("/api/voter/tags", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, name, color, description } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    if (!scope || scope === "all" || !name || !String(name).trim()) {
+      return res.status(400).json({ error: "clientId and tag name are required." });
+    }
+    const id = "vtag-" + randomUUID();
+    db.prepare(
+      "INSERT INTO voter_tags (id, client_id, name, color, description, created_by) VALUES (?,?,?,?,?,?)"
+    ).run(id, scope, String(name).trim(), color || "#1A3A5C", String(description || ""), req.user.id);
+    res.status(201).json({ id });
+  });
+
+  app.patch("/api/voter/tags/:id", auth, requireRole("staff", "admin"), (req, res) => {
+    const { name, color, description } = req.body || {};
+    const tag = db.prepare("SELECT id FROM voter_tags WHERE id = ?").get(req.params.id);
+    if (!tag) return res.status(404).json({ error: "Tag not found." });
+    db.prepare("UPDATE voter_tags SET name = COALESCE(?, name), color = COALESCE(?, color), description = COALESCE(?, description) WHERE id = ?")
+      .run(name ?? null, color ?? null, description ?? null, req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete("/api/voter/tags/:id", auth, requireRole("staff", "admin"), (req, res) => {
+    const tag = db.prepare("SELECT id, client_id AS clientId, name FROM voter_tags WHERE id = ?").get(req.params.id);
+    if (!tag) return res.status(404).json({ error: "Tag not found." });
+    db.prepare("DELETE FROM voter_tag_map WHERE tag_id = ?").run(tag.id);
+    db.prepare("DELETE FROM voter_tags WHERE id = ?").run(tag.id);
+    res.json({ ok: true });
+  });
+
+  // Assign/unassign a tag to a set of voter row-ids. When `all` is true, the tag
+  // is applied to the entire matching universe (streamed from the warehouse).
+  app.post("/api/voter/tags/:id/assign", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, voterIds, remove = false, all = false, filters, query } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    const tag = db.prepare("SELECT id, client_id AS clientId FROM voter_tags WHERE id = ?").get(req.params.id);
+    if (!scope || scope === "all" || !tag || tag.clientId !== scope) {
+      return res.status(400).json({ error: "Invalid client or tag." });
+    }
+
+    let ids = Array.isArray(voterIds) ? voterIds.map(String) : [];
+    if (all && hasWarehouse(scope)) {
+      // Resolve the whole universe to row-ids via the export iterator.
+      ids = [];
+      for (const row of iterateVoterExport(scope, {
+        filters: { ...(filters || {}), tagClient: scope },
+        query: query || "",
+      })) {
+        ids.push(row.id);
+        if (ids.length > 200000) break; // safety ceiling
+      }
+    }
+    if (!ids.length) return res.json({ affected: 0 });
+
+    if (remove) {
+      const del = db.prepare("DELETE FROM voter_tag_map WHERE client_id = ? AND tag_id = ? AND voter_id = ?");
+      const run = db.transaction((list) => { for (const v of list) del.run(scope, tag.id, v); });
+      run(ids);
+    } else {
+      const ins = db.prepare(
+        "INSERT OR IGNORE INTO voter_tag_map (client_id, voter_id, tag_id, created_by) VALUES (?,?,?,?)"
+      );
+      const run = db.transaction((list) => { for (const v of list) ins.run(scope, v, tag.id, req.user.id); });
+      run(ids);
+    }
+    res.json({ affected: ids.length });
+  });
+
+  // ---------- Notes & bio (per voter) ----------
+  app.post("/api/voter/person/:id/notes", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, body } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    if (!scope || scope === "all" || !body || !String(body).trim()) {
+      return res.status(400).json({ error: "clientId and note body are required." });
+    }
+    const info = db.prepare(
+      "INSERT INTO voter_notes (client_id, voter_id, body, author_id, author_name) VALUES (?,?,?,?,?)"
+    ).run(scope, req.params.id, String(body).trim(), req.user.id, req.user.name || req.user.email);
+    res.status(201).json({ id: info.lastInsertRowid });
+  });
+
+  app.delete("/api/voter/person/:id/notes/:noteId", auth, requireRole("staff", "admin"), (req, res) => {
+    db.prepare("DELETE FROM voter_notes WHERE id = ? AND voter_id = ?").run(req.params.noteId, req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.put("/api/voter/person/:id/bio", auth, requireRole("staff", "admin"), (req, res) => {
+    const { clientId, bio } = req.body || {};
+    const scope = clientScope(req.user, clientId);
+    if (!scope || scope === "all") return res.status(400).json({ error: "Select a specific client." });
+    db.prepare(`
+      INSERT INTO voter_bios (client_id, voter_id, bio, updated_by, updated_at)
+      VALUES (?,?,?,?,datetime('now'))
+      ON CONFLICT(client_id, voter_id) DO UPDATE SET bio = excluded.bio, updated_by = excluded.updated_by, updated_at = datetime('now')
+    `).run(scope, req.params.id, String(bio || ""), req.user.id);
+    res.json({ ok: true });
   });
 
   // ---------- Admin ----------

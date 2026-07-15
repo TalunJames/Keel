@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
-import { createProposalFromCleatus } from "./cleatus-proposals.js";
+import { applyCleatusUpdate, createProposalFromCleatus, flattenPursuitEvent, normalizeCleatusTriage } from "./cleatus-proposals.js";
+import { cleatusConfigured } from "./cleatus-api.js";
+import { getCleatusSyncState, runCleatusSync, startCleatusSync } from "./cleatus-sync.js";
 import { getSecret } from "./integration-settings.js";
 
 function verifyCleatusSignature(rawBody, signature, secret) {
@@ -39,16 +41,25 @@ export function registerCleatusRoutes(app, db, auth) {
       return res.status(401).json({ error: "Invalid signature" });
     }
 
-    const body = req.body || {};
-    const triage = String(body.triage || body.triageState || body.stage || "").toLowerCase();
-    const isBuilding = triage.includes("building") && triage.includes("proposal");
-    const isInbox = !triage || triage === "inbox" || triage === "new";
-
-    if (!isBuilding && !isInbox && !body.force) {
-      return res.json({ ok: true, skipped: true, reason: "triage_not_actionable" });
-    }
+    // CLEATUS sends pursuit events as { id, event, timestamp, data: { …, contract } };
+    // flatten them to the shape the ingest helpers expect. Flat payloads pass through.
+    const body = flattenPursuitEvent(req.body || {});
 
     try {
+      if ((body.event || "").startsWith("pursuit.updated")) {
+        const updated = applyCleatusUpdate(db, body);
+        if (updated) {
+          return res.json({ ok: true, updated: !!updated.updated, proposalId: updated.proposalId });
+        }
+        // Not linked to a proposal yet — fall through to create.
+      }
+
+      // A pursuit only becomes a Keel proposal once it's moved to the
+      // "Building a proposal" column in CLEATUS (body.force overrides).
+      if (normalizeCleatusTriage(body.triage || body.triageState || body.stage) !== "building" && !body.force) {
+        return res.json({ ok: true, skipped: true, reason: "not_building_yet" });
+      }
+
       const result = createProposalFromCleatus(db, body);
       if (result.duplicate) {
         return res.json({ ok: true, duplicate: true, proposalId: result.proposalId });
@@ -83,12 +94,33 @@ export function registerCleatusRoutes(app, db, auth) {
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM cleatus_events WHERE processing_error IS NOT NULL AND proposal_id IS NULL"
     ).get()?.n || 0;
-
     res.json({
       configured: !!getSecret("cleatus_webhook_secret"),
+      apiConfigured: cleatusConfigured(),
       webhookUrl: "/api/integrations/cleatus/webhook",
       lastEvent: last || null,
       pendingUnassigned: pending,
+      lastSync: getCleatusSyncState(db).lastSync,
     });
   });
+
+  // Manual "sync now" — pulls pursuits from the CLEATUS API immediately.
+  app.post("/api/integrations/cleatus/sync", auth, async (req, res) => {
+    if (req.user.role !== "admin" && req.user.role !== "staff") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (!cleatusConfigured()) {
+      return res.status(400).json({ error: "No CLEATUS API key configured. Add one under Admin → Integrations." });
+    }
+    try {
+      const result = await runCleatusSync(db, { who: req.user.email || "cleatus-sync" });
+      res.json(result);
+    } catch (err) {
+      console.error("[cleatus sync]", err);
+      res.status(502).json({ error: err.message || "Sync failed" });
+    }
+  });
+
+  // Background poll — no-ops until an API key is configured.
+  startCleatusSync(db);
 }

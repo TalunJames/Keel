@@ -56,7 +56,7 @@ function buildBody(fields, form) {
   return body;
 }
 
-function ModuleModal({ title, children, onClose }) {
+export function ModuleModal({ title, children, onClose }) {
   const dialogRef = useModalA11y(onClose);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "rgba(26,58,92,0.45)", display: "grid", placeItems: "center", padding: 24 }} onClick={onClose}>
@@ -135,13 +135,21 @@ export function ModuleListView({
   renderItem, columns,
   crud, fields, itemName = "item", addLabel,
   actions,
+  // Display-only extension points (used by the calendar view): a node rendered
+  // under the page head, read-only rows merged into the list (marked with
+  // `_external: true` so they get no edit/delete controls), a filter applied to
+  // the fetched items, and a comparator for the merged list.
+  topContent, extraItems, transformItems, sortItems,
 }) {
   const canWrite = !!crud && !!fields && role !== "client";
   const path = withClient(endpoint, clientId);
   const { data, loading, error, reload } = useApi(path, [clientId]);
   const clientsRes = useApi("/clients", []);
   const clients = realClients(clientsRes.data?.clients);
-  const items = data?.[itemKey] || [];
+  const ownItems = data?.[itemKey] || [];
+  const localItems = transformItems ? transformItems(ownItems) : ownItems;
+  let items = extraItems?.length ? [...localItems, ...extraItems] : localItems;
+  if (sortItems) items = [...items].sort(sortItems);
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -216,6 +224,7 @@ export function ModuleListView({
   return (
     <div>
       <PageHead title={title} sub={sub} actions={(actions || addButton) && <>{actions}{addButton}</>} />
+      {topContent}
       {loading && <Loading />}
       {error && (
         <div className="card card-pad" style={{ color: "#7a2210", fontSize: 13 }}>{error.message}</div>
@@ -246,12 +255,16 @@ export function ModuleListView({
                   {renderItem(item, { clients })}
                   {canWrite && (
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button type="button" className="btn ghost sm" onClick={() => openEdit(item)} aria-label={"Edit " + itemName}>
-                        <Icon name="pen" size={14} />
-                      </button>
-                      <button type="button" className="btn ghost sm" onClick={() => openDelete(item)} aria-label={"Delete " + itemName}>
-                        <Icon name="x" size={14} />
-                      </button>
+                      {!item._external && (
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => openEdit(item)} aria-label={"Edit " + itemName}>
+                            <Icon name="pen" size={14} />
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => openDelete(item)} aria-label={"Delete " + itemName}>
+                            <Icon name="x" size={14} />
+                          </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>

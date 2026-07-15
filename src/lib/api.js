@@ -186,6 +186,14 @@ const crudApi = (base) => ({
 });
 
 export const calendarApi = crudApi("/calendar/events");
+export const calendarFeedsApi = {
+  list: () => api("/calendar/feeds"),
+  events: (start, days = 240) =>
+    api(`/calendar/feeds/events?start=${encodeURIComponent(start)}&days=${days}`),
+  create: (body) => api("/calendar/feeds", { method: "POST", body: JSON.stringify(body) }),
+  update: (id, body) => api(`/calendar/feeds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id) => api(`/calendar/feeds/${id}`, { method: "DELETE" }),
+};
 export const mediaApi = crudApi("/media/mentions");
 export const stakeholdersApi = crudApi("/stakeholders");
 export const resourcesApi = crudApi("/resources");
@@ -222,6 +230,30 @@ export const electionCollectorApi = {
     api("/election/collector/discover", { method: "POST", body: JSON.stringify(patch || {}) }),
   test: (patch) =>
     api("/election/collector/test", { method: "POST", body: JSON.stringify(patch || {}) }),
+};
+
+export const voterApi = {
+  meta: (clientId) => api(withClient("/voter/meta", clientId)),
+  file: (clientId) => api(withClient("/voter/file", clientId)),
+  query: (body) => api("/voter/query", { method: "POST", body: JSON.stringify(body) }),
+  demographics: (body) => api("/voter/demographics", { method: "POST", body: JSON.stringify(body) }),
+  person: (id, clientId) => api(withClient(`/voter/person/${encodeURIComponent(id)}`, clientId)),
+  count: (body) => api("/voter/export/count", { method: "POST", body: JSON.stringify(body) }),
+  formats: () => api("/voter/export/formats"),
+  // Universes (saved cuts)
+  cuts: (clientId) => api(withClient("/voter/cuts", clientId)),
+  saveCut: (body) => api("/voter/cuts", { method: "POST", body: JSON.stringify(body) }),
+  deleteCut: (id) => api(`/voter/cuts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Tags
+  tags: (clientId) => api(withClient("/voter/tags", clientId)),
+  createTag: (body) => api("/voter/tags", { method: "POST", body: JSON.stringify(body) }),
+  updateTag: (id, body) => api(`/voter/tags/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteTag: (id) => api(`/voter/tags/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  assignTag: (id, body) => api(`/voter/tags/${encodeURIComponent(id)}/assign`, { method: "POST", body: JSON.stringify(body) }),
+  // Notes + bio
+  addNote: (id, body) => api(`/voter/person/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify(body) }),
+  deleteNote: (id, noteId) => api(`/voter/person/${encodeURIComponent(id)}/notes/${noteId}`, { method: "DELETE" }),
+  saveBio: (id, body) => api(`/voter/person/${encodeURIComponent(id)}/bio`, { method: "PUT", body: JSON.stringify(body) }),
 };
 
 export function withClient(path, clientId) {

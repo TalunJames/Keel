@@ -6,12 +6,14 @@ import {
   MODELS,
   aiConfigured,
   buildContext,
+  buildLibraryContext,
   readFirmContext,
   writeFirmContext,
   recordUsage,
   runJSON,
   streamText,
 } from "./claude.js";
+import { registerAiLibraryRoutes } from "./library.js";
 import { randomUUID } from "crypto";
 import { DRAFT_SCHEMA, BLOCK_SCHEMA, COST_SCHEMA, PROOFREAD_SCHEMA, DRAFT_BLOCK_TYPES, HTML_BLOCK_TYPES } from "./schemas.js";
 import { checkAiBudget } from "./spend-limit.js";
@@ -104,6 +106,10 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
     res.json({ ok: true, configured: aiConfigured(), budget: checkAiBudget(db) });
   });
 
+  // Proposal library — upload finished proposals; Claude learns from them in
+  // the background (see server/ai/library.js).
+  registerAiLibraryRoutes(api, db, { requireStaff });
+
   /* ---------- firm context ---------- */
   api.get("/ai/firm-context", requireStaff, (_req, res) => {
     res.json(readFirmContext(db));
@@ -118,12 +124,25 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
   /* ---------- #1 draft a proposal from an RFP ---------- */
   api.post("/ai/draft", requireStaff, async (req, res) => {
     if (!withinBudget(res)) return;
-    const { pdfBase64, mediaType, rfpText, clientId, clientType, fileName } = req.body || {};
+    const { pdfBase64, mediaType, rfpText, clientType, fileName, proposalId } = req.body || {};
     if (!pdfBase64 && !rfpText) return res.status(400).json({ error: "Provide an RFP PDF or text" });
+
+    // Drafting into an existing proposal (e.g. a Cleatus-created card): the
+    // proposal supplies the client; the RFP draft replaces its template body.
+    let targetRow = null;
+    let clientId = req.body?.clientId;
+    if (proposalId) {
+      targetRow = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId);
+      if (!targetRow) return res.status(404).json({ error: "Proposal not found" });
+      clientId = targetRow.client_id;
+    }
     if (!clientId) return res.status(400).json({ error: "clientId required — select a client first" });
 
     const ct = clientType || editorClientType(db.prepare("SELECT type FROM clients WHERE id = ?").get(clientId)?.type);
     const firm = readFirmContext(db);
+    // Learned knowledge: the firm playbook plus the two most relevant finished
+    // proposals from the library — this is where drafts improve over time.
+    const learned = buildLibraryContext(db, { clientType: ct, exemplars: 2 });
 
     const system =
       "You are a proposal writer for Fog Signal Strategies, a public-affairs and campaign-services firm. " +
@@ -135,7 +154,9 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
       "(the app fills team bios, case studies, and the cost tables from firm defaults). Write in a confident, specific, " +
       "professional voice grounded in the firm context. Do NOT invent staff names, dollar figures, dates, or references " +
       "not supported by the RFP or firm context — leave those for the human to fill." +
-      (firm.text ? "\n\n=== FIRM CONTEXT ===\n" + firm.text : "");
+      (firm.text ? "\n\n=== FIRM CONTEXT ===\n" + firm.text : "") +
+      (learned ? "\n\n" + learned +
+        "\n\nApply the playbook's structure, voice, and persuasive moves; adapt reusable language to THIS RFP rather than copying it verbatim." : "");
 
     const userContent = [];
     if (pdfBase64) {
@@ -166,6 +187,46 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
       const meta = data.meta || {};
       // Build real editor blocks from Claude's ordered plan.
       const { blocks, content } = buildBlocksFromOutline(data.blocks, ct);
+
+      if (targetRow) {
+        // Replace the placeholder body of the existing proposal with the
+        // drafted plan, keeping its identity: client, triage, Cleatus links.
+        let existing = {};
+        try { existing = JSON.parse(targetRow.payload_json || "{}"); } catch { /* template shell */ }
+        const rfpItems = (Array.isArray(data.rfpItems) ? data.rfpItems : []).map((it, i) => ({
+          id: `r_ai${i}`,
+          label: String(it.label || "").slice(0, 300),
+          section: String(it.section || ""),
+          done: false,
+        }));
+        const doc = {
+          ...existing,
+          id: String(targetRow.id),
+          format: "editor-v1",
+          title: meta.title || targetRow.title,
+          agency: meta.agency || existing.agency || "",
+          clientType: ct,
+          rfpNumber: meta.rfpNumber || existing.rfpNumber || "",
+          deadline: meta.deadline || targetRow.due_at || existing.deadline || "",
+          serviceTitle: meta.serviceTitle || existing.serviceTitle,
+          blocks,
+          content,
+          floats: [],
+          comments: [],
+          template: "ai",
+          updatedAt: Date.now(),
+          keelClientId: targetRow.client_id,
+          triageState: targetRow.triage_state || existing.triageState || "building",
+          rfp: { ...(existing.rfp || {}), items: rfpItems },
+          cleatus: existing.cleatus ? { ...existing.cleatus, needsRfp: false } : existing.cleatus,
+        };
+        db.prepare(
+          `UPDATE proposals SET title = ?, payload_json = ?, due_at = ?, updated_at = datetime('now')
+           WHERE id = ?`
+        ).run(doc.title, JSON.stringify(doc), doc.deadline || null, targetRow.id);
+        return res.json({ ok: true, id: String(targetRow.id) });
+      }
+
       const { proposalId, doc } = createEditorProposal(db, {
         title: meta.title || `Proposal — ${fileName || "RFP"}`,
         clientId,

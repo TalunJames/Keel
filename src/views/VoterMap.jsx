@@ -51,12 +51,14 @@ export function VoterMap({
   cuts,
   onApplyCut,
   onBboxChange,
+  tags = [],
+  onOpenVoter,
 }) {
   const mapRef = useRef(null);
   const containerRef = useRef(null);
   const popupRef = useRef(null);
   const fetchTimer = useRef(null);
-  const mapAbortRef = useRef(null);
+  const reqSeqRef = useRef(0);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [layers, setLayers] = useState({ boundary: true, precincts: false, voters: true });
@@ -89,15 +91,15 @@ export function VoterMap({
       bounds.getNorth(),
     ];
     reportBbox(map);
-    // Cancel any in-flight request so a slow older response can't overwrite a
-    // newer one when bounds/filters change rapidly.
-    if (mapAbortRef.current) mapAbortRef.current.abort();
-    const controller = new AbortController();
-    mapAbortRef.current = controller;
+    // Only the most-recent request may paint, tracked by a monotonic sequence.
+    // We deliberately do NOT abort superseded requests: several loads fire in a
+    // burst on mount (ready-effect + moveend + resize), and aborting made every
+    // in-flight request reject into the empty catch, so nothing ever painted on
+    // first entry. Letting them all resolve and gating on seq is correct and cheap.
+    const mySeq = ++reqSeqRef.current;
     setLoading(true);
     api("/voter/map", {
       method: "POST",
-      signal: controller.signal,
       body: JSON.stringify({
         clientId,
         filters: filtersRef.current,
@@ -107,7 +109,7 @@ export function VoterMap({
       }),
     })
       .then((data) => {
-        if (controller.signal.aborted) return;
+        if (mySeq !== reqSeqRef.current) return;
         setMapStats({
           matchingInView: data.matchingInView || 0,
           geocodedTotal: data.geocodedTotal || 0,
@@ -127,8 +129,7 @@ export function VoterMap({
       })
       .catch(() => {})
       .finally(() => {
-        if (mapAbortRef.current === controller) mapAbortRef.current = null;
-        if (!controller.signal.aborted) setLoading(false);
+        if (mySeq === reqSeqRef.current) setLoading(false);
       });
   }, [clientId, ready, reportBbox]);
 
@@ -238,13 +239,21 @@ export function VoterMap({
       }
 
       setReady(true);
+      // The map often initializes while its tab/container is still settling its
+      // final size, leaving getBounds() stale so the first auto-load renders
+      // nothing until the user pans. Resize once laid out, then force a single
+      // authoritative load (bypassing the debounce/abort race on first paint).
+      requestAnimationFrame(() => {
+        if (!mapRef.current) return;
+        mapRef.current.resize();
+        loadMapDataRef.current?.();
+      });
     });
 
     map.on("moveend", scheduleLoad);
 
     return () => {
       if (fetchTimer.current) clearTimeout(fetchTimer.current);
-      if (mapAbortRef.current) mapAbortRef.current.abort();
       map.remove();
       mapRef.current = null;
       onBboxChange?.(null);
@@ -275,7 +284,7 @@ export function VoterMap({
             meta={meta}
             cuts={cuts}
             onApplyCut={onApplyCut}
-            compact
+            tags={tags}
           />
         </div>
 
@@ -338,6 +347,9 @@ export function VoterMap({
               <div className="row" style={{ gap: 8 }}>
                 <Tag>{selected.party}</Tag>
                 <span className="num">Score {selected.score}</span>
+                {(selected.id || selected.rowId) && onOpenVoter && (
+                  <button type="button" className="btn secondary sm" onClick={() => onOpenVoter(selected.id || selected.rowId)}>Open profile</button>
+                )}
                 <button type="button" className="btn ghost sm" onClick={() => setSelected(null)}><Icon name="x" size={14} /></button>
               </div>
             </div>

@@ -111,6 +111,16 @@ function migrate(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS calendar_feeds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#2f6fb2',
+      visibility TEXT NOT NULL DEFAULT 'public',
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS design_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -247,6 +257,7 @@ function migrate(db) {
   migrateDesignPriorities(db);
   ensureProposalColumns(db);
   ensureProposalTables(db);
+  ensureVoterAnnotationTables(db);
   ensureIndexes(db);
   seedDefaultModules(db);
   seedDefaultSettings(db);
@@ -344,6 +355,60 @@ function ensureProposalTables(db) {
     CREATE INDEX IF NOT EXISTS idx_proposal_comments ON proposal_comments(proposal_id, status);
     CREATE INDEX IF NOT EXISTS idx_proposal_revisions ON proposal_revisions(proposal_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_proposal_suggestions ON proposal_suggestions(proposal_id, status);
+  `);
+}
+
+// User-curated voter annotations: custom tags, tag assignments, timestamped
+// notes, and a per-voter bio. Kept in the main db (not the per-client voter
+// warehouse.db) so they survive a warehouse re-ingest, which atomically
+// replaces warehouse.db. The warehouse query engine ATTACHes this db read-only
+// to join tags/notes/bios into voter lookups. Keyed by (client_id, voter_id)
+// where voter_id is the warehouse row id.
+function ensureVoterAnnotationTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS voter_tags (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#1A3A5C',
+      description TEXT NOT NULL DEFAULT '',
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS voter_tag_map (
+      client_id TEXT NOT NULL,
+      voter_id TEXT NOT NULL,
+      tag_id TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (client_id, voter_id, tag_id),
+      FOREIGN KEY (tag_id) REFERENCES voter_tags(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS voter_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id TEXT NOT NULL,
+      voter_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      author_id TEXT,
+      author_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS voter_bios (
+      client_id TEXT NOT NULL,
+      voter_id TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (client_id, voter_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_voter_tags_client ON voter_tags(client_id);
+    CREATE INDEX IF NOT EXISTS idx_voter_tag_map_tag ON voter_tag_map(client_id, tag_id);
+    CREATE INDEX IF NOT EXISTS idx_voter_tag_map_voter ON voter_tag_map(client_id, voter_id);
+    CREATE INDEX IF NOT EXISTS idx_voter_notes_voter ON voter_notes(client_id, voter_id, created_at DESC);
   `);
 }
 

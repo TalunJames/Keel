@@ -69,7 +69,7 @@ function casesFor(ct) {
 const BlockRender = {
   cover(b) {
     const d = App.doc;
-    const date = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const date = liveDateStr();
     /* the cover owns its margins — independent of the document's body margins */
     const cm = (b.marginPx != null) ? b.marginPx : 84;
     if (b.layout === 'custom') {
@@ -78,11 +78,19 @@ const BlockRender = {
         ${art ? '' : `<div class="cover-custom-hint" contenteditable="false">${icon('image', 22)}<span>No cover art selected — open this block’s settings (gear) to upload or pick one.<br>For text on the cover, drop a floating text box from the toolbar.</span></div>`}
       </div>`;
     }
+    if (b.layout === 'letterhead') {
+      return `<div class="cover-fss">
+        <img class="cover-fss-logo" src="assets/logo-horizontal-blue.png" alt="Fog Signal Strategies">
+        ${edRegion(b.id + '.fssTitle', `<p class="cover-fss-kicker">Proposal For</p><h1 class="cover-fss-title">${esc(d.serviceTitle)}</h1>`, 'cover-fss-head')}
+        <div class="cover-fss-spacer" contenteditable="false"></div>
+        ${edRegion(b.id + '.fssMeta', `<div class="cfm-col"><p><b>Submitted to:</b><br>${esc(d.agency || '—')}</p></div><div class="cfm-col"><p><b>Submitted by:</b><br>Fog Signal Strategies Inc.</p><p><b>Date:</b> <span data-live-date>${date}</span></p></div>`, 'cover-fss-meta')}
+      </div>`;
+    }
     return `<div class="cover-page cover-bleed" style="padding:${cm}px">
       <img class="cover-logo" src="assets/logo-stacked-blue.png" alt="Fog Signal Strategies">
       ${edRegion(b.id + '.title', `<h1 class="cover-title">Proposal for ${esc(d.serviceTitle)}</h1>`, 'ed-center')}
       <div class="cover-rule"></div>
-      ${edRegion(b.id + '.meta', `<p><b>Submitted to:</b><br>${esc(d.agency || '—')}</p><p><b>Submitted by:</b><br>Fog Signal Strategies</p><p><b>Date:</b> ${date}</p>`, 'cover-meta ed-center')}
+      ${edRegion(b.id + '.meta', `<p><b>Submitted to:</b><br>${esc(d.agency || '—')}</p><p><b>Submitted by:</b><br>Fog Signal Strategies</p><p><b>Date:</b> <span data-live-date>${date}</span></p>`, 'cover-meta ed-center')}
     </div>`;
   },
   coverLetter(b) {
@@ -350,10 +358,12 @@ function coverSettingsHTML(b) {
     ${tpls.map(t => `<button class="ct-chip" data-cvtpl="${t.id}" title="Apply “${esc(t.name)}”">${esc(t.name)}</button>`).join('')}
   </div>` : ''}
   <div class="set-label">Layout</div>
-  <div class="tpl-row" style="grid-template-columns:1fr 1fr">
+  <div class="tpl-row" style="grid-template-columns:1fr 1fr 1fr">
+    <button class="tpl-card ${layout === 'letterhead' ? 'on' : ''}" data-cvlayout="letterhead"><b>Letterhead</b><small>Navy sidebar, gold stripe & lockup</small></button>
     <button class="tpl-card ${layout === 'standard' ? 'on' : ''}" data-cvlayout="standard"><b>Standard</b><small>Centered firm lockup on white</small></button>
     <button class="tpl-card ${layout === 'custom' ? 'on' : ''}" data-cvlayout="custom"><b>Custom art</b><small>Your uploaded cover + a text box</small></button>
   </div>
+  ${layout === 'letterhead' ? `<p class="set-hint">The firm letterhead cover — sidebar and stripe are drawn to fit any page size. Title and “Submitted to / by” text are edited directly on the page; the date re-stamps itself to today whenever the document is opened or exported.</p>` : ''}
   ${layout === 'standard' ? `
   <div class="set-label">Cover margins <span class="muted">— independent of body pages</span></div>
   <div class="seg">
@@ -370,7 +380,7 @@ function coverSettingsHTML(b) {
     <button class="bg-thumb add" data-act="uploadBg" title="Upload cover art">${icon('plus', 16)}</button>
   </div>
   <p class="set-hint">Upload art sized for the full page (portrait). For title text over the art, use the toolbar’s floating text box (${icon('textbox', 11)}) — drag it anywhere on the cover.</p>
-  ` : `<p class="set-hint">Switch to “Custom art” to use an uploaded full-page cover design; add text over it with floating text boxes.</p>`}`;
+  ` : layout === 'standard' ? `<p class="set-hint">Switch to “Custom art” to use an uploaded full-page cover design; add text over it with floating text boxes.</p>` : ''}`;
 }
 
 /* ---- signature settings ---- */

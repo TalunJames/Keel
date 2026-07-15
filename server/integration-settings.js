@@ -25,10 +25,17 @@ export const INTEGRATIONS = {
     placeholder: "https://hooks.zapier.com/hooks/catch/...",
     testable: false,
   },
+  cleatus_api_key: {
+    label: "CLEATUS API key",
+    env: "CLEATUS_API_KEY",
+    help: "Bearer key for the CLEATUS REST API (api.cleat.ai). Enables automatic pursuit sync into Proposals — new pursuits and pipeline moves are pulled every few minutes.",
+    placeholder: "CLEATUS API key",
+    testable: true,
+  },
   cleatus_webhook_secret: {
     label: "CLEATUS webhook signing secret",
     env: "CLEATUS_WEBHOOK_SECRET",
-    help: "Shared secret used to verify inbound CLEATUS webhook signatures at /api/integrations/cleatus/webhook.",
+    help: "Optional. Shared secret used to verify inbound CLEATUS webhook signatures at /api/integrations/cleatus/webhook. Not needed when the API key sync is configured.",
     placeholder: "shared secret",
     testable: false,
   },

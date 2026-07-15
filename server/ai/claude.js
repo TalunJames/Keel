@@ -78,6 +78,84 @@ export function recordUsage(db, { route, model, userId, usage }) {
   }
 }
 
+/* ---------- proposal playbook (learned from the proposal library) ---------- */
+// The playbook is regenerated in the background by server/ai/library.js every
+// time a finished proposal is distilled. It is what makes the AI "get better
+// over time": every prompt that builds context includes it.
+export const PLAYBOOK_KEY = "proposal_playbook";
+
+export function readPlaybook(db) {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(PLAYBOOK_KEY);
+    if (!row?.value) return null;
+    const parsed = JSON.parse(row.value);
+    return parsed?.text ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writePlaybook(db, { text, sourceCount }) {
+  const value = JSON.stringify({
+    text: String(text || "").slice(0, 12000),
+    sourceCount: Number(sourceCount) || 0,
+    updatedAt: Date.now(),
+  });
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).run(PLAYBOOK_KEY, value);
+}
+
+export function clearPlaybook(db) {
+  db.prepare("DELETE FROM app_settings WHERE key = ?").run(PLAYBOOK_KEY);
+}
+
+/**
+ * Library-derived context for AI prompts: the firm playbook, plus (optionally)
+ * condensed insights from the most relevant finished proposals as exemplars.
+ * Sizes are capped so this never balloons the prompt.
+ */
+export function buildLibraryContext(db, { clientType = null, exemplars = 0 } = {}) {
+  const parts = [];
+  const pb = readPlaybook(db);
+  if (pb?.text) {
+    parts.push(
+      `=== FIRM PROPOSAL PLAYBOOK (learned from ${pb.sourceCount} finished proposal${pb.sourceCount === 1 ? "" : "s"}) ===\n` +
+      pb.text
+    );
+  }
+  if (exemplars > 0) {
+    try {
+      const rows = db.prepare(
+        `SELECT title, agency, client_type, insights_json FROM proposal_library
+         WHERE status = 'ready' AND insights_json IS NOT NULL
+         ORDER BY (CASE WHEN client_type = ? THEN 0 ELSE 1 END), updated_at DESC
+         LIMIT ?`
+      ).all(clientType || "", exemplars);
+      for (const r of rows) {
+        let ins;
+        try { ins = JSON.parse(r.insights_json); } catch { continue; }
+        const bits = [
+          `--- Exemplar: "${r.title}"${r.agency ? ` (for ${r.agency})` : ""}${r.client_type ? ` · ${r.client_type}` : ""} ---`,
+          ins.summary ? `Summary: ${String(ins.summary).slice(0, 600)}` : "",
+          Array.isArray(ins.winningMoves) && ins.winningMoves.length
+            ? "What worked:\n" + ins.winningMoves.slice(0, 5).map((m) => `- ${String(m).slice(0, 240)}`).join("\n")
+            : "",
+          Array.isArray(ins.reusableLanguage) && ins.reusableLanguage.length
+            ? "Reusable language:\n" + ins.reusableLanguage.slice(0, 3)
+                .map((s) => `- (${String(s.label).slice(0, 80)}) "${String(s.snippet).slice(0, 300)}"`).join("\n")
+            : "",
+        ].filter(Boolean);
+        parts.push(bits.join("\n"));
+      }
+    } catch {
+      /* library table may not exist yet */
+    }
+  }
+  return parts.join("\n\n");
+}
+
 /* ---------- firm-context storage (app_settings key) ---------- */
 export function readFirmContext(db) {
   const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(FIRM_CONTEXT_KEY);
@@ -140,6 +218,10 @@ export function buildContext(db, { docId = null, clientId = null } = {}) {
   if (firm.text) {
     out.push("=== FIRM CONTEXT (about Fog Signal Strategies) ===\n" + firm.text);
   }
+  // Learned knowledge from the proposal library — present in every AI prompt
+  // so chat/rewrites/cost help all benefit as the library grows.
+  const learned = buildLibraryContext(db);
+  if (learned) out.push(learned);
   if (docId) {
     const row = db.prepare("SELECT payload_json FROM proposals WHERE id = ?").get(docId);
     if (row?.payload_json) {

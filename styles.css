@@ -1672,3 +1672,106 @@ button:focus-visible, a:focus-visible, .input:focus-visible {
 .boardtile:hover { border-color: rgba(255,255,255,0.3) !important; background: rgba(255,255,255,0.06) !important; }
 .enbtn:hover { background: rgba(255,255,255,0.13) !important; }
 .linkbtn-d:hover { color: #fff !important; }
+
+/* ---- Calendar source key (legend + per-source toggles) -------------- */
+.cal-key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.cal-key-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fs-fg-muted);
+  margin-right: 2px;
+}
+.cal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--fs-border);
+  border-radius: 999px;
+  padding: 2px 6px 2px 2px;
+  background: var(--fs-paper);
+}
+.cal-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 4px 4px 4px 8px;
+  font: inherit;
+  color: var(--fs-fg-muted);
+}
+.cal-chip.on .cal-chip-main { color: var(--fs-fg); }
+.cal-chip-label { font-size: 12.5px; font-weight: 600; }
+.cal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.cal-chip:not(.on) .cal-dot { opacity: 0.35; }
+.cal-switch {
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--fs-bone-200);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 160ms;
+}
+.cal-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fs-paper);
+  transition: left 160ms, background 160ms;
+}
+.cal-chip.on .cal-switch { background: var(--fs-gold); }
+.cal-chip.on .cal-switch::after { left: 14px; background: var(--fs-navy-900); }
+.cal-chip-actions { display: inline-flex; }
+.cal-key-warn {
+  font-size: 12px;
+  color: var(--fs-danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.field label.cal-radio {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--fs-fg);
+  margin-bottom: 0;
+  cursor: pointer;
+}
+.cal-radio input { margin-top: 2px; }
+.cal-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.cal-swatch.selected {
+  border-color: var(--fs-navy);
+  box-shadow: 0 0 0 2px var(--fs-paper) inset;
+}

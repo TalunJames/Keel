@@ -195,7 +195,10 @@ function runFontScan() {
   return issues;
 }
 
-function runProofread() {
+/* Mechanical scan used by the Tools → Proofread modal. Named distinctly from
+   collab.js `runProofread` (Claude AI topbar button) so load order cannot
+   clobber that handler. */
+function scanProofIssues() {
   const issues = [];
   $$('#canvas .ed').forEach(ed => {
     const wrap = ed.closest('.blockwrap');
@@ -223,7 +226,7 @@ function runProofread() {
 }
 
 function openProofread() {
-  const issues = runProofread();
+  const issues = scanProofIssues();
   const card = modal(`
     <div class="pophead">${icon('check', 15)}<b>Proofread</b>
       <span class="muted" style="font-size:12px;margin-left:2px">${issues.length ? issues.length + ' finding' + (issues.length > 1 ? 's' : '') : 'clean'}</span>

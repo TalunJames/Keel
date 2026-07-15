@@ -26,11 +26,15 @@ function renderHome() {
         const days = daysUntil(m.deadline);
         return `<div class="prop-card" data-id="${m.id}">
           <div class="prop-card-top">
-            <span class="client-badge ct-${m.clientType}">${esc((CLIENTS[m.clientType] || {}).label || m.clientType)}</span>
+            <span class="prop-card-chips">
+              <span class="client-badge ct-${m.clientType}">${esc((CLIENTS[m.clientType] || {}).label || m.clientType)}</span>
+              ${m.source === 'cleatus' ? `<span class="cleatus-chip" title="Created automatically when this pursuit moved to Building Proposal in CLEATUS">${icon('bolt', 10)} Cleatus</span>` : ''}
+            </span>
             <button class="iconbtn danger prop-del" title="Delete proposal">${icon('trash', 14)}</button>
           </div>
           <div class="prop-card-title">${esc(m.title)}</div>
           <div class="prop-card-agency">${esc(m.agency || '—')}${m.rfpNumber ? ' · ' + esc(m.rfpNumber) : ''}</div>
+          ${m.needsRfp ? `<button class="btn tiny primary prop-rfp-cta" title="Upload the RFP document — Claude drafts the sections and pulls out the submission checklist">${icon('doc', 12)} Upload RFP &amp; start drafting</button>` : ''}
           <div class="prop-card-foot">
             <span>Edited ${timeAgo(m.updatedAt)}</span>
             ${days != null ? `<span class="deadline ${days < 7 ? 'hot' : ''}">${days >= 0 ? days + ' days to submit' : 'past deadline'}</span>` : ''}
@@ -51,8 +55,11 @@ function renderHome() {
   $$('.prop-card').forEach(card => {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.prop-del')) return;
+      if (e.target.closest('.prop-rfp-cta')) return;
       openEditor(card.dataset.id);
     });
+    const rfpCta = card.querySelector('.prop-rfp-cta');
+    if (rfpCta) rfpCta.addEventListener('click', () => uploadRfpIntoProposal(card.dataset.id));
     card.querySelector('.prop-del').addEventListener('click', () => {
       const m = list.find(x => x.id === card.dataset.id);
       const c = modal(`
@@ -176,6 +183,39 @@ function newProposalWizard() {
   });
 }
 
+/* "Upload RFP & start drafting" on a Cleatus-created card: pick the RFP file,
+   have Claude draft sections + extract the checklist INTO the existing
+   proposal (its client, triage state, and Cleatus links are preserved). */
+async function uploadRfpIntoProposal(id) {
+  if (window.AI && AI.available === false) {
+    openEditor(id);
+    toast('AI drafting isn’t configured — opening the template. You can insert the RFP from the Pages panel.');
+    return;
+  }
+  const f = await pickFile('.pdf,.docx,.txt,.md,application/pdf');
+  if (!f) return;
+  const prog = importProgress('Claude is drafting from your RFP');
+  try {
+    prog.set('Reading the RFP…', 0.15);
+    const payload = { proposalId: id, fileName: f.name };
+    const name = f.name.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      payload.pdfBase64 = await fileToBase64(f);
+      payload.mediaType = 'application/pdf';
+    } else {
+      payload.rfpText = await extractFileText(f);
+    }
+    prog.set('Drafting sections & extracting requirements… this can take a minute.', 0.55);
+    const r = await AI.draft(payload);
+    prog.done();
+    openEditor(r.id);
+    toast('Draft created from the RFP — review and refine');
+  } catch (e) {
+    prog.done();
+    toast(e.message || 'Could not draft from that RFP');
+  }
+}
+
 /* Read a file as base64 (no data: prefix) for the AI draft upload. */
 function fileToBase64(file) {
   return new Promise((res, rej) => {
@@ -262,7 +302,7 @@ function renderEditor() {
       <div class="vr"></div>
       <div class="fontsize-ctl" title="Font size for the selected text">
         <button id="fontSizeDown" tabindex="-1">−</button>
-        <input type="number" id="fontSizeInput" value="13" min="7" max="96">
+        <input type="number" id="fontSizeInput" value="12" min="7" max="96">
         <button id="fontSizeUp" tabindex="-1">+</button>
       </div>
       <select class="style-sel font-sel" id="fontSel" title="Font for the selected text">
@@ -427,7 +467,11 @@ function bindTopbar() {
   $('#railToggle').addEventListener('click', () => { App.showRail = !App.showRail; renderRailChrome(); });
   const proofBtn = $('#proofreadBtn');
   if (proofBtn) {
-    if (window.AI && AI.available === false) proofBtn.style.display = 'none';
+    const syncProofBtn = () => {
+      proofBtn.style.display = (window.AI && AI.available === false) ? 'none' : '';
+    };
+    syncProofBtn();
+    document.addEventListener('ai-ready', syncProofBtn);
     proofBtn.addEventListener('click', () => runProofread());
   }
   $('#shareBtn').addEventListener('click', openShareModal);
@@ -440,7 +484,7 @@ function bindTopbar() {
   $('#exportBtn').addEventListener('click', (e) => {
     const card = popover(e.currentTarget, `
       <div class="menu-kicker">Download as</div>
-      <div class="menu-row" data-x="word"><span class="xbadge" style="background:#E7EEF6;color:#2A527F">W</span><div><b>Microsoft Word</b><small>.doc — opens in Word</small></div></div>
+      <div class="menu-row" data-x="word"><span class="xbadge" style="background:#E7EEF6;color:#2A527F">W</span><div><b>Microsoft Word</b><small>.docx — opens in Word</small></div></div>
       <div class="menu-row" data-x="gdocs"><span class="xbadge" style="background:#E9F1EC;color:#2F6B4F">G</span><div><b>Google Docs</b><small>Convert or paste a copy</small></div></div>
       <div class="menu-row" data-x="pdf"><span class="xbadge" style="background:#F6E9E7;color:#A8341E">P</span><div><b>PDF Document</b><small>Print-ready</small></div></div>`, { width: 250 });
     card.querySelector('[data-x="word"]').addEventListener('click', () => { closePopovers(); exportWord(); });

@@ -13,6 +13,7 @@
     "voter:register": "node scripts/voter-register.js",
     "bootstrap:cssd11": "node scripts/bootstrap-cssd11.js",
     "voter:ingest": "node scripts/voter-ingest.js",
+    "voter:mock": "node scripts/voter-mock.js",
     "voter:geocode": "node scripts/voter-geocode.js",
     "mail:test": "node scripts/test-mail.js",
     "mail:diagnose": "node scripts/mail-diagnose.js"
@@ -33,6 +34,7 @@
     "jsonwebtoken": "^9.0.2",
     "maplibre-gl": "^4.0.0",
     "multer": "^2.2.0",
+    "node-ical": "^0.26.1",
     "nodemailer": "^9.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
