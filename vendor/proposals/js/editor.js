@@ -556,7 +556,9 @@ function refreshSheetChrome(pages) {
    captured from the fresh (scrolled-to-0) DOM. Whoever claims last wins;
    stale queued frames become no-ops instead of yanking the viewport. */
 let viewportOwnerSeq = 0;
-function claimViewport() { return ++viewportOwnerSeq; }
+let _progScrollTs = 0;   // last time our own code moved the viewport
+function noteProgScroll() { _progScrollTs = Date.now(); }
+function claimViewport() { noteProgScroll(); return ++viewportOwnerSeq; }
 
 function captureViewportAnchor(canvas) {
   const sc = $('#canvasScroll');
@@ -585,6 +587,7 @@ function restoreViewportAnchor(anchor, saved) {
   const { sc, keepScroll, caretViewTop, blockEl, blockViewTop, seq } = anchor;
   const apply = () => {
     if (seq !== viewportOwnerSeq) return;   // a newer restore owns the viewport
+    noteProgScroll();
     // Re-base first so measurements aren't taken at a browser-scrolled offset
     sc.scrollTop = keepScroll;
     const scTop = sc.getBoundingClientRect().top;
@@ -962,10 +965,83 @@ if (document.fonts && document.fonts.ready) {
   });
 }
 
+/* ---------- caret-guard: undo spontaneous browser scrolls ----------
+   Chrome's native "keep the caret in view" scrolling miscomputes its target
+   inside the CSS-zoomed canvas — it lands at roughly zoom × scrollTop, so
+   the error grows with document depth (page 15 gets thrown a full page+).
+   It can fire on layout passes long after the keystroke, e.g. during the
+   debounced paginate. We can't stop the browser, but we can recognize the
+   result: a large single-event scroll that (a) wasn't user input, (b) wasn't
+   one of our own restores, and (c) leaves the caret fully off-screen is
+   wrong by definition — the user was just typing at that caret. Snap back. */
+let _userScrollTs = 0;
+let _userInputHooked = false;
+let _caretGuardTop = null;      // last scroll position the user actively edited/scrolled at
+let _caretGuardBusy = false;
+function bindCaretGuard(scroll) {
+  _caretGuardTop = scroll.scrollTop;
+  // bindCanvasChrome runs on every renderEditor — window hooks attach once
+  if (!_userInputHooked) {
+    _userInputHooked = true;
+    ['wheel', 'touchstart', 'touchmove', 'mousedown'].forEach(ev =>
+      window.addEventListener(ev, () => { _userScrollTs = Date.now(); }, { capture: true, passive: true }));
+    window.addEventListener('keydown', (e) => {
+      if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) _userScrollTs = Date.now();
+    }, { capture: true });
+    // Every caret move (typing, clicking) re-anchors the guard to the current
+    // scroll — "this is where the user is working". A wrong browser scroll
+    // never fires selectionchange, so the anchor survives it.
+    document.addEventListener('selectionchange', () => {
+      const sc = $('#canvasScroll');
+      if (sc && isEditingCanvas()) _caretGuardTop = sc.scrollTop;
+    });
+    // Scroll events don't fire in hidden tabs — re-sync when we come back.
+    document.addEventListener('visibilitychange', () => {
+      const sc = $('#canvasScroll');
+      if (!document.hidden && sc) _caretGuardTop = sc.scrollTop;
+    });
+  }
+
+  scroll.addEventListener('scroll', () => {
+    const top = scroll.scrollTop;
+    if (_caretGuardBusy || _caretGuardTop == null) { _caretGuardTop = top; return; }
+    const delta = top - _caretGuardTop;
+    const now = Date.now();
+    const spontaneous = Math.abs(delta) > 250
+      && now - _userScrollTs > 1500      // covers click-initiated smooth scrolls (outline, TOC, comments)
+      && now - _progScrollTs > 2500
+      && !App.drag
+      && isEditingCanvas();
+    if (spontaneous) {
+      const canvas = $('#canvas');
+      const sel = document.getSelection();
+      if (canvas && sel && sel.rangeCount && canvas.contains(sel.anchorNode)) {
+        let rect = null;
+        try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) { /* ignore */ }
+        if (!rect || (!rect.height && !rect.width && !rect.top && !rect.left)) {
+          const wrap = closestTag(sel.anchorNode, '.blockwrap');
+          rect = wrap ? wrap.getBoundingClientRect() : null;
+        }
+        const scR = scroll.getBoundingClientRect();
+        if (rect && (rect.bottom < scR.top || rect.top > scR.bottom)) {
+          _caretGuardBusy = true;
+          noteProgScroll();
+          scroll.scrollTop = _caretGuardTop;   // put the view back on the caret
+          _caretGuardBusy = false;
+          console.warn('[caret-guard] reverted spontaneous scroll', JSON.stringify({ from: Math.round(_caretGuardTop), to: Math.round(top), delta: Math.round(delta) }));
+          return;                               // don't adopt the bad position
+        }
+      }
+    }
+    _caretGuardTop = top;
+  }, { passive: true });
+}
+
 /* ---------- canvas-level delegated events ---------- */
 function bindCanvasChrome() {
   const scroll = $('#canvasScroll');
   scroll.addEventListener('scroll', positionCommentCards, { passive: true });
+  bindCaretGuard(scroll);
   scroll.addEventListener('click', (e) => {
     const tocRow = e.target.closest('.toc-row');
     if (tocRow) {
