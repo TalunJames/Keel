@@ -434,7 +434,12 @@ async function runProofread() {
   if (window.AI && AI.available === false) { toast('Claude isn’t configured on the server'); return; }
   if (!App.doc) return;
   const btn = $('#proofreadBtn');
-  if (btn) { btn.disabled = true; }
+  const buttonContent = btn && btn.innerHTML;
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.innerHTML = '<span class="proofread-spinner" aria-hidden="true"></span> Proofreading…';
+  }
   toast('Claude is proofreading the proposal…', 8000);
   try {
     const { edits } = await AI.proofread({});
@@ -464,7 +469,11 @@ async function runProofread() {
   } catch (e) {
     toast(e.message || 'Proofread failed');
   } finally {
-    if (btn) btn.disabled = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.innerHTML = buttonContent;
+    }
   }
 }
 

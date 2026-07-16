@@ -1310,6 +1310,16 @@ body[data-mode="viewing"] .btool, body[data-mode="viewing"] .dz, body[data-mode=
 
 /* topbar Proofread button icon accent */
 #proofreadBtn svg { color: var(--fs-gold-700); }
+#proofreadBtn:disabled { cursor: wait; opacity: .75; }
+.proofread-spinner {
+  width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(26,58,92,.2); border-top-color: var(--fs-gold-700);
+  animation: proofread-spin .7s linear infinite;
+}
+@keyframes proofread-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .proofread-spinner { animation-duration: 1.4s; }
+}
 
 /* wizard "or … Draft from RFP" divider */
 .ai-wiz-or { margin-top: 14px; }
