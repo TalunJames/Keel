@@ -276,8 +276,8 @@ export default function App() {
             announcements={announcements}
           />
         )}
-        <div className={"content" + (section === "election" || section === "proposals" ? " no-pad" : "") + (section !== "election" && section !== "proposals" ? " chart-bg" : "")}>
-          {clientsError && section !== "election" && section !== "proposals" && (
+        <div className={"content" + (section === "election" || section === "proposals" || section === "calendar" ? " no-pad" : "") + (section !== "election" && section !== "proposals" && section !== "calendar" ? " chart-bg" : "")}>
+          {clientsError && section !== "election" && section !== "proposals" && section !== "calendar" && (
             <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13, color: "var(--fs-danger)", borderColor: "var(--fs-danger)" }}>
               {clientsError}
             </div>

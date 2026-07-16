@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Icon, Avatar } from "./ui.jsx";
 import { versionApi } from "../lib/api.js";
 import { realClients } from "../lib/clients.js";
@@ -52,14 +53,93 @@ function useClickOutside(ref, onClose, open = true) {
   }, [ref, onClose, open]);
 }
 
+const USER_POP_WIDTH = 232;
+
 function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout, collapsed, roleLabel }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
   const wrapRef = useRef(null);
-  useClickOutside(wrapRef, () => setOpen(false), open);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+
+  // Outside-click must cover both the trigger and the portaled menu.
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e) => {
+      const t = e.target;
+      if (wrapRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      close();
+    };
+    const onKeyDown = (e) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, close]);
+
+  // Anchor the menu above the user button so it isn't clipped by the
+  // sidebar's overflow:hidden — especially when the rail is collapsed.
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const r = btnRef.current.getBoundingClientRect();
+      const width = collapsed ? USER_POP_WIDTH : Math.max(r.width, USER_POP_WIDTH);
+      let left = Math.min(r.left, window.innerWidth - width - 8);
+      left = Math.max(8, left);
+      setPos({
+        left,
+        width,
+        bottom: window.innerHeight - r.top + 8,
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, collapsed]);
+
+  const menu = open && pos && createPortal(
+    <div
+      ref={popRef}
+      className="user-pop user-pop-fixed"
+      role="menu"
+      style={{ left: pos.left, bottom: pos.bottom, width: pos.width }}
+    >
+      <div className="user-pop-head">
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fs-navy)" }}>{user.name}</div>
+        <div className="mut" style={{ fontSize: 11 }}>{user.email}</div>
+      </div>
+      <button type="button" className="user-pop-item" onClick={() => { close(); onNavigate("account"); }}>
+        <Icon name="settings" size={15} />
+        <span>Account settings</span>
+      </button>
+      <button type="button" className="user-pop-item" onClick={onToggleTheme}>
+        <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
+        <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+        <span className="user-pop-meta">{theme === "dark" ? "Day" : "Night"}</span>
+      </button>
+      <div className="user-pop-sep" />
+      <button type="button" className="user-pop-item danger" onClick={() => { close(); onLogout(); }}>
+        <Icon name="logout" size={15} />
+        <span>Sign out</span>
+      </button>
+    </div>,
+    document.body,
+  );
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button
+        ref={btnRef}
         type="button"
         className="sb-user"
         onClick={() => setOpen((o) => !o)}
@@ -83,28 +163,7 @@ function UserMenu({ user, role, theme, onToggleTheme, onNavigate, onLogout, coll
           </>
         )}
       </button>
-      {open && (
-        <div className="user-pop" role="menu">
-          <div className="user-pop-head">
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fs-navy)" }}>{user.name}</div>
-            <div className="mut" style={{ fontSize: 11 }}>{user.email}</div>
-          </div>
-          <button type="button" className="user-pop-item" onClick={() => { setOpen(false); onNavigate("account"); }}>
-            <Icon name="settings" size={15} />
-            <span>Account settings</span>
-          </button>
-          <button type="button" className="user-pop-item" onClick={onToggleTheme}>
-            <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
-            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-            <span className="user-pop-meta">{theme === "dark" ? "Day" : "Night"}</span>
-          </button>
-          <div className="user-pop-sep" />
-          <button type="button" className="user-pop-item danger" onClick={() => { setOpen(false); onLogout(); }}>
-            <Icon name="logout" size={15} />
-            <span>Sign out</span>
-          </button>
-        </div>
-      )}
+      {menu}
     </div>
   );
 }
