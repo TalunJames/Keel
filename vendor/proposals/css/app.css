@@ -401,7 +401,7 @@ button { font-family: inherit; }
 .outline-item.lvl1 { padding-left: 20px; }
 
 /* ---------- canvas ---------- */
-.canvas-scroll { flex: 1; overflow: auto; min-width: 0; background: #c4c8cd; position: relative; }
+.canvas-scroll { flex: 1; overflow: auto; min-width: 0; background: #c4c8cd; position: relative; overflow-anchor: none; }
 .canvas-pad { min-height: 100%; padding: 34px 24px 60px; display: flex; flex-direction: column; align-items: center; }
 .sheet {
   position: relative; width: var(--pw); min-height: var(--ph); background: #fff;
