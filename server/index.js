@@ -104,7 +104,11 @@ app.get("/api/version", (_req, res) => {
 if (process.env.SERVE_STATIC === "true" || process.env.NODE_ENV === "production") {
   const dist = path.join(root, "dist");
   app.use(express.static(dist));
-  app.get(/^(?!\/api)(?!\/periscope)(?!\/proposals).*/, (_req, res) => {
+  // SPA fallback. Exclude the API and the two vendored sub-apps (periscope +
+  // the proposals *builder* at /proposals/app) so they keep their own handlers.
+  // The bare /proposals path is the main SPA's Proposals tab and MUST fall
+  // through here, or a hard refresh on it 404s ("Cannot GET /proposals").
+  app.get(/^(?!\/api)(?!\/periscope)(?!\/proposals\/app).*/, (_req, res) => {
     res.sendFile(path.join(dist, "index.html"));
   });
 }
