@@ -22,8 +22,39 @@ const DRAFT_TYPE_SET = new Set(DRAFT_BLOCK_TYPES);
 const HTML_TYPE_SET = new Set(HTML_BLOCK_TYPES);
 // Matches the firm's standard team page (see buildFullTemplateBlocks).
 const TEAM_DEFAULT_STAFF = ["carter", "luke", "digital", "earned", "designer", "coord"];
+const SETTINGS_KEY = "proposal_workspace_settings";
+const COVER_LAYOUTS = new Set(["letterhead", "standard", "custom"]);
 
 const bid = () => "b_" + randomUUID().slice(0, 8);
+
+/** Resolve cover block fields from a request preference and/or workspace default. */
+function resolveCoverFields(db, pref) {
+  let settings = {};
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(SETTINGS_KEY);
+    if (row?.value) settings = JSON.parse(row.value);
+  } catch { /* ignore */ }
+  const d = settings.defaultCover || {};
+  const templates = Array.isArray(settings.coverTemplates) ? settings.coverTemplates : [];
+  let src = pref && typeof pref === "object" ? pref : null;
+  if (src?.templateId) {
+    const tpl = templates.find((t) => t.id === src.templateId);
+    if (tpl) src = { ...tpl, ...src };
+  } else if (!src && d.templateId) {
+    const tpl = templates.find((t) => t.id === d.templateId);
+    src = tpl ? { ...d, ...tpl } : d;
+  } else if (!src) {
+    src = d;
+  }
+  let layout = src?.layout || d.layout || "letterhead";
+  if (!COVER_LAYOUTS.has(layout)) layout = "letterhead";
+  const out = { layout };
+  if (layout === "custom" && (src?.bgId || d.bgId)) out.bgId = src?.bgId || d.bgId;
+  if (layout === "standard") {
+    out.marginPx = src?.marginPx != null ? src.marginPx : (d.marginPx != null ? d.marginPx : 84);
+  }
+  return out;
+}
 
 /**
  * Turn Claude's ordered block plan into REAL editor-v1 blocks + content.
@@ -31,12 +62,13 @@ const bid = () => "b_" + randomUUID().slice(0, 8);
  * the same minimal fields the template uses, so the client renders them with
  * full defaults (team bios, cost calculator, case studies) — never plain text.
  */
-function buildBlocksFromOutline(outline, ct) {
+function buildBlocksFromOutline(outline, ct, coverFields = { layout: "letterhead" }) {
   const blocks = [];
   const content = {};
   let divNum = 1;
   let coverSeen = false;
   let tocSeen = false;
+  const makeCover = () => ({ id: bid(), type: "cover", ...coverFields });
 
   for (const raw of Array.isArray(outline) ? outline : []) {
     const type = raw && raw.type;
@@ -44,7 +76,7 @@ function buildBlocksFromOutline(outline, ct) {
       if (raw && raw.html) { const id = bid(); blocks.push({ id, type: "text" }); content[id] = sanitizeHtml(raw.html); }
       continue;
     }
-    if (type === "cover") { if (coverSeen) continue; coverSeen = true; blocks.push({ id: bid(), type: "cover" }); continue; }
+    if (type === "cover") { if (coverSeen) continue; coverSeen = true; blocks.push(makeCover()); continue; }
     if (type === "toc") { if (tocSeen) continue; tocSeen = true; blocks.push({ id: bid(), type: "toc", pageBreak: true }); continue; }
     if (type === "divider") { blocks.push({ id: bid(), type: "divider", num: ++divNum, label: String(raw.label || "Section").slice(0, 120) }); continue; }
     if (type === "team") { blocks.push({ id: bid(), type: "team", staff: TEAM_DEFAULT_STAFF.slice(), variant: ct }); continue; }
@@ -66,7 +98,7 @@ function buildBlocksFromOutline(outline, ct) {
 
   // Guarantee a single cover at the very top.
   const coverIdx = blocks.findIndex((b) => b.type === "cover");
-  if (coverIdx < 0) blocks.unshift({ id: bid(), type: "cover" });
+  if (coverIdx < 0) blocks.unshift(makeCover());
   else if (coverIdx > 0) { const [cv] = blocks.splice(coverIdx, 1); blocks.unshift(cv); }
 
   return { blocks, content };
@@ -124,7 +156,7 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
   /* ---------- #1 draft a proposal from an RFP ---------- */
   api.post("/ai/draft", requireStaff, async (req, res) => {
     if (!withinBudget(res)) return;
-    const { pdfBase64, mediaType, rfpText, clientType, fileName, proposalId } = req.body || {};
+    const { pdfBase64, mediaType, rfpText, clientType, fileName, proposalId, cover } = req.body || {};
     if (!pdfBase64 && !rfpText) return res.status(400).json({ error: "Provide an RFP PDF or text" });
 
     // Drafting into an existing proposal (e.g. a Cleatus-created card): the
@@ -186,7 +218,8 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
 
       const meta = data.meta || {};
       // Build real editor blocks from Claude's ordered plan.
-      const { blocks, content } = buildBlocksFromOutline(data.blocks, ct);
+      const coverFields = resolveCoverFields(db, cover);
+      const { blocks, content } = buildBlocksFromOutline(data.blocks, ct, coverFields);
 
       if (targetRow) {
         // Replace the placeholder body of the existing proposal with the

@@ -49,6 +49,15 @@ export function resolveFallbackClientId(db) {
  * bucket the pursuit was fetched from (active | won | archived) and only
  * decides ambiguous cases.
  */
+
+/** Working (non-terminal) Keel triage states — drafts staff are actively on. */
+const WORKING_TRIAGE = new Set(["inbox", "building", "internal_review"]);
+
+/** True when the CLEATUS column/phase label itself names an archive (not just the pipeline bucket). */
+export function cleatusLabelSaysArchived(raw) {
+  return String(raw || "").toLowerCase().includes("archiv");
+}
+
 export function normalizeCleatusTriage(raw, statusHint) {
   const s = String(raw || "").toLowerCase().replace(/[\s_-]+/g, "_");
   if (s.includes("building") && s.includes("proposal")) return "building";
@@ -160,7 +169,21 @@ export function applyCleatusUpdate(db, body) {
        processing_error = NULL`
   ).run(String(externalId), body.event || "pursuit.updated", JSON.stringify(body), row.id);
 
-  const triageState = normalizeCleatusTriage(body.triage || body.triageState || body.stage, body.pipelineStatus);
+  const rawLabel = body.triage || body.triageState || body.stage;
+  let triageState = normalizeCleatusTriage(rawLabel, body.pipelineStatus);
+
+  // Don't yank an in-progress Keel draft into Archived based only on CLEATUS's
+  // pipeline bucket. Staff often keep drafting in Keel after a pursuit is
+  // parked in an "archived" API filter; only honor archive when the column
+  // label itself says so (or Keel is already past the working states).
+  if (
+    triageState === "archived" &&
+    WORKING_TRIAGE.has(row.triage_state) &&
+    !cleatusLabelSaysArchived(rawLabel)
+  ) {
+    return { proposalId: row.id, triageState: row.triage_state, unchanged: true };
+  }
+
   if (triageState === row.triage_state) {
     return { proposalId: row.id, triageState, unchanged: true };
   }

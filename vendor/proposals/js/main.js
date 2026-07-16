@@ -12,7 +12,12 @@ function statusPillHtml(triage) {
 function renderHome() {
   App.view = 'home';
   App.doc = null;
-  const list = Store.index();
+  let list = Store.index();
+  const deduped = dedupeIndexById(list);
+  if (deduped.length !== list.length) {
+    Store.writeIndex(deduped);
+    list = deduped;
+  }
 
   // Count each filter across every proposal, then narrow to the active chip.
   if (!STATUS_FILTERS.some(f => f.key === App.homeFilter)) App.homeFilter = 'active';
@@ -207,6 +212,8 @@ function refreshStatusBadge() {
 }
 
 function newProposalWizard() {
+  const defaultCover = Settings.coverFields();
+  const coverTpls = Settings.coverTemplates();
   const card = modal(`
     <div class="pophead">${icon('plus', 16)}<b>New Proposal</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
     <div class="popbody wizard">
@@ -229,6 +236,15 @@ function newProposalWizard() {
       <div class="tpl-row">
         ${Settings.allTemplates().map((t, i) => `<button class="tpl-card ${i === 0 ? 'on' : ''}" data-tpl="${esc(t.key)}"><b>${esc(t.label)}</b><small>${esc(t.desc)}</small></button>`).join('')}
       </div>
+      <div class="set-label">Cover <span class="muted">— used for Create and Claude drafts; change the workspace default in Admin → Cover Templates</span></div>
+      <div class="tpl-row" id="wCoverRow" style="grid-template-columns:1fr 1fr 1fr">
+        <button class="tpl-card ${defaultCover.layout === 'letterhead' && !defaultCover.templateId ? 'on' : ''}" data-cover="letterhead"><b>Letterhead</b><small>Navy sidebar, gold stripe &amp; lockup</small></button>
+        <button class="tpl-card ${defaultCover.layout === 'standard' && !defaultCover.templateId ? 'on' : ''}" data-cover="standard"><b>Standard</b><small>Centered firm lockup on white</small></button>
+        <button class="tpl-card ${defaultCover.layout === 'custom' && !defaultCover.templateId ? 'on' : ''}" data-cover="custom"><b>Custom art</b><small>Uploaded full-page cover</small></button>
+      </div>
+      ${coverTpls.length ? `<div class="ct-chips" id="wCoverTplRow" style="margin-top:8px;flex-wrap:wrap">
+        ${coverTpls.map(t => `<button class="ct-chip ${defaultCover.templateId === t.id ? 'on' : ''}" data-covertpl="${t.id}">${esc(t.name)}</button>`).join('')}
+      </div>` : ''}
       <button class="btn primary wide lg" id="wCreate">Create proposal</button>
       <div class="ai-wiz-or" id="wDraftWrap">
         <div class="ai-wiz-rule"><span>or</span></div>
@@ -238,14 +254,29 @@ function newProposalWizard() {
     </div>`, { width: 620, sticky: true });
 
   let ct = null, tpl = 'full';
+  let coverPref = { ...defaultCover };
   card.querySelector('.close-pop').onclick = closePopovers;
   card.querySelectorAll('.ct-card').forEach(b => b.addEventListener('click', () => {
     ct = b.dataset.ct;
     card.querySelectorAll('.ct-card').forEach(x => x.classList.toggle('on', x === b));
   }));
-  card.querySelectorAll('.tpl-card').forEach(b => b.addEventListener('click', () => {
+  card.querySelectorAll('.tpl-card[data-tpl]').forEach(b => b.addEventListener('click', () => {
     tpl = b.dataset.tpl;
-    card.querySelectorAll('.tpl-card').forEach(x => x.classList.toggle('on', x === b));
+    card.querySelectorAll('.tpl-card[data-tpl]').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  const syncCoverUi = () => {
+    card.querySelectorAll('.tpl-card[data-cover]').forEach(x =>
+      x.classList.toggle('on', x.dataset.cover === coverPref.layout && !coverPref.templateId));
+    card.querySelectorAll('[data-covertpl]').forEach(x =>
+      x.classList.toggle('on', x.dataset.covertpl === coverPref.templateId));
+  };
+  card.querySelectorAll('.tpl-card[data-cover]').forEach(b => b.addEventListener('click', () => {
+    coverPref = Settings.coverFields({ layout: b.dataset.cover });
+    syncCoverUi();
+  }));
+  card.querySelectorAll('[data-covertpl]').forEach(b => b.addEventListener('click', () => {
+    coverPref = Settings.coverFields({ templateId: b.dataset.covertpl });
+    syncCoverUi();
   }));
   const agencyInput = card.querySelector('#wAgency');
   if (window.KeelBridge?.ready) KeelBridge.bindAgencyInput(agencyInput);
@@ -272,6 +303,7 @@ function newProposalWizard() {
       deadline: card.querySelector('#wDeadline').value,
       serviceTitle: card.querySelector('#wService').value.trim() || 'Public Education & Community Outreach Services',
       template: tpl,
+      cover: coverPref,
     });
     closePopovers();
     openEditor(doc.id);
@@ -296,7 +328,12 @@ function newProposalWizard() {
     const prog = importProgress('Claude is drafting your proposal');
     try {
       prog.set('Reading the RFP…', 0.15);
-      const payload = { clientId: keelCtx.clientId, clientType: keelCtx.clientType || ct, fileName: f.name };
+      const payload = {
+        clientId: keelCtx.clientId,
+        clientType: keelCtx.clientType || ct,
+        fileName: f.name,
+        cover: coverPref,
+      };
       const name = f.name.toLowerCase();
       if (name.endsWith('.pdf')) {
         payload.pdfBase64 = await fileToBase64(f);
@@ -325,12 +362,14 @@ async function uploadRfpIntoProposal(id) {
     toast('AI drafting isn’t configured — opening the template. You can insert the RFP from the Pages panel.');
     return;
   }
+  const coverPref = await pickCoverForDraft();
+  if (coverPref === null) return; // cancelled
   const f = await pickFile('.pdf,.docx,.txt,.md,application/pdf');
   if (!f) return;
   const prog = importProgress('Claude is drafting from your RFP');
   try {
     prog.set('Reading the RFP…', 0.15);
-    const payload = { proposalId: id, fileName: f.name };
+    const payload = { proposalId: id, fileName: f.name, cover: coverPref };
     const name = f.name.toLowerCase();
     if (name.endsWith('.pdf')) {
       payload.pdfBase64 = await fileToBase64(f);
@@ -347,6 +386,48 @@ async function uploadRfpIntoProposal(id) {
     prog.done();
     toast(e.message || 'Could not draft from that RFP');
   }
+}
+
+/* Small cover picker shown before Claude drafts into an existing proposal.
+   Resolves with cover fields, or null if the user cancels. */
+function pickCoverForDraft() {
+  return new Promise((resolve) => {
+    const defaultCover = Settings.coverFields();
+    const coverTpls = Settings.coverTemplates();
+    const card = modal(`
+      <div class="pophead">${icon('bolt', 16)}<b>Cover for this draft</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+      <div class="popbody">
+        <p class="set-hint" style="margin-top:0">Claude will use this cover when it builds the proposal. Change the workspace default anytime in Admin → Cover Templates.</p>
+        <div class="tpl-row" style="grid-template-columns:1fr 1fr 1fr">
+          <button class="tpl-card ${defaultCover.layout === 'letterhead' && !defaultCover.templateId ? 'on' : ''}" data-cover="letterhead"><b>Letterhead</b><small>Navy sidebar &amp; lockup</small></button>
+          <button class="tpl-card ${defaultCover.layout === 'standard' && !defaultCover.templateId ? 'on' : ''}" data-cover="standard"><b>Standard</b><small>Centered firm lockup</small></button>
+          <button class="tpl-card ${defaultCover.layout === 'custom' && !defaultCover.templateId ? 'on' : ''}" data-cover="custom"><b>Custom art</b><small>Uploaded full-page cover</small></button>
+        </div>
+        ${coverTpls.length ? `<div class="ct-chips" style="margin-top:8px;flex-wrap:wrap">
+          ${coverTpls.map(t => `<button class="ct-chip ${defaultCover.templateId === t.id ? 'on' : ''}" data-covertpl="${t.id}">${esc(t.name)}</button>`).join('')}
+        </div>` : ''}
+        <button class="btn primary wide lg" id="wCoverGo" style="margin-top:14px">Continue — pick RFP</button>
+      </div>`, { width: 480, sticky: true });
+    let coverPref = { ...defaultCover };
+    let settled = false;
+    const done = (v) => { if (settled) return; settled = true; closePopovers(); resolve(v); };
+    card.querySelector('.close-pop').onclick = () => done(null);
+    const sync = () => {
+      card.querySelectorAll('.tpl-card[data-cover]').forEach(x =>
+        x.classList.toggle('on', x.dataset.cover === coverPref.layout && !coverPref.templateId));
+      card.querySelectorAll('[data-covertpl]').forEach(x =>
+        x.classList.toggle('on', x.dataset.covertpl === coverPref.templateId));
+    };
+    card.querySelectorAll('.tpl-card[data-cover]').forEach(b => b.addEventListener('click', () => {
+      coverPref = Settings.coverFields({ layout: b.dataset.cover });
+      sync();
+    }));
+    card.querySelectorAll('[data-covertpl]').forEach(b => b.addEventListener('click', () => {
+      coverPref = Settings.coverFields({ templateId: b.dataset.covertpl });
+      sync();
+    }));
+    card.querySelector('#wCoverGo').onclick = () => done(coverPref);
+  });
 }
 
 /* Read a file as base64 (no data: prefix) for the AI draft upload. */
