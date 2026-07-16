@@ -87,17 +87,44 @@ function minutesOfDay(d) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-function parseEventStart(e) {
-  const d = new Date(e.startsAt);
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Parse a wall-clock instant. Date-only strings stay floating local midnights (not UTC). */
+function parseInstant(iso) {
+  if (!iso) return null;
+  const raw = String(iso);
+  const d = new Date(DATE_ONLY_RE.test(raw) ? `${raw}T00:00:00` : raw);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * All-day events are calendar dates, not UTC instants. Prefer YYYY-MM-DD; for legacy
+ * UTC-midnight ISO payloads, rebuild the day from UTC Y/M/D so west-of-UTC clients
+ * don't slip to the previous local day (and double-render on two days).
+ */
+function parseAllDayInstant(iso) {
+  if (!iso) return null;
+  const raw = String(iso);
+  if (DATE_ONLY_RE.test(raw)) return parseInstant(raw);
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  return startOfDay(d);
+}
+
+function parseEventStart(e) {
+  return e.allDay ? parseAllDayInstant(e.startsAt) : parseInstant(e.startsAt);
 }
 
 function parseEventEnd(e, start) {
   if (e.endsAt) {
-    const d = new Date(e.endsAt);
-    if (!Number.isNaN(d.getTime())) return d;
+    const d = e.allDay ? parseAllDayInstant(e.endsAt) : parseInstant(e.endsAt);
+    if (d) return d;
   }
   if (!start) return null;
+  if (e.allDay) return addDays(start, 1);
   const d = new Date(start);
   d.setHours(d.getHours() + 1);
   return d;

@@ -112,10 +112,16 @@ export async function testFeed(url) {
   return { eventCount: count };
 }
 
-const dayKey = (d) => {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
-};
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/** Calendar day in the Date's local components — matches node-ical VALUE=DATE (local midnight). */
+const dayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/**
+ * All-day ICS dates are floating calendar days, not UTC instants. Emit YYYY-MM-DD so
+ * clients west of the server TZ don't shift them to the previous local day.
+ */
+const serializeInstant = (d, allDay) => (allDay ? dayKey(d) : d.toISOString());
 
 function expandEvents(parsed, feed, rangeStart, rangeEnd) {
   const out = [];
@@ -123,12 +129,13 @@ function expandEvents(parsed, feed, rangeStart, rangeEnd) {
     if (!(start instanceof Date) || Number.isNaN(start.getTime())) return;
     if (start >= rangeEnd) return;
     if ((end || start) <= rangeStart && start < rangeStart) return;
+    const startsAt = serializeInstant(start, allDay);
     out.push({
-      id: `feed-${feed.id}:${ev.uid || ev.summary || "event"}:${start.toISOString()}`,
+      id: `feed-${feed.id}:${ev.uid || ev.summary || "event"}:${startsAt}`,
       feedId: feed.id,
       title: ev.summary ? String(ev.summary) : "(untitled)",
-      startsAt: start.toISOString(),
-      endsAt: end ? end.toISOString() : null,
+      startsAt,
+      endsAt: end ? serializeInstant(end, allDay) : null,
       location: ev.location ? String(ev.location) : null,
       allDay,
     });
