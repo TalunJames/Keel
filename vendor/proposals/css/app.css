@@ -1256,6 +1256,14 @@ body[data-mode="viewing"] .btool, body[data-mode="viewing"] .dz, body[data-mode=
   background: linear-gradient(90deg, var(--fs-navy) 0 17.2%, var(--fs-gold) 17.2% 18.2%, #fff 18.2%);
 }
 .admin-covertpl-body { flex: 1; }
+.admin-covertpl-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.admin-covertpl-name .set-input { margin: 0; max-width: 280px; }
+.admin-covertpl.is-default { background: rgba(26,58,92,.03); border-radius: 8px; padding: 11px 8px; margin: 0 -8px; }
+.admin-default-badge {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 9px;
+  border-radius: 999px; background: var(--fs-navy); color: #fff;
+  font: 700 10.5px var(--fs-font-sans); letter-spacing: .03em; text-transform: uppercase;
+}
 .admin-covertpl-body .set-input { margin: 0 0 8px; max-width: 280px; }
 /* document templates */
 .admin-tpl-builtin { border-top: 1px solid rgba(26,58,92,.07); padding: 8px 2px; }

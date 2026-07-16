@@ -703,11 +703,16 @@ function adminCoversSection(host) {
       <span class="flex1"></span>
       <button class="btn tiny primary" id="addCoverTpl">${icon('plus', 12)} New template</button>
     </div>
-    ${S.coverTemplates.length ? S.coverTemplates.map(t => `
-    <div class="admin-covertpl" data-tid="${t.id}">
+    ${S.coverTemplates.length ? S.coverTemplates.map(t => {
+      const isDefault = dc.templateId === t.id;
+      return `
+    <div class="admin-covertpl ${isDefault ? 'is-default' : ''}" data-tid="${t.id}">
       <div class="admin-covertpl-thumb ${t.layout === 'custom' ? '' : t.layout === 'letterhead' ? 'fss' : 'std'}" style="${t.layout === 'custom' && AssetStore.bg(t.bgId) ? `background-image:url(${AssetStore.bg(t.bgId).src})` : ''}">${t.layout === 'custom' || t.layout === 'letterhead' ? '' : 'Aa'}</div>
       <div class="admin-covertpl-body">
-        <input class="set-input slim" data-f="name" value="${esc(t.name)}" placeholder="Template name">
+        <div class="admin-covertpl-name">
+          <input class="set-input slim" data-f="name" value="${esc(t.name)}" placeholder="Template name">
+          ${isDefault ? '<span class="admin-default-badge">Default</span>' : `<button class="btn tiny" data-act="setDefault">Set as default</button>`}
+        </div>
         <div class="seg">
           <button class="seg-btn ${t.layout === 'letterhead' ? 'on' : ''}" data-layout="letterhead">Letterhead</button>
           <button class="seg-btn ${t.layout !== 'custom' && t.layout !== 'letterhead' ? 'on' : ''}" data-layout="standard">Standard</button>
@@ -723,7 +728,8 @@ function adminCoversSection(host) {
         </div>`}
       </div>
       <button class="iconbtn danger" data-act="delTpl" title="Delete template">${icon('trash', 13)}</button>
-    </div>`).join('') : '<p class="set-hint" style="margin:8px 2px">No saved templates yet. Create one and it shows up in every cover block’s settings.</p>'}
+    </div>`;
+    }).join('') : '<p class="set-hint" style="margin:8px 2px">No saved templates yet. Create one and it shows up in every cover block’s settings.</p>'}
   </div>`;
 
   host.querySelectorAll('[data-deflayout]').forEach(b => b.addEventListener('click', () => {
@@ -791,6 +797,15 @@ function adminCoversSection(host) {
       t.marginPx = parseInt(b.dataset.tplmargin);
       Settings.save(); adminCoversSection(host);
     }));
+    const setDefBtn = rowEl.querySelector('[data-act="setDefault"]');
+    if (setDefBtn) setDefBtn.addEventListener('click', () => {
+      S.defaultCover.templateId = t.id;
+      S.defaultCover.layout = t.layout;
+      S.defaultCover.bgId = t.bgId || null;
+      S.defaultCover.marginPx = t.marginPx != null ? t.marginPx : 84;
+      Settings.save(); adminCoversSection(host);
+      toast(`“${t.name}” is now the default cover`);
+    });
     rowEl.querySelector('[data-act="delTpl"]').addEventListener('click', () => {
       S.coverTemplates = S.coverTemplates.filter(x => x !== t);
       if (S.defaultCover && S.defaultCover.templateId === t.id) S.defaultCover.templateId = null;
