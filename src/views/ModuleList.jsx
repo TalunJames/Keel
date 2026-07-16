@@ -21,7 +21,7 @@ export function formatDateTime(iso) {
   return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function toDatetimeLocal(iso) {
+export function toDatetimeLocal(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -29,7 +29,7 @@ function toDatetimeLocal(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function initialForm(fields, item, clientId) {
+export function initialForm(fields, item, clientId) {
   const form = {};
   for (const f of fields) {
     const raw = item ? item[f.name] : undefined;
@@ -43,7 +43,7 @@ function initialForm(fields, item, clientId) {
   return form;
 }
 
-function buildBody(fields, form) {
+export function buildBody(fields, form) {
   const body = {};
   for (const f of fields) {
     let v = form[f.name];
@@ -73,7 +73,7 @@ export function ModuleModal({ title, children, onClose }) {
   );
 }
 
-function ModuleForm({ fields, form, setForm, clients, saving, error, onSubmit, onCancel, submitLabel }) {
+export function ModuleForm({ fields, form, setForm, clients, saving, error, onSubmit, onCancel, submitLabel }) {
   const set = (name) => (e) => setForm({ ...form, [name]: e.target.value });
   return (
     <form className="col" style={{ gap: 0 }} onSubmit={onSubmit}>
