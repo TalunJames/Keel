@@ -42,6 +42,10 @@ const Store = {
         Object.assign(cover, Settings.coverBlockFields(meta.cover));
       }
     }
+    if (typeof Settings !== 'undefined') {
+      const pageBg = Settings.pageBgFields();
+      if (pageBg.id) doc.pageBg = pageBg;
+    }
     this.writeDoc(doc);
     const list = this.index();
     list.unshift(this.metaOf(doc));

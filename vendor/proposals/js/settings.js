@@ -54,6 +54,8 @@ const Settings = {
       /* Default cover applied to new proposals (manual templates + Claude drafts).
          Per-draft overrides can still be passed when drafting with Claude. */
       defaultCover: { layout: 'letterhead', bgId: null, marginPx: 84, templateId: null },
+      /* Default body-page letterhead/frame art (Pages → Body page background). */
+      defaultPageBg: { id: null, skipFirst: true },
       docTemplates: [],                  // {id, label, desc, blocks:[{type, label?}]}
       pricing: {},                       // clientType → cost model defaults
       staffRates: {},                    // staffId → hourly rate override
@@ -247,6 +249,12 @@ const Settings = {
 
   makeCoverBlock(pref) {
     return { id: uid('b'), type: 'cover', ...this.coverBlockFields(pref) };
+  },
+
+  pageBgFields() {
+    const d = this.data.defaultPageBg || {};
+    if (!d.id) return { id: null, skipFirst: d.skipFirst !== false };
+    return { id: d.id, skipFirst: d.skipFirst !== false };
   },
 
   /* ---------- document templates ---------- */
