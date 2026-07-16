@@ -5,6 +5,21 @@
    When the dashboard's auth arrives, setCurrentUser() is the seam.     */
 'use strict';
 
+/* Drop duplicate index rows for the same id (keep the newest). A tempId→realId
+   race during create can otherwise leave two cards for one proposal — e.g. one
+   Draft under Active and a stale Archived copy. */
+function dedupeIndexById(list) {
+  if (!Array.isArray(list) || list.length < 2) return list || [];
+  const byId = new Map();
+  for (const m of list) {
+    if (!m || m.id == null) continue;
+    const id = String(m.id);
+    const prev = byId.get(id);
+    if (!prev || (m.updatedAt || 0) >= (prev.updatedAt || 0)) byId.set(id, m);
+  }
+  return Array.from(byId.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
 const Sync = {
   remote: false,
   cid: uid('client') + Math.random().toString(36).slice(2, 8),
@@ -44,8 +59,10 @@ const Sync = {
         toast('Moved your local proposals onto the server — they’re shared now');
         return local;
       }
-      Store.writeIndex(list);
-      return list;
+      // Keep one row per id — a tempId→realId race can leave duplicates that
+      // then show the same title under both Active and Archived.
+      Store.writeIndex(dedupeIndexById(list));
+      return Store.index();
     } catch (e) { return null; }
   },
 

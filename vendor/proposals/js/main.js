@@ -12,7 +12,12 @@ function statusPillHtml(triage) {
 function renderHome() {
   App.view = 'home';
   App.doc = null;
-  const list = Store.index();
+  let list = Store.index();
+  const deduped = dedupeIndexById(list);
+  if (deduped.length !== list.length) {
+    Store.writeIndex(deduped);
+    list = deduped;
+  }
 
   // Count each filter across every proposal, then narrow to the active chip.
   if (!STATUS_FILTERS.some(f => f.key === App.homeFilter)) App.homeFilter = 'active';

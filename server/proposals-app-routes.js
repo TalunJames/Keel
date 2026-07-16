@@ -196,21 +196,24 @@ function assertProposalRowAccess(req, row) {
 }
 
 function syncRowFromDoc(db, rowId, doc, user) {
-  const payload = { ...doc, format: EDITOR_FORMAT };
   const title = doc.title || "Untitled Proposal";
   const dueAt = doc.deadline || null;
   const clientId = doc.keelClientId || null;
-  const triageState = doc.triageState || "building";
 
-  const existing = db.prepare("SELECT client_id FROM proposals WHERE id = ?").get(rowId);
+  // triage_state is owned by PATCH /triage and CLEATUS sync — not by full-doc
+  // saves. An open editor's autosave / flushOnExit otherwise clobbers a
+  // teammate's status change (or a CLEATUS archive) with a stale doc.triageState.
+  const existing = db.prepare("SELECT client_id, triage_state FROM proposals WHERE id = ?").get(rowId);
   const resolvedClientId = clientId || existing?.client_id;
   if (!resolvedClientId) throw new Error("clientId required");
+  const triageState = existing?.triage_state || doc.triageState || "building";
+  const payload = { ...doc, format: EDITOR_FORMAT, triageState };
 
   db.prepare(
-    `UPDATE proposals SET title = ?, payload_json = ?, due_at = ?, triage_state = ?,
+    `UPDATE proposals SET title = ?, payload_json = ?, due_at = ?,
      owner_id = COALESCE(owner_id, ?), updated_at = datetime('now')
      WHERE id = ?`
-  ).run(title, JSON.stringify(payload), dueAt, triageState, user?.id || null, rowId);
+  ).run(title, JSON.stringify(payload), dueAt, user?.id || null, rowId);
 
   if (clientId && clientId !== existing?.client_id) {
     db.prepare("UPDATE proposals SET client_id = ? WHERE id = ?").run(clientId, rowId);
