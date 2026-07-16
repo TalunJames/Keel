@@ -90,6 +90,20 @@ const scheduleAfterEdit = debounce(() => {
   renderOutline();
 }, 350);
 
+/* True while the caret is in a canvas editable — sheet rebuilds must wait. */
+function isEditingCanvas() {
+  const ae = document.activeElement;
+  return !!(ae && ae.closest && ae.closest('#canvas .ed, #canvas .ed-float'));
+}
+
+/* Run a real paginate once typing stops (blur or idle). */
+const scheduleIdlePaginate = debounce(() => {
+  if (isEditingCanvas()) { scheduleIdlePaginate(); return; }
+  paginate();
+  positionCommentCards();
+  updatePageMeta();
+}, 500);
+
 /* ---------- block DOM ---------- */
 function buildBlockEl(b) {
   const wrap = htmlToEl(`<div class="blockwrap" data-bid="${b.id}" data-type="${b.type}">
@@ -301,7 +315,11 @@ function bindEditable(ed) {
     scheduleAfterEdit();
     if (App.railTab === 'suggestions') renderRail();
   });
-  ed.addEventListener('blur', () => { syncEditable(ed); saveDoc({ history: 'seal' }); });
+  ed.addEventListener('blur', () => {
+    syncEditable(ed);
+    saveDoc({ history: 'seal' });
+    scheduleIdlePaginate.flush();
+  });
   ed.addEventListener('keydown', (e) => {
     // Tab / Shift+Tab inside a list = indent / outdent (sub-bullets)
     if (e.key !== 'Tab' || App.mode === 'viewing') return;
@@ -522,48 +540,55 @@ function refreshSheetChrome(pages) {
   });
 }
 
-/* Keep the caret (or selected block) glued to the same spot on screen across
-   a sheet rebuild. Restoring a Selection often scrolls it into view; we
-   correct after that. */
+/* Keep the caret glued to the same spot on screen across a sheet rebuild.
+   Selection.addRange scrolls into view and can leave scrollTop far from the
+   pre-rebuild value — always re-base on keepScroll, then nudge by delta. */
 function captureViewportAnchor(canvas) {
   const sc = $('#canvasScroll');
   if (!sc) return null;
   const keepScroll = sc.scrollTop;
-  let caretTop = null;
+  const scTop = sc.getBoundingClientRect().top;
+  let caretViewTop = null;
   const sel = document.getSelection();
   if (sel && sel.rangeCount && canvas.contains(sel.anchorNode)) {
     try {
       const rect = sel.getRangeAt(0).getBoundingClientRect();
-      if (rect && (rect.top || rect.height || rect.width)) caretTop = rect.top;
+      if (rect && (rect.height || rect.width || rect.bottom !== rect.top)) {
+        caretViewTop = rect.top - scTop;
+      }
     } catch (e) { /* ignore */ }
   }
-  if (caretTop == null && App.selectedBlock) {
+  if (caretViewTop == null && App.selectedBlock) {
     const el = blockEls.get(App.selectedBlock);
-    if (el) caretTop = el.getBoundingClientRect().top;
+    if (el) caretViewTop = el.getBoundingClientRect().top - scTop;
   }
-  return { sc, keepScroll, caretTop };
+  return { sc, keepScroll, caretViewTop };
 }
 
 function restoreViewportAnchor(anchor, saved) {
   if (!anchor || !anchor.sc) return;
-  const { sc, keepScroll, caretTop } = anchor;
+  const { sc, keepScroll, caretViewTop } = anchor;
   const apply = () => {
-    if (caretTop != null && saved && saved.an && saved.an.isConnected) {
+    // Re-base first so measurements aren't taken at a browser-scrolled offset
+    sc.scrollTop = keepScroll;
+    if (caretViewTop != null && saved && saved.an && saved.an.isConnected) {
       try {
         const r = document.createRange();
         r.setStart(saved.an, saved.ao);
         r.collapse(true);
         const rect = r.getBoundingClientRect();
-        if (rect && (rect.top || rect.height || rect.width)) {
-          sc.scrollTop = keepScroll + (rect.top - caretTop);
+        if (rect && (rect.height || rect.width || rect.bottom !== rect.top)) {
+          const scTop = sc.getBoundingClientRect().top;
+          const nowViewTop = rect.top - scTop;
+          sc.scrollTop = keepScroll + (nowViewTop - caretViewTop);
           return;
         }
       } catch (e) { /* fall through */ }
     }
-    sc.scrollTop = keepScroll;
   };
   apply();
-  requestAnimationFrame(apply);
+  // Beat the browser's post-selection scroll-into-view
+  requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });
 }
 
 function paginate() {
@@ -606,9 +631,12 @@ function paginate() {
     if (App.sidebarTab === 'pages' && typeof renderPagesPanel === 'function') renderPagesPanel();
     if (typeof renderFloats === 'function') renderFloats();
     // sync TOC entries; if a TOC's height changed, run one corrective pass
-    if (updateTocBlocks() && !paginate._tocPass) {
+    // (never while typing — a second rebuild is what throws the viewport)
+    if (updateTocBlocks() && !paginate._tocPass && !isEditingCanvas()) {
       paginate._tocPass = true;
       requestAnimationFrame(() => { paginate(); paginate._tocPass = false; });
+    } else if (isEditingCanvas()) {
+      scheduleIdlePaginate();
     }
   };
 
@@ -616,6 +644,15 @@ function paginate() {
   if (pagesMatchDom(pages)) {
     refreshSheetChrome(pages);
     finishPaginate();
+    return;
+  }
+
+  // Typing with a pending page-break change: don't tear sheets down under
+  // the caret — that was jumping the scroll several pages. Repaginate idle.
+  if (isEditingCanvas()) {
+    refreshSheetChrome(pages);
+    updatePageMeta();
+    scheduleIdlePaginate();
     return;
   }
 
