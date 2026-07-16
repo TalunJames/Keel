@@ -51,6 +51,9 @@ const Settings = {
       blockOverrides: {},                // type → {label, desc, curated, hidden}
       customBlocks: [],                  // {type, label, desc, cat, curated, content:{...}}
       coverTemplates: [],                // {id, name, layout, bgId, marginPx}
+      /* Default cover applied to new proposals (manual templates + Claude drafts).
+         Per-draft overrides can still be passed when drafting with Claude. */
+      defaultCover: { layout: 'letterhead', bgId: null, marginPx: 84, templateId: null },
       docTemplates: [],                  // {id, label, desc, blocks:[{type, label?}]}
       pricing: {},                       // clientType → cost model defaults
       staffRates: {},                    // staffId → hourly rate override
@@ -195,6 +198,57 @@ const Settings = {
   /* ---------- cover templates ---------- */
   coverTemplates() { return this.data.coverTemplates || []; },
 
+  /* Resolve cover fields from an optional preference, else the workspace default.
+     Preference may be a layout string, a partial cover object, or a saved template id. */
+  coverFields(pref) {
+    const d = this.data.defaultCover || {};
+    let src = pref;
+    let templateId = null;
+    if (typeof pref === 'string') {
+      const tpl = (this.data.coverTemplates || []).find(t => t.id === pref);
+      if (tpl) { src = tpl; templateId = tpl.id; }
+      else src = { layout: pref };
+    } else if (pref && pref.templateId) {
+      const tpl = (this.data.coverTemplates || []).find(t => t.id === pref.templateId);
+      src = tpl ? { ...tpl, ...pref } : pref;
+      templateId = pref.templateId;
+    } else if (!pref && d.templateId) {
+      const tpl = (this.data.coverTemplates || []).find(t => t.id === d.templateId);
+      src = tpl ? { ...d, ...tpl } : d;
+      templateId = d.templateId;
+    } else if (!pref) {
+      src = d;
+      templateId = d.templateId || null;
+    }
+    let layout = (src && src.layout) || d.layout || 'letterhead';
+    if (layout !== 'letterhead' && layout !== 'standard' && layout !== 'custom') layout = 'letterhead';
+    const out = { layout };
+    if (templateId) out.templateId = templateId;
+    if (layout === 'custom') {
+      const bgId = (src && src.bgId) || d.bgId || null;
+      if (bgId) out.bgId = bgId;
+    }
+    if (layout === 'standard') {
+      const marginPx = (src && src.marginPx != null) ? src.marginPx
+        : (d.marginPx != null ? d.marginPx : 84);
+      out.marginPx = marginPx;
+    }
+    return out;
+  },
+
+  /* Cover block fields only (no templateId) — safe to Object.assign onto a block. */
+  coverBlockFields(pref) {
+    const f = this.coverFields(pref);
+    const out = { layout: f.layout };
+    if (f.layout === 'custom' && f.bgId) out.bgId = f.bgId;
+    if (f.layout === 'standard') out.marginPx = f.marginPx != null ? f.marginPx : 84;
+    return out;
+  },
+
+  makeCoverBlock(pref) {
+    return { id: uid('b'), type: 'cover', ...this.coverBlockFields(pref) };
+  },
+
   /* ---------- document templates ---------- */
   /* Built-ins plus admin-authored ones, for the New Proposal wizard. */
   allTemplates() {
@@ -212,7 +266,9 @@ const Settings = {
     if (!t) return null;
     let divNum = 1;
     return t.blocks.map(en => {
-      const b = { id: uid('b'), type: en.type };
+      const b = en.type === 'cover'
+        ? this.makeCoverBlock()
+        : { id: uid('b'), type: en.type };
       if (en.type === 'team') { b.staff = this.staffList().map(s => s.id); b.variant = doc.clientType; }
       if (en.type === 'cost') b.cost = defaultCostModel(doc.clientType);
       if (en.type === 'divider') { b.num = ++divNum; if (en.label) b.label = en.label; }

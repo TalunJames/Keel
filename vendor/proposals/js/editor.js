@@ -331,7 +331,7 @@ function selectBlock(bid) {
 /* ---------- structure mutations ---------- */
 function addBlock(type, index, extra = {}, opts = {}) {
   const b = { id: uid('b'), type, ...extra };
-  if (type === 'cover' && !b.layout) b.layout = 'letterhead';
+  if (type === 'cover' && !b.layout) Object.assign(b, Settings.coverBlockFields());
   if (type === 'team' && !b.staff) { b.staff = ['carter', 'luke', 'digital', 'earned', 'designer', 'coord']; b.variant = App.doc.clientType; }
   if (type === 'cost' && !b.cost) b.cost = defaultCostModel(App.doc.clientType);
   if (type === 'divider' && !b.num) b.num = (App.doc.blocks.filter(x => x.type === 'divider').length + 1);

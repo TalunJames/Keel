@@ -659,9 +659,34 @@ function adminTeamSection(host) {
 /* =================== COVER TEMPLATES =================== */
 function adminCoversSection(host) {
   const S = Settings.data;
+  if (!S.defaultCover) S.defaultCover = { layout: 'letterhead', bgId: null, marginPx: 84, templateId: null };
+  const dc = S.defaultCover;
   const bgs = AssetStore.bgs();
+  const tpls = S.coverTemplates || [];
   host.innerHTML = `
   ${adminHead('Cover Templates', 'The shared cover-art library every proposal can use, plus saved cover layouts that users apply from the cover block’s settings in one click.')}
+  <div class="admin-card">
+    <div class="admin-card-h"><b>Default cover</b><small>Used for new proposals and Claude drafts unless overridden in the wizard</small></div>
+    <div class="seg" style="max-width:420px">
+      <button class="seg-btn ${dc.layout === 'letterhead' ? 'on' : ''}" data-deflayout="letterhead">Letterhead</button>
+      <button class="seg-btn ${dc.layout !== 'custom' && dc.layout !== 'letterhead' ? 'on' : ''}" data-deflayout="standard">Standard</button>
+      <button class="seg-btn ${dc.layout === 'custom' ? 'on' : ''}" data-deflayout="custom">Custom art</button>
+    </div>
+    ${dc.layout === 'custom' ? `
+    <div class="bg-grid" style="margin-top:10px">
+      ${bgs.map(g => `<button class="bg-thumb ${dc.bgId === g.id ? 'on' : ''}" data-defbg="${g.id}" style="background-image:url(${g.src})" title="${esc(g.name)}"></button>`).join('') || '<span class="set-hint">Upload art below first.</span>'}
+    </div>` : dc.layout === 'standard' ? `
+    <div class="seg" style="margin-top:10px;max-width:320px" title="Cover margins">
+      ${[['None', 0], ['Narrow', 48], ['Normal', 84], ['Wide', 120]].map(([l, px]) => `<button class="seg-btn ${(dc.marginPx != null ? dc.marginPx : 84) === px ? 'on' : ''}" data-defmargin="${px}">${l}</button>`).join('')}
+    </div>` : `
+    <p class="set-hint" style="margin:10px 0 0">Navy sidebar, gold stripe, and horizontal lockup — the firm letterhead.</p>`}
+    ${tpls.length ? `
+    <div class="set-label" style="margin-top:14px">Or start from a saved template</div>
+    <div class="ct-chips" style="flex-wrap:wrap">
+      <button class="ct-chip ${!dc.templateId ? 'on' : ''}" data-deftpl="">None — use layout above</button>
+      ${tpls.map(t => `<button class="ct-chip ${dc.templateId === t.id ? 'on' : ''}" data-deftpl="${t.id}">${esc(t.name)}</button>`).join('')}
+    </div>` : ''}
+  </div>
   <div class="admin-card">
     <div class="admin-card-h"><b>Cover art library</b><small>Shared with all users — also used for body-page backgrounds</small>
       <span class="flex1"></span>
@@ -701,6 +726,36 @@ function adminCoversSection(host) {
     </div>`).join('') : '<p class="set-hint" style="margin:8px 2px">No saved templates yet. Create one and it shows up in every cover block’s settings.</p>'}
   </div>`;
 
+  host.querySelectorAll('[data-deflayout]').forEach(b => b.addEventListener('click', () => {
+    S.defaultCover.layout = b.dataset.deflayout;
+    S.defaultCover.templateId = null;
+    Settings.save(); adminCoversSection(host);
+    toast('Default cover updated');
+  }));
+  host.querySelectorAll('[data-defbg]').forEach(b => b.addEventListener('click', () => {
+    S.defaultCover.bgId = b.dataset.defbg;
+    Settings.save(); adminCoversSection(host);
+  }));
+  host.querySelectorAll('[data-defmargin]').forEach(b => b.addEventListener('click', () => {
+    S.defaultCover.marginPx = parseInt(b.dataset.defmargin, 10);
+    Settings.save(); adminCoversSection(host);
+  }));
+  host.querySelectorAll('[data-deftpl]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.deftpl || null;
+    if (!id) {
+      S.defaultCover.templateId = null;
+    } else {
+      const t = tpls.find(x => x.id === id);
+      if (!t) return;
+      S.defaultCover.templateId = id;
+      S.defaultCover.layout = t.layout;
+      S.defaultCover.bgId = t.bgId || null;
+      S.defaultCover.marginPx = t.marginPx != null ? t.marginPx : 84;
+    }
+    Settings.save(); adminCoversSection(host);
+    toast('Default cover updated');
+  }));
+
   $('#coverArtUpload').addEventListener('click', async () => {
     const f = await pickFile('image/*');
     if (!f) return;
@@ -738,6 +793,7 @@ function adminCoversSection(host) {
     }));
     rowEl.querySelector('[data-act="delTpl"]').addEventListener('click', () => {
       S.coverTemplates = S.coverTemplates.filter(x => x !== t);
+      if (S.defaultCover && S.defaultCover.templateId === t.id) S.defaultCover.templateId = null;
       Settings.save(); adminCoversSection(host);
     });
   });

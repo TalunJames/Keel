@@ -34,6 +34,14 @@ const Store = {
     };
     doc.blocks = (typeof Settings !== 'undefined' && Settings.buildTemplate(meta.template, doc))
       || (TEMPLATES[meta.template] || TEMPLATES.full).build(doc);
+    if (meta.cover && typeof Settings !== 'undefined') {
+      const cover = doc.blocks.find(b => b.type === 'cover');
+      if (cover) {
+        delete cover.bgId;
+        delete cover.marginPx;
+        Object.assign(cover, Settings.coverBlockFields(meta.cover));
+      }
+    }
     this.writeDoc(doc);
     const list = this.index();
     list.unshift(this.metaOf(doc));
