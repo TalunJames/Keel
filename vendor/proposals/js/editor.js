@@ -505,7 +505,12 @@ function renderCanvas() {
   refreshLiveDates(canvas);   // cover dates always read today, even in saved docs
   requestAnimationFrame(() => {
     paginate(); updatePageMeta(); renderOutline(); positionCommentCards();
-    if (sc) sc.scrollTop = keepScroll;
+    // Claim the viewport AFTER paginate: its anchor was measured against the
+    // throwaway working sheet, so its queued re-applies must not win over the
+    // true pre-rebuild scroll. Callers that restore even later (e.g. the
+    // teammate-update path in Sync._apply) overwrite this value in their own
+    // rAF, which now sticks instead of being clobbered a frame later.
+    if (sc) { claimViewport(); sc.scrollTop = keepScroll; }
   });
 }
 
@@ -542,13 +547,24 @@ function refreshSheetChrome(pages) {
 
 /* Keep the caret glued to the same spot on screen across a sheet rebuild.
    Selection.addRange scrolls into view and can leave scrollTop far from the
-   pre-rebuild value — always re-base on keepScroll, then nudge by delta. */
+   pre-rebuild value — always re-base on keepScroll, then nudge by delta.
+
+   Ownership token: restores queue re-applies over several frames (to beat
+   the browser's post-selection scroll-into-view), so two restore cycles can
+   overlap — e.g. a teammate-update renderEditor() restoring the old scroll
+   while the paginate() it triggered queued frames that re-assert scrollTop
+   captured from the fresh (scrolled-to-0) DOM. Whoever claims last wins;
+   stale queued frames become no-ops instead of yanking the viewport. */
+let viewportOwnerSeq = 0;
+function claimViewport() { return ++viewportOwnerSeq; }
+
 function captureViewportAnchor(canvas) {
   const sc = $('#canvasScroll');
   if (!sc) return null;
   const keepScroll = sc.scrollTop;
   const scTop = sc.getBoundingClientRect().top;
   let caretViewTop = null;
+  let blockEl = null, blockViewTop = null;
   const sel = document.getSelection();
   if (sel && sel.rangeCount && canvas.contains(sel.anchorNode)) {
     try {
@@ -557,20 +573,21 @@ function captureViewportAnchor(canvas) {
         caretViewTop = rect.top - scTop;
       }
     } catch (e) { /* ignore */ }
+    blockEl = closestTag(sel.anchorNode, '.blockwrap');
   }
-  if (caretViewTop == null && App.selectedBlock) {
-    const el = blockEls.get(App.selectedBlock);
-    if (el) caretViewTop = el.getBoundingClientRect().top - scTop;
-  }
-  return { sc, keepScroll, caretViewTop };
+  if (!blockEl && App.selectedBlock) blockEl = blockEls.get(App.selectedBlock) || null;
+  if (blockEl) blockViewTop = blockEl.getBoundingClientRect().top - scTop;
+  return { sc, keepScroll, caretViewTop, blockEl, blockViewTop, seq: claimViewport() };
 }
 
 function restoreViewportAnchor(anchor, saved) {
   if (!anchor || !anchor.sc) return;
-  const { sc, keepScroll, caretViewTop } = anchor;
+  const { sc, keepScroll, caretViewTop, blockEl, blockViewTop, seq } = anchor;
   const apply = () => {
+    if (seq !== viewportOwnerSeq) return;   // a newer restore owns the viewport
     // Re-base first so measurements aren't taken at a browser-scrolled offset
     sc.scrollTop = keepScroll;
+    const scTop = sc.getBoundingClientRect().top;
     if (caretViewTop != null && saved && saved.an && saved.an.isConnected) {
       try {
         const r = document.createRange();
@@ -578,12 +595,17 @@ function restoreViewportAnchor(anchor, saved) {
         r.collapse(true);
         const rect = r.getBoundingClientRect();
         if (rect && (rect.height || rect.width || rect.bottom !== rect.top)) {
-          const scTop = sc.getBoundingClientRect().top;
           const nowViewTop = rect.top - scTop;
           sc.scrollTop = keepScroll + (nowViewTop - caretViewTop);
           return;
         }
       } catch (e) { /* fall through */ }
+    }
+    // No usable caret — glue the caret's (or selected) block to its old spot
+    // instead, so a rebuild that moved page breaks doesn't leave the same
+    // scrollTop showing different content.
+    if (blockEl && blockEl.isConnected && blockViewTop != null) {
+      sc.scrollTop = keepScroll + (blockEl.getBoundingClientRect().top - scTop - blockViewTop);
     }
   };
   apply();
