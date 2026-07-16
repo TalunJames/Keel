@@ -660,9 +660,12 @@ function adminTeamSection(host) {
 function adminCoversSection(host) {
   const S = Settings.data;
   if (!S.defaultCover) S.defaultCover = { layout: 'letterhead', bgId: null, marginPx: 84, templateId: null };
+  if (!S.defaultPageBg) S.defaultPageBg = { id: null, skipFirst: true };
   const dc = S.defaultCover;
+  const dpb = S.defaultPageBg;
   const bgs = AssetStore.bgs();
   const tpls = S.coverTemplates || [];
+  const coverArtDefault = dc.layout === 'custom' && dc.bgId && !dc.templateId;
   host.innerHTML = `
   ${adminHead('Cover Templates', 'The shared cover-art library every proposal can use, plus saved cover layouts that users apply from the cover block’s settings in one click.')}
   <div class="admin-card">
@@ -688,13 +691,31 @@ function adminCoversSection(host) {
     </div>` : ''}
   </div>
   <div class="admin-card">
-    <div class="admin-card-h"><b>Cover art library</b><small>Shared with all users — also used for body-page backgrounds</small>
+    <div class="admin-card-h"><b>Default body page background</b><small>Applied to new proposals — Pages → Body page background</small></div>
+    <div class="bg-grid" style="margin-top:4px">
+      <button class="bg-thumb none ${!dpb.id ? 'on' : ''}" data-defpgbg="" title="No background">None</button>
+      ${bgs.map(g => `<button class="bg-thumb ${dpb.id === g.id ? 'on' : ''}" data-defpgbg="${g.id}" style="background-image:url(${g.src})" title="${esc(g.name)}"></button>`).join('')}
+      ${bgs.length ? '' : '<span class="set-hint">Upload art below first.</span>'}
+    </div>
+    <label class="admin-flag" style="margin-top:10px"><input type="checkbox" id="defPgBgSkip" ${dpb.skipFirst !== false ? 'checked' : ''}> Skip the cover page</label>
+  </div>
+  <div class="admin-card">
+    <div class="admin-card-h"><b>Cover art library</b><small>Shared with all users — also used for body-page backgrounds. Mark any piece as the default cover or body background.</small>
       <span class="flex1"></span>
       <button class="btn tiny primary" id="coverArtUpload">${icon('upload', 12)} Upload art</button>
     </div>
     <div class="bg-grid admin-bg-grid">
-      ${bgs.map(g => `<div class="admin-bg-cell"><button class="bg-thumb" style="background-image:url(${g.src})" title="${esc(g.name)}"></button>
-        <button class="iconbtn danger" data-delbg="${g.id}" title="Remove from library">${icon('trash', 12)}</button></div>`).join('')}
+      ${bgs.map(g => {
+        const isCoverDef = coverArtDefault && dc.bgId === g.id;
+        const isBodyDef = dpb.id === g.id;
+        return `<div class="admin-bg-cell" data-bgid="${g.id}">
+        <button class="bg-thumb" style="background-image:url(${g.src})" title="${esc(g.name)}"></button>
+        <div class="admin-bg-actions">
+          ${isCoverDef ? '<span class="admin-default-badge sm">Default cover</span>' : `<button class="btn tiny" data-act="defCover">Set cover default</button>`}
+          ${isBodyDef ? '<span class="admin-default-badge sm body">Default body</span>' : `<button class="btn tiny" data-act="defBody">Set body default</button>`}
+        </div>
+        <button class="iconbtn danger" data-delbg="${g.id}" title="Remove from library">${icon('trash', 12)}</button></div>`;
+      }).join('')}
       ${bgs.length ? '' : '<p class="set-hint" style="margin:6px 2px">No cover art yet — upload full-page portrait designs (letterheads, photo covers, frames).</p>'}
     </div>
   </div>
@@ -762,6 +783,18 @@ function adminCoversSection(host) {
     toast('Default cover updated');
   }));
 
+  const defPgSkip = host.querySelector('#defPgBgSkip');
+  if (defPgSkip) defPgSkip.addEventListener('change', () => {
+    S.defaultPageBg.skipFirst = defPgSkip.checked;
+    Settings.save();
+  });
+  host.querySelectorAll('[data-defpgbg]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.defpgbg || null;
+    S.defaultPageBg.id = id;
+    Settings.save(); adminCoversSection(host);
+    toast(id ? 'Default body background updated' : 'Default body background cleared');
+  }));
+
   $('#coverArtUpload').addEventListener('click', async () => {
     const f = await pickFile('image/*');
     if (!f) return;
@@ -770,11 +803,31 @@ function adminCoversSection(host) {
     toast('Cover art added to the shared library');
   });
   host.querySelectorAll('[data-delbg]').forEach(b => b.addEventListener('click', () => {
-    AssetStore.removeBg(b.dataset.delbg);
+    const id = b.dataset.delbg;
+    AssetStore.removeBg(id);
+    if (S.defaultCover && S.defaultCover.bgId === id) S.defaultCover.bgId = null;
+    if (S.defaultPageBg && S.defaultPageBg.id === id) S.defaultPageBg.id = null;
     if (typeof Sync !== 'undefined') Sync.pushAssets();
     adminCoversSection(host);
     toast('Removed from the library — covers already using it keep their art');
   }));
+  host.querySelectorAll('.admin-bg-cell').forEach(cell => {
+    const id = cell.dataset.bgid;
+    const defCoverBtn = cell.querySelector('[data-act="defCover"]');
+    if (defCoverBtn) defCoverBtn.addEventListener('click', () => {
+      S.defaultCover.layout = 'custom';
+      S.defaultCover.bgId = id;
+      S.defaultCover.templateId = null;
+      Settings.save(); adminCoversSection(host);
+      toast('Default cover updated');
+    });
+    const defBodyBtn = cell.querySelector('[data-act="defBody"]');
+    if (defBodyBtn) defBodyBtn.addEventListener('click', () => {
+      S.defaultPageBg.id = id;
+      Settings.save(); adminCoversSection(host);
+      toast('Default body background updated');
+    });
+  });
   $('#addCoverTpl').addEventListener('click', () => {
     S.coverTemplates.push({ id: uid('cvt'), name: 'New cover template', layout: 'letterhead', bgId: null, marginPx: 84 });
     Settings.save(); adminCoversSection(host);

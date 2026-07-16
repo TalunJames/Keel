@@ -1241,8 +1241,13 @@ body[data-mode="viewing"] .btool, body[data-mode="viewing"] .dz, body[data-mode=
 .admin-editor-foot code { background: #fff; border: 1px solid rgba(26,58,92,.14); border-radius: 4px; padding: 1px 5px; font-size: 10.5px; }
 /* covers */
 .admin-bg-grid { margin-top: 4px; }
-.admin-bg-cell { position: relative; }
+.admin-bg-cell { position: relative; width: 90px; }
+.admin-bg-cell .bg-thumb { width: 52px; margin: 0 auto; display: flex; }
 .admin-bg-cell .iconbtn { position: absolute; top: -7px; right: -7px; background: #fff; border: 1px solid rgba(26,58,92,.18); width: 22px; height: 22px; border-radius: 50%; }
+.admin-bg-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
+.admin-bg-actions .btn.tiny { font-size: 10px; padding: 2px 6px; height: auto; line-height: 1.35; white-space: normal; text-align: center; }
+.admin-default-badge.sm { height: 20px; padding: 0 7px; font-size: 9.5px; }
+.admin-default-badge.sm.body { background: #2F6B4F; }
 .admin-covertpl { display: flex; gap: 12px; align-items: flex-start; border-top: 1px solid rgba(26,58,92,.07); padding: 11px 0; }
 .admin-covertpl-thumb {
   width: 64px; height: 84px; border-radius: 5px; border: 1px solid rgba(26,58,92,.18); flex: none;

@@ -204,6 +204,13 @@ function resolveCoverFromSettings(db, pref) {
   return out;
 }
 
+function resolvePageBgFromSettings(db) {
+  const settings = db ? readSetting(db, SETTINGS_KEY, {}) : {};
+  const d = settings.defaultPageBg || {};
+  if (!d.id) return { id: null, skipFirst: d.skipFirst !== false };
+  return { id: d.id, skipFirst: d.skipFirst !== false };
+}
+
 function requireStaff(req, res, next) {
   if (req.user.role !== "staff" && req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden" });
@@ -586,7 +593,7 @@ export function createEditorProposal(db, {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     marginPx: null,
-    pageBg: { id: null, skipFirst: true },
+    pageBg: resolvePageBgFromSettings(db),
     pageBrand: true,
     pageNums: { show: true, format: "Page {n}", pos: "bottom-center", font: "source", size: 10, color: "#7A7975", skipFirst: true },
     blocks: blockList,
