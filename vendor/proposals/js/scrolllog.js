@@ -117,6 +117,7 @@
 
   /* ---- lifecycle markers: wrap the interesting globals once loaded ---- */
   window.addEventListener('DOMContentLoaded', () => {
+    console.info('[scroll-log] loaded; caretGuard=' + (typeof window.bindCaretGuard === 'function') + ' claimViewport=' + (typeof window.claimViewport === 'function'));
     attachScrollListener();
     ['paginate', 'renderCanvas', 'renderEditor', 'claimViewport'].forEach((name) => {
       const fn = window[name];
@@ -148,6 +149,12 @@
       zoom: (typeof App !== 'undefined' && App.zoom) || null,
       doc: (typeof App !== 'undefined' && App.doc && App.doc.id) || null,
       mode: (typeof App !== 'undefined' && App.mode) || null,
+      // Which fixes are actually loaded in this browser — a stale cached
+      // editor.js is indistinguishable from a broken fix without this.
+      build: {
+        claimViewport: typeof window.claimViewport === 'function',
+        caretGuard: typeof window.bindCaretGuard === 'function',
+      },
       events: buf,
     };
     const blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });

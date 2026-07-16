@@ -540,7 +540,15 @@ export function registerProposalsAppRoutes(app, db, auth) {
 
   app.use(`${BASE}/api`, auth, api);
 
-  app.use(BASE, express.static(VENDOR_DIR, { index: false }));
+  // no-cache ≠ no caching: the browser may keep a copy but MUST revalidate
+  // (ETag → 304) before using it. Without this, express.static sends no
+  // Cache-Control and Chrome caches heuristically — users kept running
+  // stale editor.js for hours after a deploy, which made hotfixes look
+  // like they didn't work.
+  app.use(BASE, express.static(VENDOR_DIR, {
+    index: false,
+    setHeaders: (res) => res.setHeader("Cache-Control", "no-cache"),
+  }));
 
   const indexPath = path.join(VENDOR_DIR, "index-keel.html");
   const sendShell = (_req, res) => {
