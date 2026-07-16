@@ -487,12 +487,83 @@ function renderCanvas() {
   refreshLiveDates(canvas);   // cover dates always read today, even in saved docs
   requestAnimationFrame(() => {
     paginate(); updatePageMeta(); renderOutline(); positionCommentCards();
-    if (sc && keepScroll) sc.scrollTop = keepScroll;
+    if (sc) sc.scrollTop = keepScroll;
   });
 }
 
 function makeSheet() {
   return htmlToEl(`<div class="sheet"><div class="sheet-inner"></div><div class="page-num" contenteditable="false"></div></div>`);
+}
+
+/* True when the live sheets already hold blocks in the computed page order.
+   Typing usually doesn't change breaks — skipping the rebuild avoids the
+   empty-canvas scroll jump that happens every time sheets are torn down. */
+function pagesMatchDom(pages) {
+  const sheets = $$('#canvas > .sheet');
+  if (sheets.length !== pages.length) return false;
+  for (let i = 0; i < pages.length; i++) {
+    const ids = [...sheets[i].querySelectorAll(':scope > .sheet-inner > .blockwrap')].map(w => w.dataset.bid);
+    const want = pages[i].map(b => b.id);
+    if (ids.length !== want.length) return false;
+    for (let j = 0; j < ids.length; j++) if (ids[j] !== want[j]) return false;
+  }
+  return true;
+}
+
+function refreshSheetChrome(pages) {
+  const sheets = $$('#canvas > .sheet');
+  const cfg = pageNumCfg();
+  sheets.forEach((sheet, pi) => {
+    const pn = sheet.querySelector(':scope > .page-num');
+    if (!pn) return;
+    if (!cfg.show || (cfg.skipFirst && pi === 0)) pn.textContent = '';
+    else { pn.textContent = pageNumText(cfg, pi + 1, pages.length); stylePageNumEl(pn, cfg); }
+    applySheetBg(sheet, pi);
+  });
+}
+
+/* Keep the caret (or selected block) glued to the same spot on screen across
+   a sheet rebuild. Restoring a Selection often scrolls it into view; we
+   correct after that. */
+function captureViewportAnchor(canvas) {
+  const sc = $('#canvasScroll');
+  if (!sc) return null;
+  const keepScroll = sc.scrollTop;
+  let caretTop = null;
+  const sel = document.getSelection();
+  if (sel && sel.rangeCount && canvas.contains(sel.anchorNode)) {
+    try {
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect && (rect.top || rect.height || rect.width)) caretTop = rect.top;
+    } catch (e) { /* ignore */ }
+  }
+  if (caretTop == null && App.selectedBlock) {
+    const el = blockEls.get(App.selectedBlock);
+    if (el) caretTop = el.getBoundingClientRect().top;
+  }
+  return { sc, keepScroll, caretTop };
+}
+
+function restoreViewportAnchor(anchor, saved) {
+  if (!anchor || !anchor.sc) return;
+  const { sc, keepScroll, caretTop } = anchor;
+  const apply = () => {
+    if (caretTop != null && saved && saved.an && saved.an.isConnected) {
+      try {
+        const r = document.createRange();
+        r.setStart(saved.an, saved.ao);
+        r.collapse(true);
+        const rect = r.getBoundingClientRect();
+        if (rect && (rect.top || rect.height || rect.width)) {
+          sc.scrollTop = keepScroll + (rect.top - caretTop);
+          return;
+        }
+      } catch (e) { /* fall through */ }
+    }
+    sc.scrollTop = keepScroll;
+  };
+  apply();
+  requestAnimationFrame(apply);
 }
 
 function paginate() {
@@ -529,12 +600,32 @@ function paginate() {
   blockPageMap.clear();
   pages.forEach((pg, pi) => pg.forEach(b => blockPageMap.set(b.id, pi + 1)));
 
-  // save caret (nodes survive the re-parenting below)
+  const finishPaginate = () => {
+    if (App.selectedBlock) selectBlock(App.selectedBlock);
+    updatePageMeta();
+    if (App.sidebarTab === 'pages' && typeof renderPagesPanel === 'function') renderPagesPanel();
+    if (typeof renderFloats === 'function') renderFloats();
+    // sync TOC entries; if a TOC's height changed, run one corrective pass
+    if (updateTocBlocks() && !paginate._tocPass) {
+      paginate._tocPass = true;
+      requestAnimationFrame(() => { paginate(); paginate._tocPass = false; });
+    }
+  };
+
+  // No page-break change → leave the DOM alone (prevents typing jitter)
+  if (pagesMatchDom(pages)) {
+    refreshSheetChrome(pages);
+    finishPaginate();
+    return;
+  }
+
+  // save caret + viewport before sheets are torn down
   const sel = document.getSelection();
   let saved = null;
-  if (sel.rangeCount && $('#canvas').contains(sel.anchorNode)) {
+  if (sel.rangeCount && canvas.contains(sel.anchorNode)) {
     saved = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
   }
+  const anchor = captureViewportAnchor(canvas);
 
   // rebuild sheets, moving block nodes (listeners survive)
   const frag = document.createDocumentFragment();
@@ -568,17 +659,8 @@ function paginate() {
       sel.removeAllRanges(); sel.addRange(r);
     } catch (e) {}
   }
-  if (App.selectedBlock) selectBlock(App.selectedBlock);
-  updatePageMeta();
-
-  if (App.sidebarTab === 'pages' && typeof renderPagesPanel === 'function') renderPagesPanel();
-  if (typeof renderFloats === 'function') renderFloats();
-
-  // sync TOC entries; if a TOC's height changed, run one corrective pass
-  if (updateTocBlocks() && !paginate._tocPass) {
-    paginate._tocPass = true;
-    requestAnimationFrame(() => { paginate(); paginate._tocPass = false; });
-  }
+  restoreViewportAnchor(anchor, saved);
+  finishPaginate();
 }
 
 /* Body-page background art (letterhead / frame), configured in the Pages menu. */
