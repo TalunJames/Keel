@@ -975,6 +975,7 @@ if (document.fonts && document.fonts.ready) {
    one of our own restores, and (c) leaves the caret fully off-screen is
    wrong by definition — the user was just typing at that caret. Snap back. */
 let _userScrollTs = 0;
+let _lastEditTs = 0;            // last beforeinput/composition in a canvas editable
 let _userInputHooked = false;
 let _caretGuardTop = null;      // last scroll position the user actively edited/scrolled at
 let _caretGuardBusy = false;
@@ -985,9 +986,19 @@ function bindCaretGuard(scroll) {
     _userInputHooked = true;
     ['wheel', 'touchstart', 'touchmove', 'mousedown'].forEach(ev =>
       window.addEventListener(ev, () => { _userScrollTs = Date.now(); }, { capture: true, passive: true }));
+    window.addEventListener('mousemove', (e) => {
+      if (e.buttons) _userScrollTs = Date.now();   // text drag-selection autoscroll
+    }, { capture: true, passive: true });
+    window.addEventListener('resize', () => { _userScrollTs = Date.now(); });
     window.addEventListener('keydown', (e) => {
       if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) _userScrollTs = Date.now();
     }, { capture: true });
+    // Typing timestamps: a legitimate caret-reveal scroll follows a keystroke
+    // within milliseconds. The bad native scrolls fire from layout passes
+    // ≥350ms after the last edit (the paginate debounce), so edit recency
+    // separates them cleanly.
+    ['beforeinput', 'compositionupdate'].forEach(ev =>
+      document.addEventListener(ev, () => { _lastEditTs = Date.now(); }, { capture: true, passive: true }));
     // Every caret move (typing, clicking) re-anchors the guard to the current
     // scroll — "this is where the user is working". A wrong browser scroll
     // never fires selectionchange, so the anchor survives it.
@@ -1023,12 +1034,18 @@ function bindCaretGuard(scroll) {
           rect = wrap ? wrap.getBoundingClientRect() : null;
         }
         const scR = scroll.getBoundingClientRect();
-        if (rect && (rect.bottom < scR.top || rect.top > scR.bottom)) {
+        const caretOffscreen = rect && (rect.bottom < scR.top || rect.top > scR.bottom);
+        // Field data (-470px jump, caret still half-visible) showed hiding the
+        // caret isn't a reliable symptom — the mistargeted reveal can be small.
+        // A big scroll with no edit in flight is wrong even if the caret stays
+        // in view; only a keystroke ≤250ms ago legitimizes a caret reveal.
+        const idleEdit = now - _lastEditTs > 250;
+        if (caretOffscreen || idleEdit) {
           _caretGuardBusy = true;
           noteProgScroll();
-          scroll.scrollTop = _caretGuardTop;   // put the view back on the caret
+          scroll.scrollTop = _caretGuardTop;   // put the view back where the user was
           _caretGuardBusy = false;
-          console.warn('[caret-guard] reverted spontaneous scroll', JSON.stringify({ from: Math.round(_caretGuardTop), to: Math.round(top), delta: Math.round(delta) }));
+          console.warn('[caret-guard] reverted spontaneous scroll', JSON.stringify({ from: Math.round(_caretGuardTop), to: Math.round(top), delta: Math.round(delta), caretOffscreen: !!caretOffscreen, idleEdit }));
           return;                               // don't adopt the bad position
         }
       }
