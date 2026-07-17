@@ -587,7 +587,7 @@ function renderEditor() {
       </div>
 
       <div class="canvas-scroll" id="canvasScroll">
-        <div class="canvas-pad"><div id="canvas" style="zoom:${App.zoom}"></div></div>
+        <div class="canvas-pad"><div class="canvas-scale" id="canvasScale"><div id="canvas"></div></div></div>
       </div>
 
       <div class="rail ${App.showRail ? '' : 'collapsed'}" id="rail">

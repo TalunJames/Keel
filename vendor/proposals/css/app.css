@@ -403,6 +403,10 @@ button { font-family: inherit; }
 /* ---------- canvas ---------- */
 .canvas-scroll { flex: 1; overflow: auto; min-width: 0; background: #c4c8cd; position: relative; overflow-anchor: none; }
 .canvas-pad { min-height: 100%; padding: 34px 24px 60px; display: flex; flex-direction: column; align-items: center; }
+/* Carries the visual (scaled) size of the transform-scaled #canvas so the
+   scroller's range matches what's on screen — transform doesn't affect
+   layout the way the old CSS zoom did. Sized by syncCanvasScale(). */
+.canvas-scale { flex: 0 0 auto; }
 .sheet {
   position: relative; width: var(--pw); min-height: var(--ph); background: #fff;
   box-shadow: 0 4px 24px rgba(14,34,56,.16); margin-bottom: 28px;

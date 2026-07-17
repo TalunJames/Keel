@@ -651,6 +651,7 @@ function paginate() {
   pages.forEach((pg, pi) => pg.forEach(b => blockPageMap.set(b.id, pi + 1)));
 
   const finishPaginate = () => {
+    syncCanvasScale();
     if (App.selectedBlock) selectBlock(App.selectedBlock);
     updatePageMeta();
     if (App.sidebarTab === 'pages' && typeof renderPagesPanel === 'function') renderPagesPanel();
@@ -676,6 +677,7 @@ function paginate() {
   // the caret — that was jumping the scroll several pages. Repaginate idle.
   if (isEditingCanvas()) {
     refreshSheetChrome(pages);
+    syncCanvasScale();
     updatePageMeta();
     scheduleIdlePaginate();
     return;
@@ -868,10 +870,29 @@ function openPageLimitPopover(anchor) {
   }));
 }
 
+/* Zoom is transform-based, NOT the CSS `zoom` property. CSS zoom feeds the
+   scaled geometry back into Chrome's layout/scroll machinery, and Chrome's
+   native "keep the caret in view" scrolling miscomputes its target inside a
+   zoomed scroller — the root cause of the viewport jumping/creeping while
+   typing (Safari was unaffected). transform: scale() renders identically but
+   stays out of layout, so the caret math never goes wrong. The one cost:
+   layout no longer knows the visual size, so a sizer element (#canvasScale)
+   carries the scaled dimensions to keep the scroll range correct. */
+function syncCanvasScale() {
+  const c = $('#canvas');
+  const sizer = $('#canvasScale');
+  if (!c || !sizer) return;
+  const z = App.zoom;
+  c.style.width = pageDims().w + 'px';
+  c.style.transformOrigin = '0 0';
+  c.style.transform = z === 1 ? '' : `scale(${z})`;
+  sizer.style.width = Math.round(pageDims().w * z) + 'px';
+  sizer.style.height = Math.round(c.offsetHeight * z) + 'px';
+}
+
 function setZoom(z) {
   App.zoom = Math.max(0.5, Math.min(1.4, z));
-  const c = $('#canvas');
-  if (c) c.style.zoom = App.zoom;
+  syncCanvasScale();
   const lbl = $('#zoomLabel');
   if (lbl) lbl.textContent = Math.round(App.zoom * 100) + '%';
   positionCommentCards();
