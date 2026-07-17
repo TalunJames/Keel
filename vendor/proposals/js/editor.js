@@ -162,7 +162,7 @@ function updateProofBar() {
     const target = blocks.find(b => !(so[b.id] || []).some(s => s.uid === ME.id));
     if (!target) { toast('Nothing left — every section is initialed'); return; }
     const el = blockEls.get(target.id);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); selectBlock(target.id); }
+    if (el) { noteProgScroll(); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); selectBlock(target.id); }
   });
   // refresh all chips so the "Initial XX" label matches the current identity
   blocks.forEach(b => refreshProofChip(b));
@@ -364,7 +364,7 @@ function addBlock(type, index, extra = {}, opts = {}) {
   setTimeout(() => {
     const wrap = blockEls.get(b.id);
     if (!wrap) return;
-    if (opts.scroll !== false) wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (opts.scroll !== false) { noteProgScroll(); wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     const ed = wrap.querySelector('.ed');
     if (ed && App.mode !== 'viewing') ed.focus({ preventScroll: true });
   }, 80);
@@ -954,7 +954,7 @@ function renderOutline() {
   host.innerHTML = html;
   host.querySelectorAll('.outline-item').forEach(it => it.addEventListener('click', () => {
     const el = blockEls.get(it.dataset.bid);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(it.dataset.bid); }
+    if (el) { noteProgScroll(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(it.dataset.bid); }
   }));
 }
 
@@ -1018,12 +1018,17 @@ function bindCaretGuard(scroll) {
     if (_caretGuardBusy || _caretGuardTop == null) { _caretGuardTop = top; return; }
     const delta = top - _caretGuardTop;
     const now = Date.now();
-    const spontaneous = Math.abs(delta) > 250
-      && now - _userScrollTs > 1500      // covers click-initiated smooth scrolls (outline, TOC, comments)
-      && now - _progScrollTs > 2500
-      && !App.drag
-      && isEditingCanvas();
-    if (spontaneous) {
+    // Field data: the mistargeted native scroll ranges from -1254px jumps
+    // down to a steady -57px-per-paginate creep. Anything above ~25px that
+    // isn't user input, isn't our own restore, and doesn't ride a keystroke
+    // is spurious. (Our smooth scrolls call noteProgScroll() at initiation,
+    // so their animation frames are exempt for the full 2500ms window.)
+    const exempt = Math.abs(delta) <= 25
+      || now - _userScrollTs < 800
+      || now - _progScrollTs < 2500
+      || App.drag
+      || !isEditingCanvas();
+    if (!exempt) {
       const canvas = $('#canvas');
       const sel = document.getSelection();
       if (canvas && sel && sel.rangeCount && canvas.contains(sel.anchorNode)) {
@@ -1035,10 +1040,8 @@ function bindCaretGuard(scroll) {
         }
         const scR = scroll.getBoundingClientRect();
         const caretOffscreen = rect && (rect.bottom < scR.top || rect.top > scR.bottom);
-        // Field data (-470px jump, caret still half-visible) showed hiding the
-        // caret isn't a reliable symptom — the mistargeted reveal can be small.
-        // A big scroll with no edit in flight is wrong even if the caret stays
-        // in view; only a keystroke ≤250ms ago legitimizes a caret reveal.
+        // A legitimate caret reveal directly follows a keystroke (≤250ms) and
+        // leaves the caret visible. Everything else spontaneous is wrong.
         const idleEdit = now - _lastEditTs > 250;
         if (caretOffscreen || idleEdit) {
           _caretGuardBusy = true;
@@ -1063,7 +1066,7 @@ function bindCanvasChrome() {
     const tocRow = e.target.closest('.toc-row');
     if (tocRow) {
       const target = blockEls.get(tocRow.dataset.goto);
-      if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(tocRow.dataset.goto); }
+      if (target) { noteProgScroll(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(tocRow.dataset.goto); }
       return;
     }
     const img = e.target.closest('[data-imgclick]');
