@@ -6,6 +6,13 @@
       "runtimeExecutable": "env",
       "runtimeArgs": ["PORT=3199", "npx", "vite", "--port", "5173"],
       "port": 5173
+    },
+    {
+      "name": "dash-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server/index.js"],
+      "port": 3201,
+      "autoPort": true
     }
   ]
 }

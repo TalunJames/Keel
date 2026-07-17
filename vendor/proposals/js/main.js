@@ -545,6 +545,7 @@ function renderEditor() {
       <button class="tbtn" data-fmt="outdent" title="Decrease indent (⇧Tab in a list)">${icon('outdent', 15)}</button>
       <button class="tbtn" data-fmt="indent" title="Increase indent — makes sub-bullets (Tab in a list)">${icon('indent', 15)}</button>
       <button class="tbtn" id="listOptsBtn" title="List & spacing options — bullet style, gaps, indent width">${icon('listopts', 15)}</button>
+      <button class="tbtn" id="spacingBtn" title="Line & paragraph spacing — selection presets, document defaults, consistency sweep">${icon('linespace', 15)}</button>
       <button class="tbtn" data-fmt="justifyLeft" title="Align left">${icon('alignL', 15)}</button>
       <button class="tbtn" data-fmt="justifyCenter" title="Align center">${icon('alignC', 15)}</button>
       <button class="tbtn" data-fmt="justifyRight" title="Align right">${icon('alignR', 15)}</button>
@@ -944,6 +945,8 @@ function bindToolbar() {
   });
   $('#listOptsBtn').addEventListener('mousedown', (e) => e.preventDefault());
   $('#listOptsBtn').addEventListener('click', (e) => openListOptions(e.currentTarget));
+  $('#spacingBtn').addEventListener('mousedown', (e) => e.preventDefault());
+  $('#spacingBtn').addEventListener('click', (e) => openSpacingMenu(e.currentTarget));
   $('#insertTextboxBtn').addEventListener('click', () => {
     if (App.mode === 'viewing') { toast('Switch to Editing first'); return; }
     addFloat('text');

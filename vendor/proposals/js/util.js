@@ -113,6 +113,7 @@ const ICONS = {
   indent: '<path d="M3 5h18M11 9h10M11 13h10M3 17h18"/><path d="M3 9l4 3-4 3"/>',
   outdent: '<path d="M3 5h18M11 9h10M11 13h10M3 17h18"/><path d="M7 9l-4 3 4 3"/>',
   listopts: '<path d="M9 6h12M9 12h12M9 18h6"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="18.5" r="2.6"/><path d="M19 15v1M19 21v1M22 18.5h-1M17 18.5h-1"/>',
+  linespace: '<path d="M12 6h9M12 12h9M12 18h9"/><path d="M4.5 5.5v13"/><path d="M2.2 8L4.5 5.5 6.8 8M2.2 16l2.3 2.5L6.8 16"/>',
   highlighter: '<path d="M9 11l6.5-6.5a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8L13 15z"/><path d="M9 11l-1.8 1.8a1.5 1.5 0 0 0 0 2.1l1.9 1.9a1.5 1.5 0 0 0 2.1 0L13 15"/><path d="M5 19l2.2-2.2"/>',
 };
 function icon(name, size = 16, sw = 1.9) {

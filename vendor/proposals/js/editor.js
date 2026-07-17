@@ -32,6 +32,27 @@ function stylePageNumEl(el, cfg) {
   else { el.style.left = '0'; el.style.right = '0'; el.style.textAlign = 'center'; }
 }
 
+/* ---------- document spacing config ---------- */
+/* Doc-wide typography rhythm: body line spacing (multiplier), space after a
+   paragraph, and space between list items. Rendered as CSS variables on the
+   canvas; the PDF/Word/.docx exporters read the same numbers so exports match. */
+const SPACING_DEFAULTS = { line: 1.6, pGap: 9, liGap: 9 };
+function docSpacing() {
+  if (!App.doc.spacing) App.doc.spacing = { ...SPACING_DEFAULTS };
+  return App.doc.spacing;
+}
+function applyDocSpacingVars(el) {
+  if (!el) return;
+  const s = docSpacing();
+  el.style.setProperty('--doc-line', String(s.line));
+  el.style.setProperty('--doc-pgap', s.pGap + 'px');
+  el.style.setProperty('--doc-ligap', s.liGap + 'px');
+}
+function docSpacingCSS() {
+  const s = docSpacing();
+  return `--doc-line:${s.line};--doc-pgap:${s.pGap}px;--doc-ligap:${s.liGap}px`;
+}
+
 /* ---------- content sync ---------- */
 function syncEditable(ed) {
   if (!ed || !ed.dataset || !ed.dataset.key) return;
@@ -492,6 +513,7 @@ function renderCanvas() {
   canvas.style.setProperty('--ph', dims.h + 'px');
   canvas.style.setProperty('--pm', pageMargin() + 'px');
   canvas.style.setProperty('--contentH', (dims.h - 2 * pageMargin()) + 'px');
+  applyDocSpacingVars(canvas);
 
   // first pass: everything on one working sheet, then measure & split
   const sheet = makeSheet();

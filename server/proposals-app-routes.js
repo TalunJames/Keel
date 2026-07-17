@@ -550,12 +550,14 @@ export function registerProposalsAppRoutes(app, db, auth) {
     setHeaders: (res) => res.setHeader("Cache-Control", "no-cache"),
   }));
 
-  const indexPath = path.join(VENDOR_DIR, "index-keel.html");
+  // sendFile with a root: an absolute path would run express's dotfiles
+  // check on every ancestor directory, 404ing when the checkout lives under
+  // a dotted dir (e.g. a .claude worktree). Relative-to-root skips that.
   const sendShell = (_req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.sendFile(indexPath, (err) => {
+    res.sendFile("index-keel.html", { root: VENDOR_DIR }, (err) => {
       if (err && !res.headersSent) {
-        console.error("[proposals] shell missing:", indexPath, err.message);
+        console.error("[proposals] shell missing:", path.join(VENDOR_DIR, "index-keel.html"), err.message);
         res.status(500).send("Proposals builder shell missing");
       }
     });
