@@ -347,6 +347,31 @@ export function registerRoutes(app, db) {
     res.json({ announcement: next });
   });
 
+  // ---------- Calendar: proposal-deadline overlay (any role read; admin write) ----------
+  // Workspace-wide switch for surfacing proposal-builder deadlines on calendars.
+  const CAL_DEADLINES_KEY = "calendar_proposal_deadlines";
+  app.get("/api/calendar/proposal-deadlines", auth, (_req, res) => {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(CAL_DEADLINES_KEY);
+    let enabled = true;
+    try { if (row) enabled = JSON.parse(row.value).enabled !== false; } catch { /* default on */ }
+    res.json({ enabled });
+  });
+
+  app.put("/api/calendar/proposal-deadlines", auth, (req, res) => {
+    if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    const enabled = !!req.body?.enabled;
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    ).run(CAL_DEADLINES_KEY, JSON.stringify({ enabled }));
+    db.prepare("INSERT INTO audit_log (who, what, category) VALUES (?, ?, ?)").run(
+      req.user.email,
+      `${enabled ? "Enabled" : "Disabled"} proposal deadlines on calendars`,
+      "System"
+    );
+    res.json({ enabled });
+  });
+
   // ---------- Integrations / API keys (system_admin only) ----------
   // Secrets are stored in app_settings and take effect immediately (no restart).
   // Reads only ever return a masked preview — the raw value never leaves the server.

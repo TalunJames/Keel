@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { PageHead, Icon } from "../components/ui.jsx";
-import { api, loginAnnouncementApi } from "../lib/api.js";
+import { api, loginAnnouncementApi, calendarDeadlinesApi } from "../lib/api.js";
 import { useApi } from "../lib/useApi.js";
 import { AdminUsersTab } from "./admin-users.jsx";
 import { AdminModulesTab } from "./admin-modules.jsx";
@@ -18,7 +18,14 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
   const [voterForm, setVoterForm] = useState({ clientId: "", source: "", recordCount: "" });
   const [announceForm, setAnnounceForm] = useState({ title: "", body: "", tag: "" });
   const [loginAnn, setLoginAnn] = useState({ enabled: false, title: "", body: "", tone: "info" });
+  const [calDeadlines, setCalDeadlines] = useState(null);   // null until loaded
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    calendarDeadlinesApi.get()
+      .then((r) => setCalDeadlines(r?.enabled !== false))
+      .catch(() => setCalDeadlines(true));
+  }, []);
 
   useEffect(() => {
     if (!isSystemAdmin) return;
@@ -34,6 +41,19 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
     setMsg(m);
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setMsg(null), 3000);
+  };
+
+  const toggleCalDeadlines = async (next) => {
+    setCalDeadlines(next);   // optimistic — reverted on failure
+    try {
+      const r = await calendarDeadlinesApi.set(next);
+      setCalDeadlines(r?.enabled !== false);
+      reloadAudit();
+      flash(next ? "Proposal deadlines now show on calendars" : "Proposal deadlines hidden from calendars");
+    } catch (err) {
+      setCalDeadlines(!next);
+      flash(err?.message || "Could not update the calendar setting");
+    }
   };
 
   const saveLoginAnnouncement = async (e) => {
@@ -234,7 +254,25 @@ export function AdminView({ user, modules, onChangeModules, allRoles }) {
       )}
 
       {tab === "modules" && (
-        <AdminModulesTab allRoles={allRoles} user={user} onFlash={flash} />
+        <>
+          <AdminModulesTab allRoles={allRoles} user={user} onFlash={flash} />
+          <div className="card card-pad col" style={{ gap: 10, maxWidth: 620, marginTop: 16 }}>
+            <h3 style={{ margin: 0, color: "var(--fs-navy)" }}>Calendar</h3>
+            <p className="mut" style={{ fontSize: 13, margin: 0 }}>
+              Proposals with a submission deadline in the proposal builder appear on the calendar
+              for that proposal's client users, staff, and admins.
+            </p>
+            <label className="row" style={{ gap: 8, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={calDeadlines !== false}
+                disabled={calDeadlines === null}
+                onChange={(e) => toggleCalDeadlines(e.target.checked)}
+              />
+              Show proposal deadlines on calendars
+            </label>
+          </div>
+        </>
       )}
 
       {tab === "audit" && (
