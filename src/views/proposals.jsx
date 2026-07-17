@@ -4,13 +4,14 @@ import React, { useMemo } from "react";
  * Full-screen embed of the Fog Signal proposal builder (vendored under /proposals/app).
  * Auth, team, clients, and workspace settings are wired through keel-bridge.js + proposals-app-routes.
  */
-export function ProposalsView({ clientId }) {
+export function ProposalsView({ clientId, deepLinkId }) {
   const src = useMemo(() => {
     const params = new URLSearchParams();
     if (clientId && clientId !== "all") params.set("clientId", clientId);
     const q = params.toString();
-    return `/proposals/app/${q ? `?${q}` : ""}`;
-  }, [clientId]);
+    const base = `/proposals/app/${q ? `?${q}` : ""}`;
+    return deepLinkId ? `${base}#doc/${encodeURIComponent(deepLinkId)}` : base;
+  }, [clientId, deepLinkId]);
 
   return (
     <div className="proposals-embed-wrap">

@@ -185,6 +185,33 @@ const crudApi = (base) => ({
   remove: (id) => api(`${base}/${id}`, { method: "DELETE" }),
 });
 
+/** Proposal builder API (mounted at /proposals/app/api, not /api). */
+export async function proposalsAppApi(path) {
+  const res = await fetch("/proposals/app/api" + path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error body */ }
+  if (!res.ok) {
+    throw new ApiError(data?.error || res.statusText || "Request failed", res.status, data);
+  }
+  return data;
+}
+
+export const proposalsMetaApi = {
+  list: (clientId) => proposalsAppApi(withClient("/proposals", clientId)),
+};
+
+export const calendarDeadlinesApi = {
+  get: () => api("/calendar/proposal-deadlines"),
+  set: (enabled) => api("/calendar/proposal-deadlines", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  }),
+};
+
 export const calendarApi = crudApi("/calendar/events");
 export const calendarFeedsApi = {
   list: () => api("/calendar/feeds"),

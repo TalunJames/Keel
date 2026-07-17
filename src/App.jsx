@@ -74,6 +74,11 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = usePref("sidebarCollapsed", false);
   const [section, setSection] = useSectionHistory("home");
   const [designInitialTab, setDesignInitialTab] = useState(null);
+  const [proposalDeepLink, setProposalDeepLink] = useState(null);
+
+  useEffect(() => {
+    if (section !== "proposals") setProposalDeepLink(null);
+  }, [section]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -197,6 +202,7 @@ export default function App() {
     clientId: selectedClient?.id || "all",
     client: selectedClient,
     onNavigate: setSection,
+    onOpenProposal: (id) => { setProposalDeepLink(String(id)); setSection("proposals"); },
     effectiveModules,
   };
 
@@ -291,7 +297,9 @@ export default function App() {
               onNavigate={(s) => { setDesignInitialTab(null); setSection(s); }}
             />
           ))}
-          {section === "proposals" && guardModule("proposals", user.role === "client" ? <ClientLockOut /> : <ProposalsView {...viewProps} />)}
+          {section === "proposals" && guardModule("proposals", user.role === "client" ? <ClientLockOut /> : (
+            <ProposalsView {...viewProps} deepLinkId={proposalDeepLink} />
+          ))}
           {section === "media" && guardModule("media", user.role === "client" ? <ClientLockOut /> : <MediaView {...viewProps} />)}
           {section === "election" && guardModule("election", <ElectionView {...viewProps} />)}
           {section === "voter" && guardModule("voter", user.role === "client" ? <ClientLockOut /> : <VoterView {...viewProps} />)}

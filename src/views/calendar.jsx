@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   ModuleModal, ModuleForm, initialForm, buildBody, formatDate, formatDateTime,
 } from "./ModuleList.jsx";
-import { calendarApi, calendarFeedsApi, withClient, ApiError } from "../lib/api.js";
+import { calendarApi, calendarFeedsApi, proposalsMetaApi, withClient, ApiError } from "../lib/api.js";
 import { useApi } from "../lib/useApi.js";
 import { realClients } from "../lib/clients.js";
 import { Icon } from "../components/ui.jsx";
@@ -24,6 +24,8 @@ const FIELDS = [
 
 const KEEL_SOURCE = "keel";
 const KEEL_COLOR = "#1a3a5c";
+const PROPOSALS_SOURCE = "proposals";
+const PROPOSALS_COLOR = "#E4181E";
 const FEED_COLORS = ["#2f6fb2", "#c05b2e", "#3d8a5f", "#7d5ba6", "#b3822f", "#b23a48", "#3a7ca5", "#5f6b7a"];
 const TOGGLES_KEY = "calendarSources";
 const VIEW_KEY = "calendarView";
@@ -37,6 +39,41 @@ const VIEWS = [
 ];
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const PROPOSAL_TAG_LABELS = {
+  draft: "Draft",
+  submitted: "Submitted",
+  won: "Won",
+  lost: "Lost",
+  archived: "Archived",
+};
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const raw = String(dateStr);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const due = m ? new Date(+m[1], +m[2] - 1, +m[3], 17, 0, 0) : new Date(raw);
+  if (Number.isNaN(due.getTime())) return null;
+  return Math.ceil((due - today) / 86400000);
+}
+
+function proposalToEvent(m) {
+  if (!m?.deadline) return null;
+  const date = String(m.deadline).match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (!date) return null;
+  return {
+    id: `prop:${m.id}`,
+    title: m.title || "Untitled proposal",
+    startsAt: date,
+    allDay: true,
+    kind: "deadline",
+    _proposal: true,
+    _proposalId: m.id,
+    _proposalMeta: m,
+  };
+}
 
 function loadToggles() {
   try { return JSON.parse(localStorage.getItem(TOGGLES_KEY) || "{}"); } catch { return {}; }
@@ -141,6 +178,7 @@ function isAllDayEvent(e, start, end) {
 }
 
 function eventColor(e, feedById) {
+  if (e._proposal) return PROPOSALS_COLOR;
   if (e._external) return feedById[e.feedId]?.color || FEED_COLORS[0];
   return KEEL_COLOR;
 }
@@ -536,9 +574,10 @@ function TimeGrid({ days, events, feedById, onSelectEvent, onCreateAt, canWrite 
   );
 }
 
-export function CalendarView({ clientId, role }) {
+export function CalendarView({ clientId, role, onOpenProposal }) {
   const canWrite = role !== "client";
   const canManage = role !== "client";
+  const canOpenProposals = role !== "client";
   const path = withClient("/calendar/events", clientId);
   const eventsRes = useApi(path, [clientId]);
   const clientsRes = useApi("/clients", []);
@@ -550,6 +589,10 @@ export function CalendarView({ clientId, role }) {
   const [view, setView] = useState(loadView);
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [external, setExternal] = useState({ events: [], errors: [], loaded: false });
+  const [proposals, setProposals] = useState({ list: [], loaded: false, error: null });
+  // Workspace-wide admin switch; personal SourceChip toggle layers on top.
+  const deadlinePrefRes = useApi("/calendar/proposal-deadlines", []);
+  const deadlinesEnabled = deadlinePrefRes.data ? deadlinePrefRes.data.enabled !== false : true;
   const [toggles, setToggles] = useState(loadToggles);
   const [feedModal, setFeedModal] = useState(null);
   const [savingFeed, setSavingFeed] = useState(false);
@@ -579,6 +622,22 @@ export function CalendarView({ clientId, role }) {
     return () => { alive = false; };
   }, [feedsKey, feedsRes.data]);
 
+  useEffect(() => {
+    if (!deadlinesEnabled) {
+      setProposals({ list: [], loaded: true, error: null });
+      return undefined;
+    }
+    let alive = true;
+    proposalsMetaApi.list(clientId)
+      .then((list) => alive && setProposals({ list: list || [], loaded: true, error: null }))
+      .catch((err) => alive && setProposals({
+        list: [],
+        loaded: true,
+        error: err instanceof ApiError ? err : new ApiError("Could not load proposal deadlines"),
+      }));
+    return () => { alive = false; };
+  }, [clientId, deadlinesEnabled]);
+
   const isOn = (key) => toggles[key] !== false;
   const flip = (key) => setToggles((t) => ({ ...t, [key]: !(t[key] !== false) }));
   const feedById = useMemo(() => Object.fromEntries(feeds.map((f) => [f.id, f])), [feedsKey]);
@@ -588,8 +647,11 @@ export function CalendarView({ clientId, role }) {
     const ext = external.events
       .filter((e) => feedById[e.feedId] && isOn("feed:" + e.feedId))
       .map((e) => ({ ...e, _external: true }));
-    return [...own, ...ext];
-  }, [eventsRes.data, external.events, toggles, feedById]);
+    const prop = deadlinesEnabled && isOn(PROPOSALS_SOURCE)
+      ? proposals.list.map(proposalToEvent).filter(Boolean)
+      : [];
+    return [...own, ...ext, ...prop];
+  }, [eventsRes.data, external.events, proposals.list, toggles, feedById, deadlinesEnabled]);
 
   const shift = (dir) => {
     if (view === "month") setAnchor((a) => addMonths(a, dir));
@@ -619,6 +681,11 @@ export function CalendarView({ clientId, role }) {
   }, [canWrite, clientId]);
 
   const openEdit = (item) => {
+    if (item._proposal) {
+      setEventError("");
+      setEventModal({ mode: "proposal", item });
+      return;
+    }
     if (item._external) {
       setEventError("");
       setEventModal({ mode: "view", item });
@@ -770,6 +837,14 @@ export function CalendarView({ clientId, role }) {
             on={isOn(KEEL_SOURCE)}
             onToggle={() => flip(KEEL_SOURCE)}
           />
+          {deadlinesEnabled && (
+            <SourceChip
+              color={PROPOSALS_COLOR}
+              label="Proposal deadlines"
+              on={isOn(PROPOSALS_SOURCE)}
+              onToggle={() => flip(PROPOSALS_SOURCE)}
+            />
+          )}
           {feeds.map((f) => (
             <SourceChip
               key={f.id}
@@ -803,6 +878,11 @@ export function CalendarView({ clientId, role }) {
               <Icon name="alert" size={12} /> {err.name ? `${err.name}: ` : ""}{err.message}
             </span>
           ))}
+          {proposals.error && (
+            <span className="cal-key-warn">
+              <Icon name="alert" size={12} /> {proposals.error.message}
+            </span>
+          )}
           {eventsRes.error && (
             <span className="cal-key-warn">
               <Icon name="alert" size={12} /> {eventsRes.error.message}
@@ -835,6 +915,65 @@ export function CalendarView({ clientId, role }) {
         </div>
       </div>
 
+      {eventModal && eventModal.mode === "proposal" && (() => {
+        const m = eventModal.item._proposalMeta || {};
+        const days = daysUntil(eventModal.item.startsAt);
+        const statusLabel = PROPOSAL_TAG_LABELS[m.tag] || m.tag || "Draft";
+        const countdown = days == null
+          ? null
+          : days >= 0
+            ? `${days} day${days === 1 ? "" : "s"} to submit`
+            : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past deadline`;
+        return (
+          <ModuleModal title={eventModal.item.title || "Proposal deadline"} onClose={closeEventModal}>
+            <div className="col" style={{ gap: 10, fontSize: 13 }}>
+              <div>
+                <div className="mut" style={{ fontSize: 11, marginBottom: 2 }}>Deadline</div>
+                {formatDate(eventModal.item.startsAt)}
+                {countdown && (
+                  <span style={{ marginLeft: 8, color: days < 7 ? "var(--fs-danger)" : "var(--fs-fg-muted)" }}>
+                    · {countdown}
+                  </span>
+                )}
+              </div>
+              {m.agency && (
+                <div>
+                  <div className="mut" style={{ fontSize: 11, marginBottom: 2 }}>Agency</div>
+                  {m.agency}{m.rfpNumber ? ` · ${m.rfpNumber}` : ""}
+                </div>
+              )}
+              <div>
+                <div className="mut" style={{ fontSize: 11, marginBottom: 2 }}>Status</div>
+                {statusLabel}
+              </div>
+              <div>
+                <div className="mut" style={{ fontSize: 11, marginBottom: 2 }}>Calendar</div>
+                Proposal deadlines
+              </div>
+              <p className="mut" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                {canOpenProposals
+                  ? "This deadline comes from the proposal builder. Open the proposal there to edit it."
+                  : "This deadline comes from your proposal submission schedule."}
+              </p>
+              {canOpenProposals && onOpenProposal && (
+                <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    onClick={() => {
+                      closeEventModal();
+                      onOpenProposal(eventModal.item._proposalId);
+                    }}
+                  >
+                    Open in Proposals
+                  </button>
+                </div>
+              )}
+            </div>
+          </ModuleModal>
+        );
+      })()}
+
       {eventModal && eventModal.mode === "view" && (
         <ModuleModal title={eventModal.item.title || "Event"} onClose={closeEventModal}>
           <div className="col" style={{ gap: 10, fontSize: 13 }}>
@@ -862,7 +1001,7 @@ export function CalendarView({ clientId, role }) {
         </ModuleModal>
       )}
 
-      {eventModal && eventModal.mode !== "view" && eventModal.mode !== "delete" && (
+      {eventModal && eventModal.mode !== "view" && eventModal.mode !== "delete" && eventModal.mode !== "proposal" && (
         <ModuleModal
           title={(eventModal.mode === "edit" ? "Edit " : "Add ") + "event"}
           onClose={closeEventModal}
