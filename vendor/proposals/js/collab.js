@@ -645,7 +645,7 @@ function scrollToAnchor(blockId, cid) {
   if (!el) el = $(`#canvas .blockwrap[data-bid="${blockId}"]`);
   if (!el || !sc) return;
   const d = el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
-  if (d < 80 || d > sc.clientHeight - 160) sc.scrollBy({ top: d - 140, behavior: 'smooth' });
+  if (d < 80 || d > sc.clientHeight - 160) { if (typeof noteProgScroll === 'function') noteProgScroll(); sc.scrollBy({ top: d - 140, behavior: 'smooth' }); }
   el.classList.add('flash');
   setTimeout(() => el.classList.remove('flash'), 1200);
 }

@@ -79,7 +79,7 @@ async function importPDF(file, insertIdx) {
     renderCanvas();
     prog.done();
     toast(`Inserted ${pdf.numPages} page${pdf.numPages > 1 ? 's' : ''} from ${file.name}`);
-    setTimeout(() => blockEls.get(blocks[0].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    setTimeout(() => { if (typeof noteProgScroll === 'function') noteProgScroll(); blockEls.get(blocks[0].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150);
   } catch (e) {
     prog.done();
     toast(e.message.includes('load') ? 'PDF import needs internet access the first time (loads pdf.js)' : 'Could not read that PDF');
@@ -248,7 +248,7 @@ async function importDOCX(file, insertIdx) {
     renderCanvas();
     prog.done();
     toast(`Inserted ${file.name} as ${blocks.length} editable section${blocks.length > 1 ? 's' : ''}`);
-    setTimeout(() => blockEls.get(blocks[0].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    setTimeout(() => { if (typeof noteProgScroll === 'function') noteProgScroll(); blockEls.get(blocks[0].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150);
   } catch (e) {
     prog.done();
     toast('Could not read that Word file — try saving it as .docx (or PDF for exact pages)');
