@@ -50,18 +50,9 @@ const Store = {
     const list = this.index();
     list.unshift(this.metaOf(doc));
     this.writeIndex(list);
-    if (typeof Sync !== 'undefined' && Sync.remote) {
-      Sync.createRemote(doc).then((res) => {
-        if (res?.id && res.id !== doc.id) {
-          const newId = res.id;
-          const oldId = doc.id;
-          doc.id = newId;
-          this.writeDoc(doc);
-          const ix = this.index().map((m) => (m.id === oldId ? this.metaOf(doc) : m));
-          this.writeIndex(ix);
-        }
-      });
-    } else if (typeof Sync !== 'undefined') Sync.createRemote(doc);
+    // The tempId→realId swap (localStorage, index, App.doc, hash, live room)
+    // lives entirely inside createRemote — do not duplicate it here.
+    if (typeof Sync !== 'undefined') Sync.createRemote(doc);
     return doc;
   },
 

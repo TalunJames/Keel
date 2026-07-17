@@ -475,9 +475,11 @@ async function openEditor(id) {
   // in the stored content as <ins/del data-sid> — checkable before render.)
   App.showRail = doc.comments.some(c => !c.resolved)
     || Object.values(doc.content || {}).some(h => typeof h === 'string' && h.includes('data-sid'));
-  location.hash = 'doc/' + id;
+  // doc.id, not the id argument — an open that raced the create POST may have
+  // been called with the temp id and resolved to the server's real id.
+  location.hash = 'doc/' + doc.id;
   History.init(doc);
-  Sync.connect(id);   // join the live room before rendering — a render error must not cost us presence/sync
+  Sync.connect(doc.id);   // join the live room before rendering — a render error must not cost us presence/sync
   renderEditor();
 }
 

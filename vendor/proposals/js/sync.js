@@ -26,6 +26,7 @@ const Sync = {
   es: null,
   dirty: false,          // local changes not yet pushed — incoming updates wait
   _pendingApply: false,
+  idAlias: {},           // tempId → server id, for opens that race the create POST
 
   async init() {
     try {
@@ -77,7 +78,12 @@ const Sync = {
         }
       } catch (e) { /* fall back to local copy */ }
     }
-    return Store.read(id);
+    const local = Store.read(id);
+    if (local) return local;
+    // A create's tempId→realId swap can land while this open is in flight,
+    // deleting the temp copy we were about to read. Follow the alias.
+    const real = this.idAlias[id];
+    return real ? this.openDoc(real) : null;
   },
 
   createRemote(doc) {
@@ -94,10 +100,28 @@ const Sync = {
       if (data.id && data.id !== doc.id) {
         const oldId = doc.id;
         doc.id = data.id;
+        Sync.idAlias[oldId] = data.id;
         localStorage.removeItem(LS_DOC(oldId));
-        Store.writeDoc(doc);
-        const list = Store.index().map((m) => (m.id === oldId ? Store.metaOf(doc) : m));
+        // The editor usually opens this doc before the POST returns, and
+        // openDoc re-reads from localStorage — so App.doc can be a DIFFERENT
+        // object still carrying the temp id. Left alone, every save re-creates
+        // the temp doc (duplicate card) and every PUT 404s. The editor copy
+        // holds the newest keystrokes, so it wins the write.
+        const live = (typeof App !== 'undefined' && App.doc && App.doc.id === oldId) ? App.doc : null;
+        if (live) live.id = data.id;
+        const winner = live || doc;
+        Store.writeDoc(winner);
+        const list = Store.index().map((m) => (m.id === oldId ? Store.metaOf(winner) : m));
         Store.writeIndex(list);
+        if (live) {
+          if (typeof History !== 'undefined' && History.docId === oldId) History.docId = data.id;
+          // replaceState, not location.hash — the hashchange listener would
+          // see App.doc.id !== hash id and re-run openEditor mid-typing.
+          if (location.hash === '#doc/' + oldId) {
+            history.replaceState(null, '', location.pathname + location.search + '#doc/' + data.id);
+          }
+          if (App.view === 'editor') Sync.connect(data.id);  // rejoin the live room under the real id
+        }
       }
       return data;
     }).catch(() => null);
@@ -133,9 +157,10 @@ const Sync = {
     const d = App.doc;
     if (!Sync.remote || !d) return;
     try {
-      await fetch('api/proposals/' + encodeURIComponent(d.id) + '?client=' + Sync.cid, {
+      const r = await fetch('api/proposals/' + encodeURIComponent(d.id) + '?client=' + Sync.cid, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d),
       });
+      if (!r.ok) return;  // e.g. 404 while the create's id swap is in flight — stay dirty so the next save retries
       Sync.dirty = false;
       if (Sync._pendingApply) Sync.scheduleApply();
     } catch (e) { /* keep dirty; next save retries */ }
@@ -237,7 +262,7 @@ const Sync = {
     if (sent) { this.dirty = false; return; }
     fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-    }).then(() => { Sync.dirty = false; }).catch(() => {});
+    }).then((r) => { if (r.ok) Sync.dirty = false; }).catch(() => {});
   },
 
   pushAssets: debounce(function () {
