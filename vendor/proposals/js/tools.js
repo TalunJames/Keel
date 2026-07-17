@@ -306,6 +306,128 @@ function openListOptions(anchor) {
   }));
 }
 
+/* ---------- line & paragraph spacing ---------- */
+const SPACING_PARA_TAGS = 'p,li,h1,h2,h3,h4,blockquote';
+
+/* The paragraph-level elements the current selection touches, plus their
+   host editable — captured at menu-open so popover clicks can't lose them. */
+function spacingSelectionTargets() {
+  const sel = document.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const ed = closestTag(sel.anchorNode, '.ed,.ed-float');
+  if (!ed) return null;
+  const range = sel.getRangeAt(0);
+  let paras = [...ed.querySelectorAll(SPACING_PARA_TAGS)].filter(el => range.intersectsNode(el));
+  if (!paras.length) {
+    const host = closestTag(sel.anchorNode, SPACING_PARA_TAGS);
+    if (host && ed.contains(host)) paras = [host];
+  }
+  return paras.length ? { ed, paras } : null;
+}
+
+function openSpacingMenu(anchor) {
+  if (App.mode === 'viewing') { toast('Switch to Editing to change spacing'); return; }
+  const target = spacingSelectionTargets();
+  const s = docSpacing();
+  const curLh = target ? (parseFloat(target.paras[0].style.lineHeight) || null) : null;
+  const PRESETS = [['1', 'Single'], ['1.15', '1.15'], ['1.5', '1.5'], ['2', 'Double']];
+  const card = popover(anchor, `
+    <div class="menu-kicker">Line spacing — selected text</div>
+    <div class="pn-body" style="padding-bottom:2px">
+      ${target ? `
+        <div class="seg">
+          ${PRESETS.map(([v, l]) => `<button class="seg-btn ${curLh === parseFloat(v) ? 'on' : ''}" data-sp-line="${v}">${l}</button>`).join('')}
+        </div>
+        <button class="btn tiny" style="margin-top:8px" data-sp-clear>Use document spacing</button>
+      ` : `<p class="set-hint" style="margin:0">Click into a paragraph or select text first to set its line spacing.</p>`}
+    </div>
+    <div class="menu-sep"></div>
+    <div class="menu-kicker">Document spacing — every page</div>
+    <div class="pn-body">
+      <div class="lo-grid">
+        <label>Line spacing <b data-spval="line">${s.line.toFixed(2)}</b>
+          <input type="range" min="1" max="2.2" step="0.05" value="${s.line}" data-sp="line"></label>
+        <label>Space between paragraphs <b data-spval="pGap">${Math.round(s.pGap)}px</b>
+          <input type="range" min="0" max="24" step="1" value="${Math.round(s.pGap)}" data-sp="pGap"></label>
+        <label>Space between bullets <b data-spval="liGap">${Math.round(s.liGap)}px</b>
+          <input type="range" min="0" max="24" step="1" value="${Math.round(s.liGap)}" data-sp="liGap"></label>
+      </div>
+      <button class="btn tiny" style="margin-top:10px;width:100%;justify-content:center" data-sp-normalize>${icon('check', 13)} Make spacing consistent everywhere</button>
+      <p class="set-hint">Clears one-off line-spacing and gap tweaks from every section so the whole proposal follows the settings above. PDF and Word exports use the same numbers.</p>
+    </div>`, { width: 274 });
+
+  if (target) {
+    card.querySelectorAll('[data-sp-line]').forEach(b => b.addEventListener('click', () => {
+      target.paras.forEach(p => { p.style.lineHeight = b.dataset.spLine; });
+      card.querySelectorAll('[data-sp-line]').forEach(x => x.classList.toggle('on', x === b));
+      syncEditable(target.ed); saveDoc({ history: 'seal' }); scheduleAfterEdit();
+    }));
+    card.querySelector('[data-sp-clear]').addEventListener('click', () => {
+      target.paras.forEach(p => {
+        p.style.removeProperty('line-height');
+        if (!p.getAttribute('style')) p.removeAttribute('style');
+      });
+      card.querySelectorAll('[data-sp-line]').forEach(x => x.classList.remove('on'));
+      syncEditable(target.ed); saveDoc({ history: 'seal' }); scheduleAfterEdit();
+      toast('Selection follows the document spacing again');
+    });
+  }
+  card.querySelectorAll('[data-sp]').forEach(inp => inp.addEventListener('input', () => {
+    const k = inp.dataset.sp, v = parseFloat(inp.value);
+    docSpacing()[k] = v;
+    card.querySelector(`[data-spval="${k}"]`).textContent = k === 'line' ? v.toFixed(2) : Math.round(v) + 'px';
+    applyDocSpacingVars($('#canvas'));
+    saveDoc(); scheduleAfterEdit();
+  }));
+  card.querySelector('[data-sp-normalize]').addEventListener('click', () => {
+    closePopovers();
+    normalizeDocSpacing();
+  });
+}
+
+/* Remove line-height and vertical-margin overrides from every element in an
+   HTML fragment; returns how many properties were stripped. */
+function stripSpacingStyles(root) {
+  let n = 0;
+  root.querySelectorAll('[style]').forEach(el => {
+    ['line-height', 'margin-top', 'margin-bottom'].forEach(p => {
+      if (el.style.getPropertyValue(p)) { el.style.removeProperty(p); n++; }
+    });
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  return n;
+}
+
+/* One sweep over the whole proposal: drop per-element spacing overrides
+   (pasted text, older docs, per-list tweaks) so everything inherits the
+   document-wide spacing settings. */
+function normalizeDocSpacing() {
+  // A focused editable re-syncs its (now stale) DOM back into content on the
+  // blur that fires while renderCanvas tears the sheets down, silently undoing
+  // the sweep — blur it up front so its state is flushed before we start.
+  const ae = document.activeElement;
+  if (ae && ae.closest && ae.closest('#canvas .ed, #canvas .ed-float')) ae.blur();
+  const tpl = document.createElement('template');
+  let touched = 0;
+  Object.keys(App.doc.content).forEach(k => {
+    const html = App.doc.content[k];
+    if (typeof html !== 'string' || html.indexOf('style') < 0) return;
+    tpl.innerHTML = html;
+    const n = stripSpacingStyles(tpl.content);
+    if (n) { touched += n; App.doc.content[k] = tpl.innerHTML; }
+  });
+  (App.doc.floats || []).forEach(f => {
+    if (f.type !== 'text' || typeof f.html !== 'string' || f.html.indexOf('style') < 0) return;
+    tpl.innerHTML = f.html;
+    const n = stripSpacingStyles(tpl.content);
+    if (n) { touched += n; f.html = tpl.innerHTML; }
+  });
+  if (!touched) { toast('Spacing is already consistent — no overrides found'); return; }
+  saveDoc({ history: 'seal' });
+  renderCanvas();
+  toast(`Cleared ${touched} spacing override${touched > 1 ? 's' : ''} — the whole proposal now uses the document spacing`);
+}
+
 /* ---------- version diff (Google-Docs-style "view changes") ---------- */
 function htmlToText(html) {
   const t = document.createElement('div');

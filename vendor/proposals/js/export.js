@@ -85,9 +85,15 @@ async function embedImages(root) {
 }
 
 /* ---------- Word: inline every style ---------- */
-const WORD_RULES = [
-  ['p',  `font-family:${W_SANS};font-size:12pt;line-height:1.5;margin:0 0 8pt;color:#0F0F0F`],
-  ['li', `font-family:${W_SANS};font-size:12pt;line-height:1.5;margin:0 0 4pt;color:#0F0F0F`],
+/* p/li rules track the document's spacing settings (px → pt at 0.75), so the
+   Word copy carries the same rhythm as the canvas. Built per export — the
+   settings live on App.doc. */
+const wordRules = () => {
+  const sp = docSpacing();
+  const pt = (px) => Math.round(px * 0.75 * 10) / 10;
+  return [
+  ['p',  `font-family:${W_SANS};font-size:12pt;line-height:${sp.line};margin:0 0 ${pt(sp.pGap)}pt;color:#0F0F0F`],
+  ['li', `font-family:${W_SANS};font-size:12pt;line-height:${sp.line};margin:0 0 ${pt(sp.liGap)}pt;color:#0F0F0F`],
   ['ul', 'margin:0 0 8pt 22pt'], ['ol', 'margin:0 0 8pt 22pt'],
   ['a',  'color:#1A3A5C'],
   ['h1', `font-family:${W_SERIF};font-size:22pt;line-height:1.25;color:#1A3A5C;font-weight:bold;margin:0 0 12pt`],
@@ -115,11 +121,12 @@ const WORD_RULES = [
   ['.divider-eyebrow', `font-family:${W_SANS};font-size:9pt;letter-spacing:3pt;text-transform:uppercase;color:#B8932A;font-weight:bold;margin:170pt 0 10pt`],
   ['.divider-title', 'font-size:28pt;margin:0'],
   ['.toc-label', ''],
-];
+  ];
+};
 
 function applyWordInlineStyles(root) {
   // accumulate matching rules in order; existing inline styles win last
-  WORD_RULES.forEach(([sel, css]) => {
+  wordRules().forEach(([sel, css]) => {
     if (!css) return;
     root.querySelectorAll(sel).forEach(el => {
       el.dataset.xcss = (el.dataset.xcss || '') + css + ';';
@@ -374,7 +381,7 @@ html, body { margin:0; padding:0; background:#fff; overflow:visible; height:auto
 .toc-row:hover { background:transparent; }
 .float-obj { border-color:transparent !important; }
 </style></head>
-<body><div id="canvas" style="--pw:${dims.w}px;--ph:${dims.h}px;--pm:${pageMargin()}px;--contentH:${dims.h - 2 * pageMargin()}px">${pagesHTML}</div></body></html>`);
+<body><div id="canvas" style="--pw:${dims.w}px;--ph:${dims.h}px;--pm:${pageMargin()}px;--contentH:${dims.h - 2 * pageMargin()}px;${docSpacingCSS()}">${pagesHTML}</div></body></html>`);
   d.close();
 
   toast('Preparing PDF — choose “Save as PDF” in the print dialog');

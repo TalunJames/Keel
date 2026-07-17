@@ -272,13 +272,31 @@ const DocxExport = (() => {
 
   /* ---------- block walker ---------- */
   const BODY_FMT = { sz: 24, color: INK };
-  const P_SPACING = { after: 160, line: 360 };
+  /* Paragraph/list spacing from the document's spacing settings, resolved at
+     export time (px → twips ×15; line multiplier → 240ths of a line). */
+  function pSpacing() {
+    const s = docSpacing();
+    return { after: Math.round(s.pGap * TW_PER_PX), line: Math.round(s.line * 240) };
+  }
+  function liSpacing() {
+    const s = docSpacing();
+    return { after: Math.round(s.liGap * TW_PER_PX), line: Math.round(s.line * 240) };
+  }
+  /* Per-element overrides set by the spacing/list menus (unitless line-height,
+     px margin-bottom) win over the document defaults. */
+  function applySpacingOverrides(el, sp) {
+    const lh = el.style.lineHeight;
+    if (lh && !/[a-z%]/i.test(lh) && parseFloat(lh)) sp.line = Math.round(parseFloat(lh) * 240);
+    const mb = parseFloat(el.style.marginBottom);
+    if (!isNaN(mb)) sp.after = Math.round(mb * TW_PER_PX);
+    return sp;
+  }
 
   function walkChildren(el, st, out, ctx) {
     for (const node of el.childNodes) {
       if (node.nodeType === 3) {
         const t = normText(node.textContent);
-        if (t.trim()) out.push(para({ jc: st.jc, spacing: P_SPACING, pageBreakBefore: ctx.takeBreak() }, textRun(t, st.fmt)));
+        if (t.trim()) out.push(para({ jc: st.jc, spacing: pSpacing(), pageBreakBefore: ctx.takeBreak() }, textRun(t, st.fmt)));
         continue;
       }
       if (node.nodeType !== 1) continue;
@@ -350,7 +368,7 @@ const DocxExport = (() => {
         return;
       case 'p': case 'small': {
         const fmt = Object.assign({}, st.fmt);
-        const popts = { jc: st.jc, spacing: Object.assign({}, P_SPACING), pageBreakBefore: ctx.takeBreak() };
+        const popts = { jc: st.jc, spacing: applySpacingOverrides(node, pSpacing()), pageBreakBefore: ctx.takeBreak() };
         if (tag === 'small' || cls.contains('placeholder-note')) { fmt.sz = 17; fmt.color = GRAY; }
         if (cls.contains('case-sub')) { fmt.color = MUTED; popts.spacing.after = 80; }
         if (cls.contains('muted')) fmt.color = GRAY;
@@ -416,7 +434,7 @@ const DocxExport = (() => {
       const fmt = Object.assign({}, st.fmt);
       out.push(para({
         numPr: { ilvl: Math.min(depth, 2), numId },
-        spacing: { after: 80, line: 360 }, contextual: true,
+        spacing: applySpacingOverrides(li, liSpacing()), contextual: true,
         jc: st.jc, pageBreakBefore: ctx.takeBreak(),
       }, inlineRuns(holder, fmt, ctx), fmt));
       for (const sub of li.children) {
