@@ -129,7 +129,7 @@ const scheduleIdlePaginate = debounce(() => {
 function buildBlockEl(b) {
   const wrap = htmlToEl(`<div class="blockwrap" data-bid="${b.id}" data-type="${b.type}">
     <div class="btool bt-left" contenteditable="false">
-      <button class="bt-handle" draggable="true" title="Drag to move">${icon('drag', 15)}</button>
+      <div class="bt-handle" draggable="true" role="button" tabindex="0" title="Drag to move">${icon('drag', 15)}</div>
     </div>
     <div class="btool bt-right" contenteditable="false">
       <span class="bt-label">${esc(catalogItem(b.type).label)}</span>
@@ -137,6 +137,8 @@ function buildBlockEl(b) {
       ${blockHasSettings(b.type) ? `<button class="bt-btn" data-bact="settings" title="Block settings">${icon('gear', 14)}</button>` : ''}
       <button class="bt-btn" data-bact="assign" title="Assign this section">${icon('users', 14)}</button>
       <button class="bt-btn" data-bact="comment" title="Comment on block">${icon('comment', 14)}</button>
+      <button class="bt-btn" data-bact="up" title="Move up">${icon('back', 14)}</button>
+      <button class="bt-btn" data-bact="down" title="Move down">${icon('back', 14)}</button>
       <button class="bt-btn" data-bact="dup" title="Duplicate">${icon('copy', 14)}</button>
       <button class="bt-btn danger" data-bact="del" title="Delete block">${icon('trash', 14)}</button>
     </div>
@@ -313,10 +315,15 @@ function bindBlockEvents(wrap, b) {
     document.body.classList.add('dragging');
     wrap.classList.add('drag-src');
   });
-  handle.addEventListener('dragend', () => endDrag());
+  // drop fires before dragend per the HTML5 DnD spec, but some browsers
+  // (and transform-scaled canvases) can reorder them — defer the clear so
+  // onCanvasDrop can still read App.drag.
+  handle.addEventListener('dragend', () => { setTimeout(endDrag, 0); });
 
   wrap.querySelector('[data-bact="del"]')?.addEventListener('click', () => removeBlock(b.id));
   wrap.querySelector('[data-bact="dup"]')?.addEventListener('click', () => duplicateBlock(b.id));
+  wrap.querySelector('[data-bact="up"]')?.addEventListener('click', () => nudgeBlock(b.id, -1));
+  wrap.querySelector('[data-bact="down"]')?.addEventListener('click', () => nudgeBlock(b.id, 1));
   wrap.querySelector('[data-bact="comment"]')?.addEventListener('click', () => { selectBlock(b.id); startComment(); });
   wrap.querySelector('[data-bact="assign"]')?.addEventListener('click', (e) => openAssignMenu(b, e.currentTarget));
   wrap.querySelector('[data-bact="settings"]')?.addEventListener('click', (e) => openBlockSettings(b, e.currentTarget));
@@ -429,6 +436,52 @@ function moveBlock(from, to) {
   selectBlock(m.id);
 }
 
+/* True when a block opens a major section (divider title pages, covers,
+   imported PDF pages). Claude drafts lean on dividers to structure the
+   response — dragging one of these in the outline moves the whole section. */
+function isSectionLead(b) {
+  return !!(b && (b.type === 'divider' || b.type === 'cover' || b.type === 'blankpage'
+    || b.type === 'pdfpage' || b.type === 'pagebreak'
+    || (b.type === 'toc' && b.pageBreak !== false)));
+}
+
+/* Inclusive-start / exclusive-end span for a block. Dividers (and other
+   section leads) own everything until the next section lead. */
+function blockMoveSpan(bid) {
+  const blocks = App.doc.blocks;
+  const from = blocks.findIndex(x => x.id === bid);
+  if (from < 0) return null;
+  if (!isSectionLead(blocks[from])) return { from, to: from + 1 };
+  let to = from + 1;
+  while (to < blocks.length && !isSectionLead(blocks[to])) to++;
+  return { from, to };
+}
+
+/* Move a contiguous range of blocks so the range starts at `to` in the
+   pre-removal index space (same convention as moveBlock). */
+function moveBlockRange(from, end, to) {
+  const blocks = App.doc.blocks;
+  if (from < 0 || end <= from || end > blocks.length) return null;
+  if (to < 0) to = 0;
+  if (to > blocks.length) to = blocks.length;
+  if (to >= from && to <= end) return null; // no-op: dropped inside itself
+  const chunk = blocks.splice(from, end - from);
+  if (to > from) to -= chunk.length;
+  blocks.splice(to, 0, ...chunk);
+  saveDoc();
+  renderCanvas();
+  selectBlock(chunk[0].id);
+  return chunk[0];
+}
+
+function nudgeBlock(bid, dir) {
+  if (App.mode === 'viewing') { toast('Switch to Editing to rearrange'); return; }
+  const i = App.doc.blocks.findIndex(x => x.id === bid);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= App.doc.blocks.length) return;
+  moveBlock(i, dir < 0 ? j : j + 1);
+}
+
 /* ---------- drag & drop ---------- */
 function endDrag() {
   App.drag = null;
@@ -457,7 +510,7 @@ function dropIndexAt(clientY) {
 }
 
 function onCanvasDragOver(e) {
-  if (!App.drag) return;
+  if (!App.drag || (App.drag.kind !== 'move' && App.drag.kind !== 'lib')) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = App.drag.kind === 'move' ? 'move' : 'copy';
   const idx = dropIndexAt(e.clientY);
@@ -477,14 +530,23 @@ function onCanvasDragOver(e) {
 }
 
 function onCanvasDrop(e) {
-  if (!App.drag) return;
+  if (!App.drag || (App.drag.kind !== 'move' && App.drag.kind !== 'lib')) return;
   e.preventDefault();
   const idx = (App.dragOverIdx != null) ? App.dragOverIdx : dropIndexAt(e.clientY);
   if (App.drag.kind === 'lib') {
     addBlock(App.drag.type, idx, {}, { scroll: false });
   } else if (App.drag.kind === 'move') {
-    const from = App.doc.blocks.findIndex(x => x.id === App.drag.bid);
-    if (from >= 0 && idx !== from && idx !== from + 1) moveBlock(from, idx);
+    const span = blockMoveSpan(App.drag.bid);
+    if (span) {
+      // Single blocks keep the old adjacent-no-op rule; section leads move
+      // the whole section (divider + body) so Claude drafts reshuffle cleanly.
+      if (span.to === span.from + 1) {
+        const from = span.from;
+        if (from >= 0 && idx !== from && idx !== from + 1) moveBlock(from, idx);
+      } else {
+        moveBlockRange(span.from, span.to, idx);
+      }
+    }
   }
   endDrag();
 }
@@ -979,26 +1041,139 @@ function applyParagraphStyle(styleKey) {
 }
 
 /* ---------- outline (left rail tab) ---------- */
+function outlineLabelFor(b) {
+  const wrap = blockEls.get(b.id);
+  let label = catalogItem(b.type).label;
+  if (b.type === 'divider' && b.label) label = b.label;
+  if (wrap) {
+    const h = wrap.querySelector('h1,h2,h3');
+    if (h && h.textContent.trim()) label = h.textContent.trim();
+  }
+  return label;
+}
+
 function renderOutline() {
   const host = $('#outlineBody');
   if (!host || App.sidebarTab !== 'outline') return;
-  let html = '<div class="outline-list">';
+  const n = App.doc.blocks.length;
+  let html = `<div class="lib-hint" style="margin-top:0">Drag to rearrange sections. Dividers move with everything under them until the next section.</div>
+  <div class="outline-list">`;
   App.doc.blocks.forEach((b, i) => {
-    const wrap = blockEls.get(b.id);
-    let label = catalogItem(b.type).label;
-    if (wrap) {
-      const h = wrap.querySelector('h1,h2,h3');
-      if (h && h.textContent.trim()) label = h.textContent.trim();
-    }
-    const lvl = FULLPAGE_TYPES.includes(b.type) ? 'lvl0' : 'lvl1';
-    html += `<div class="outline-item ${lvl} ${App.selectedBlock === b.id ? 'on' : ''}" data-bid="${b.id}"><span>${esc(label.slice(0, 44))}</span></div>`;
+    const label = outlineLabelFor(b);
+    const lvl = FULLPAGE_TYPES.includes(b.type) || (b.type === 'toc' && b.pageBreak !== false) ? 'lvl0' : 'lvl1';
+    const section = isSectionLead(b);
+    html += `<div class="outline-item ${lvl} ${section ? 'section' : ''} ${App.selectedBlock === b.id ? 'on' : ''}"
+      data-bid="${b.id}" data-idx="${i}" draggable="true">
+      <span class="outline-grip" title="Drag to reorder">${icon('drag', 12)}</span>
+      <span class="outline-label">${esc(label.slice(0, 44))}</span>
+      <span class="outline-actions">
+        <button class="iconbtn" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>${icon('back', 11)}</button>
+        <button class="iconbtn" data-act="down" title="Move down" ${i === n - 1 ? 'disabled' : ''}>${icon('back', 11)}</button>
+      </span>
+    </div>`;
   });
   html += '</div>';
   host.innerHTML = html;
-  host.querySelectorAll('.outline-item').forEach(it => it.addEventListener('click', () => {
-    const el = blockEls.get(it.dataset.bid);
-    if (el) { noteProgScroll(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(it.dataset.bid); }
-  }));
+
+  host.querySelectorAll('.outline-item').forEach(it => {
+    const bid = it.dataset.bid;
+    it.addEventListener('click', (e) => {
+      if (e.target.closest('[data-act]')) return;
+      const el = blockEls.get(bid);
+      if (el) { noteProgScroll(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); selectBlock(bid); }
+    });
+    it.querySelector('[data-act="up"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      nudgeOutlineItem(bid, -1);
+    });
+    it.querySelector('[data-act="down"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      nudgeOutlineItem(bid, 1);
+    });
+
+    it.addEventListener('dragstart', (e) => {
+      if (App.mode === 'viewing') { e.preventDefault(); return; }
+      App.drag = { kind: 'outline', bid };
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', bid); } catch (x) {}
+      it.classList.add('drag-src');
+      document.body.classList.add('dragging-outline');
+    });
+    it.addEventListener('dragend', () => {
+      it.classList.remove('drag-src');
+      document.body.classList.remove('dragging-outline');
+      host.querySelectorAll('.outline-item.over').forEach(x => x.classList.remove('over', 'over-above', 'over-below'));
+      setTimeout(() => { if (App.drag && App.drag.kind === 'outline') App.drag = null; }, 0);
+    });
+    it.addEventListener('dragover', (e) => {
+      if (!App.drag || App.drag.kind !== 'outline' || App.drag.bid === bid) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const r = it.getBoundingClientRect();
+      const above = e.clientY < r.top + r.height / 2;
+      host.querySelectorAll('.outline-item.over').forEach(x => {
+        if (x !== it) x.classList.remove('over', 'over-above', 'over-below');
+      });
+      it.classList.add('over', above ? 'over-above' : 'over-below');
+      it.classList.remove(above ? 'over-below' : 'over-above');
+      it._outlineDropAbove = above;
+    });
+    it.addEventListener('dragleave', () => {
+      it.classList.remove('over', 'over-above', 'over-below');
+    });
+    it.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!App.drag || App.drag.kind !== 'outline') return;
+      const srcBid = App.drag.bid;
+      const above = it._outlineDropAbove !== false;
+      const targetIdx = App.doc.blocks.findIndex(x => x.id === bid);
+      if (targetIdx < 0) return;
+      const insertAt = above ? targetIdx : targetIdx + 1;
+      const span = blockMoveSpan(srcBid);
+      App.drag = null;
+      document.body.classList.remove('dragging-outline');
+      if (!span) return;
+      if (span.to === span.from + 1) {
+        if (insertAt !== span.from && insertAt !== span.from + 1) {
+          moveBlock(span.from, insertAt);
+          toast('Section moved');
+        }
+      } else if (moveBlockRange(span.from, span.to, insertAt)) {
+        toast('Section moved');
+      }
+    });
+  });
+}
+
+/* Outline up/down: dividers nudge the whole section past the neighboring
+   section; other blocks move one slot. */
+function nudgeOutlineItem(bid, dir) {
+  if (App.mode === 'viewing') { toast('Switch to Editing to rearrange'); return; }
+  const span = blockMoveSpan(bid);
+  if (!span) return;
+  const blocks = App.doc.blocks;
+  if (dir < 0) {
+    if (span.from === 0) return;
+    if (span.to === span.from + 1) {
+      moveBlock(span.from, span.from - 1);
+      return;
+    }
+    // Find the start of the previous section lead (or just previous block)
+    let dest = span.from - 1;
+    while (dest > 0 && !isSectionLead(blocks[dest])) dest--;
+    moveBlockRange(span.from, span.to, dest);
+  } else {
+    if (span.to >= blocks.length) return;
+    if (span.to === span.from + 1) {
+      moveBlock(span.from, span.from + 2);
+      return;
+    }
+    // Skip past the next section (lead + body)
+    let dest = span.to + 1;
+    while (dest < blocks.length && !isSectionLead(blocks[dest])) dest++;
+    moveBlockRange(span.from, span.to, dest);
+  }
 }
 
 /* Web fonts load after first paint and change block heights — repaginate. */

@@ -394,11 +394,36 @@ button { font-family: inherit; }
 .chip.on { background: var(--fs-navy); border-color: var(--fs-navy); color: #fff; }
 
 .outline-list { display: flex; flex-direction: column; gap: 1px; }
-.outline-item { padding: 7px 9px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--fs-ink-700); }
+.outline-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 6px 6px 8px; border-radius: 6px; cursor: grab;
+  font-size: 12.5px; color: var(--fs-ink-700);
+  border: 1px solid transparent; position: relative;
+}
 .outline-item:hover { background: var(--fs-navy-50); }
 .outline-item.on { background: var(--fs-bone-50); color: var(--fs-navy); font-weight: 600; }
 .outline-item.lvl0 { font-weight: 700; color: var(--fs-navy); margin-top: 6px; }
-.outline-item.lvl1 { padding-left: 20px; }
+.outline-item.lvl1 { padding-left: 18px; }
+.outline-item.section .outline-label { letter-spacing: .01em; }
+.outline-grip {
+  flex: none; width: 14px; height: 14px; color: var(--fs-ink-300);
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .12s;
+}
+.outline-item:hover .outline-grip, .outline-item.drag-src .outline-grip { opacity: 1; }
+.outline-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline-actions {
+  flex: none; display: flex; gap: 1px; opacity: 0; transition: opacity .12s;
+}
+.outline-item:hover .outline-actions, .outline-item.on .outline-actions { opacity: 1; }
+.outline-actions .iconbtn { width: 22px; height: 22px; }
+.outline-actions [data-act="up"] svg { transform: rotate(90deg); }
+.outline-actions [data-act="down"] svg { transform: rotate(-90deg); }
+.outline-item.drag-src { opacity: .45; }
+.outline-item.over-above { box-shadow: inset 0 2px 0 0 var(--fs-gold); }
+.outline-item.over-below { box-shadow: inset 0 -2px 0 0 var(--fs-gold); }
+body.dragging-outline { cursor: grabbing; }
+body.dragging-outline .outline-item { cursor: grabbing; }
 
 /* ---------- canvas ---------- */
 .canvas-scroll { flex: 1; overflow: auto; min-width: 0; background: #c4c8cd; position: relative; overflow-anchor: none; }
@@ -416,9 +441,11 @@ button { font-family: inherit; }
 /* full-bleed sheets (cover / imported-PDF pages): the art owns the whole
    page. Page padding goes to zero and the drop zones float above the art
    instead of taking flow space — otherwise their height nudges the art off
-   the page edges (visible as white bars at the top and bottom). */
-.sheet.bleed { overflow: hidden; }
-.sheet.bleed .sheet-inner { padding: 0; }
+   the page edges (visible as white bars at the top and bottom). Keep
+   overflow visible enough that the block drag handle (left: -34px) stays
+   clickable; clip only the art itself. */
+.sheet.bleed { overflow: visible; }
+.sheet.bleed .sheet-inner { padding: 0; overflow: hidden; border-radius: inherit; }
 .sheet.bleed .dz { position: absolute; left: 0; right: 0; height: 22px; margin: 0; z-index: 6; }
 .sheet.bleed .dz:first-child { top: 0; }
 .sheet.bleed .dz:last-child { bottom: 0; }
@@ -445,7 +472,7 @@ button { font-family: inherit; }
 .bt-handle {
   width: 26px; height: 30px; border: 1px solid rgba(26,58,92,.18); background: #fff; border-radius: 6px;
   cursor: grab; color: var(--fs-ink-400); display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--fs-shadow-sm);
+  box-shadow: var(--fs-shadow-sm); user-select: none;
 }
 .bt-handle:active { cursor: grabbing; }
 .bt-right {
@@ -460,6 +487,8 @@ button { font-family: inherit; }
 }
 .bt-btn:hover { background: var(--fs-navy-50); color: var(--fs-navy); }
 .bt-btn.danger:hover { background: #F6E9E7; color: #A8341E; }
+.bt-right [data-bact="up"] svg { transform: rotate(90deg); }
+.bt-right [data-bact="down"] svg { transform: rotate(-90deg); }
 .blockwrap.drag-src { opacity: .45; }
 
 /* drop zones */
@@ -1126,6 +1155,9 @@ body:not([data-mode="proofing"]) .proof-chip:not(.has-signs) { display: none; }
 
 /* viewing mode: hide editing affordances */
 body[data-mode="viewing"] .btool, body[data-mode="viewing"] .dz, body[data-mode="viewing"] .cost-open-hint { display: none !important; }
+body[data-mode="viewing"] .outline-actions,
+body[data-mode="viewing"] .outline-grip { display: none !important; }
+body[data-mode="viewing"] .outline-item { cursor: pointer; }
 
 /* =================== WORKSPACE SETTINGS (ADMIN PANEL) =================== */
 .admin { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: #EDEEF0; }
