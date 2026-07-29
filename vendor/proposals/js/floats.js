@@ -50,10 +50,10 @@ function buildFloatEl(f) {
     <div class="float-grip" contenteditable="false" title="Drag to move">${icon('drag', 12)}</div>
     <div class="float-tools" contenteditable="false">
       ${f.type !== 'text' ? `<button class="fbtn" data-fact="pin" title="Pin into the text flow (becomes a normal block)">${icon('doc', 12)}</button>` : ''}
-      <button class="fbtn danger" data-fact="del" title="Delete">${icon('trash', 12)}</button>
+      <button class="fbtn danger" data-fact="del" title="Delete this floating object">${icon('trash', 12)}</button>
     </div>
     ${inner}
-    ${['nw', 'ne', 'sw', 'se'].map(h => `<span class="fh fh-${h}" data-fh="${h}" contenteditable="false"></span>`).join('')}
+    ${['nw', 'ne', 'sw', 'se'].map(h => `<span class="fh fh-${h}" data-fh="${h}" title="Drag to resize" contenteditable="false"></span>`).join('')}
   </div>`);
   bindFloat(el, f);
   return el;

@@ -179,7 +179,7 @@ function updateProofBar() {
   bar.innerHTML = `
     <span class="proof-bar-txt">${icon('check', 14, 2.4)} Proofing as <b>${esc(ME.name)}</b> — <b>${mine}</b> of <b>${blocks.length}</b> sections initialed</span>
     <span class="proof-bar-track"><span style="width:${blocks.length ? Math.round(mine / blocks.length * 100) : 0}%"></span></span>
-    <button class="btn tiny" id="proofNext">Next unreviewed ↓</button>`;
+    <button class="btn tiny" id="proofNext" title="Jump to the next section that still needs your initials">Next unreviewed ↓</button>`;
   const next = bar.querySelector('#proofNext');
   next.addEventListener('click', () => {
     const target = blocks.find(b => !(so[b.id] || []).some(s => s.uid === ME.id));
@@ -1075,7 +1075,7 @@ function renderOutline() {
     const lvl = FULLPAGE_TYPES.includes(b.type) || (b.type === 'toc' && b.pageBreak !== false) ? 'lvl0' : 'lvl1';
     const section = isSectionLead(b);
     html += `<div class="outline-item ${lvl} ${section ? 'section' : ''} ${App.selectedBlock === b.id ? 'on' : ''}"
-      data-bid="${b.id}" data-idx="${i}" draggable="true">
+      data-bid="${b.id}" data-idx="${i}" draggable="true" title="Jump to “${esc(label.slice(0, 60))}” — drag to rearrange">
       <span class="outline-grip" title="Drag to reorder">${icon('drag', 12)}</span>
       <span class="outline-label">${esc(label.slice(0, 44))}</span>
       <span class="outline-actions">

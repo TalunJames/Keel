@@ -300,7 +300,7 @@ async function exportWord() {
 function exportGoogleDocs() {
   exportWord();
   const card = modal(`
-    <div class="pophead">${icon('doc', 16)}<b>Open in Google Docs</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+    <div class="pophead">${icon('doc', 16)}<b>Open in Google Docs</b><button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody">
       <p class="set-hint" style="font-size:13px;line-height:1.55">A Word copy was just downloaded. To open it as a Google Doc:</p>
       <ol style="font-size:13px;line-height:1.7;padding-left:18px;margin:8px 0 14px">
