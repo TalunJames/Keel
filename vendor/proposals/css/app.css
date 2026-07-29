@@ -885,6 +885,10 @@ body[data-mode="editing"] .ed del[data-sid], body[data-mode="viewing"] .ed del[d
 .calc-row { border: 1px solid rgba(26,58,92,.14); border-radius: 8px; padding: 10px 11px; margin-bottom: 8px; background: #fff; }
 .calc-row.slim { display: flex; align-items: center; gap: 10px; padding: 8px 11px; }
 .calc-row.off { opacity: .55; background: var(--fs-bone-50); }
+.calc-excluded {
+  flex: none; font: 600 11px var(--fs-font-sans); color: var(--fs-ink-400);
+  padding: 4px 8px; white-space: nowrap;
+}
 .calc-row-top { display: flex; align-items: center; gap: 8px; }
 .calc-name {
   flex: 1; border: none; font: 600 13px var(--fs-font-sans); color: var(--fs-ink); padding: 2px 4px;

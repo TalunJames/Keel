@@ -295,8 +295,14 @@ const Settings = {
     if (!m) return null;
     const c = JSON.parse(JSON.stringify(m));
     ['cats', 'addOns', 'passThroughs', 'personnel'].forEach(k => {
-      (c[k] || []).forEach(row => { row.id = uid('k'); });
+      if (!Array.isArray(c[k])) c[k] = [];
+      c[k].forEach(row => { row.id = uid('k'); });
     });
+    c.showPassThroughs = !!c.showPassThroughs;
+    c.showPersonnel = !!c.showPersonnel;
+    c.showRates = !!c.showRates;
+    c.addOns.forEach(a => { a.on = !!a.on; });
+    c.passThroughs.forEach(p => { p.on = !!p.on; });
     return c;
   },
 

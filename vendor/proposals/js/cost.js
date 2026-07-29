@@ -14,20 +14,51 @@ function costCatTotal(c) {
   if (c.kind === 'monthly') return (c.fee || 0) * (c.months || 1);
   return c.fee || 0;
 }
+
+/* Coerce flags/arrays so a partial or legacy cost model can't leave
+   pass-throughs stuck visible after the section or row is turned off. */
+function normalizeCostModel(m) {
+  if (!m || typeof m !== 'object') {
+    return defaultCostModel((App.doc && App.doc.clientType) || 'county');
+  }
+  if (!Array.isArray(m.cats)) m.cats = [];
+  if (!Array.isArray(m.addOns)) m.addOns = [];
+  if (!Array.isArray(m.passThroughs)) m.passThroughs = [];
+  if (!Array.isArray(m.personnel)) m.personnel = [];
+  m.showPassThroughs = !!m.showPassThroughs;
+  m.showPersonnel = !!m.showPersonnel;
+  m.showRates = !!m.showRates;
+  m.addOns.forEach(a => { a.on = !!a.on; });
+  m.passThroughs.forEach(p => { p.on = !!p.on; });
+  return m;
+}
+
+/* Pass-through lines that belong in the proposal document / envelope total.
+   Both the section switch AND the per-line switch must be on — turning either
+   off must remove them from Fee Structure output (not leave $0 rows behind). */
+function activePassThroughs(m) {
+  const model = normalizeCostModel(m);
+  if (!model.showPassThroughs) return [];
+  return model.passThroughs.filter(p => p.on);
+}
+
 function costServicesTotal(m) {
-  return m.cats.reduce((t, c) => t + costCatTotal(c), 0) +
-         m.addOns.filter(a => a.on).reduce((t, a) => t + (a.fee || 0), 0);
+  const model = normalizeCostModel(m);
+  return model.cats.reduce((t, c) => t + costCatTotal(c), 0) +
+         model.addOns.filter(a => a.on).reduce((t, a) => t + (a.fee || 0), 0);
 }
 function costEnvelopeTotal(m) {
-  return costServicesTotal(m) + (m.showPassThroughs ? m.passThroughs.filter(p => p.on).reduce((t, p) => t + (p.fee || 0), 0) : 0);
+  return costServicesTotal(m) + activePassThroughs(m).reduce((t, p) => t + (p.fee || 0), 0);
 }
 
 /* ---------- document-facing render ---------- */
 function renderCostBody(b) {
-  const m = b.cost;
+  const m = normalizeCostModel(b.cost);
+  b.cost = m;
   const services = costServicesTotal(m);
   const introDefault = `<p>Fog Signal Strategies proposes the following fee structure. Our pricing reflects a comprehensive approach to delivering all scope-of-work requirements. Fog Signal Strategies operates on a flat-rate project fee model rather than hourly billing — providing cost certainty, eliminating the concern that reaching out to your consultant will result in an unexpected invoice, and keeping our team focused on outcomes rather than hours.</p>`;
   const offAddOns = m.addOns.filter(a => !a.on);
+  const ptOn = activePassThroughs(m);
 
   let html = edRegion(b.id + '.intro', introDefault);
 
@@ -44,8 +75,7 @@ function renderCostBody(b) {
     </ul><p><b>Total with all optional services:</b> ${fmtMoney(services + offAddOns.reduce((t, a) => t + a.fee, 0))}</p>`;
   }
 
-  if (m.showPassThroughs && m.passThroughs.some(p => p.on)) {
-    const ptOn = m.passThroughs.filter(p => p.on);
+  if (ptOn.length) {
     html += `<h3>Pass-Through Costs (Client-Approved, No Agency Markup)</h3>
     <table class="ptable cost-table"><tbody>
     ${ptOn.map(p => `<tr><td style="width:30%"><b>${esc(p.name)}</b></td><td>${esc(p.desc)}</td><td style="width:18%" class="num">${fmtMoney(p.fee)}</td></tr>`).join('')}
@@ -122,7 +152,8 @@ async function askCostAI(card, b, btn) {
 }
 
 function renderCalc(card, b) {
-  const m = b.cost;
+  const m = normalizeCostModel(b.cost);
+  b.cost = m;
   const body = card.querySelector('#calcBody');
 
   const catRow = (c) => `
@@ -145,14 +176,20 @@ function renderCalc(card, b) {
     </div>
   </div>`;
 
-  const toggleRow = (list, item, moneyEditable = true) => `
+  const toggleRow = (list, item, moneyEditable = true) => {
+    const passExcluded = list === 'passThroughs' && !item.on;
+    return `
   <div class="calc-row slim ${item.on ? '' : 'off'}" data-tid="${item.id}" data-list="${list}">
     <label class="switch"><input type="checkbox" data-f="on" ${item.on ? 'checked' : ''}><span></span></label>
     <div class="calc-tgl-txt"><b>${esc(item.name)}</b><small>${esc(item.desc)}</small></div>
-    <span class="calc-money">$<input type="number" data-f="fee" value="${item.fee}" min="0" step="500" ${moneyEditable ? '' : 'disabled'}></span>
+    ${passExcluded
+      ? `<span class="calc-excluded muted">Not in proposal</span>`
+      : `<span class="calc-money">$<input type="number" data-f="fee" value="${item.fee}" min="0" step="500" ${moneyEditable ? '' : 'disabled'}></span>`}
   </div>`;
+  };
 
   const perYear = m.households > 0 ? m.measureAnnual / m.households : 0;
+  const ptActive = activePassThroughs(m);
 
   body.innerHTML = `
   <div class="calc-sec"><div class="calc-sec-h">Service categories <button class="btn tiny" data-act="addCat">${icon('plus', 12)} Add line</button></div>
@@ -161,8 +198,8 @@ function renderCalc(card, b) {
   <div class="calc-sec"><div class="calc-sec-h">Optional add-ons <small class="muted">— toggled on = added to the fee table; off = listed as “Optional Services”</small></div>
     ${m.addOns.map(a => toggleRow('addOns', a)).join('')}
   </div>
-  <div class="calc-sec"><div class="calc-sec-h"><label class="switch"><input type="checkbox" data-m="showPassThroughs" ${m.showPassThroughs ? 'checked' : ''}><span></span></label> Pass-through costs (media buys, direct mail)</div>
-    ${m.showPassThroughs ? m.passThroughs.map(p => toggleRow('passThroughs', p)).join('') : ''}
+  <div class="calc-sec"><div class="calc-sec-h"><label class="switch"><input type="checkbox" data-m="showPassThroughs" ${m.showPassThroughs ? 'checked' : ''}><span></span></label> Pass-through costs (media buys, direct mail) <small class="muted">— off hides them from the proposal entirely</small></div>
+    ${m.showPassThroughs ? m.passThroughs.map(p => toggleRow('passThroughs', p)).join('') : '<p class="set-hint" style="margin:4px 2px 0">Turn this on to include client-approved pass-through lines in the cost proposal.</p>'}
   </div>
   <div class="calc-sec"><div class="calc-sec-h"><label class="switch"><input type="checkbox" data-m="showPersonnel" ${m.showPersonnel ? 'checked' : ''}><span></span></label> Personnel cost allocation table</div>
     ${m.showPersonnel ? m.personnel.map(p => `
@@ -187,7 +224,7 @@ function renderCalc(card, b) {
 
   card.querySelector('#calcFoot').innerHTML = `
     <div><small class="muted">Professional services</small><b>${fmtMoney(costServicesTotal(m))}</b></div>
-    ${m.showPassThroughs && m.passThroughs.some(p => p.on) ? `<div><small class="muted">Budget envelope</small><b>${fmtMoney(costEnvelopeTotal(m))}</b></div>` : ''}
+    ${ptActive.length ? `<div><small class="muted">Budget envelope</small><b>${fmtMoney(costEnvelopeTotal(m))}</b></div>` : ''}
     <button class="btn primary" data-act="doneCalc">Done</button>`;
 
   const apply = () => { refreshBlock(b); saveDoc(); };
@@ -214,8 +251,14 @@ function renderCalc(card, b) {
     const item = list.find(x => x.id === row.dataset.tid);
     row.querySelectorAll('[data-f]').forEach(inp => {
       inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
-        if (inp.type === 'checkbox') { item.on = inp.checked; row.classList.toggle('off', !item.on); }
-        else item[inp.dataset.f] = parseFloat(inp.value) || 0;
+        if (inp.type === 'checkbox') {
+          item.on = !!inp.checked;
+          // Rebuild so excluded pass-throughs drop their fee field and the
+          // proposal document loses the Pass-Through table immediately.
+          rerender();
+          return;
+        }
+        item[inp.dataset.f] = parseFloat(inp.value) || 0;
         updateCalcFoot(card, m); apply();
       });
     });
@@ -234,7 +277,7 @@ function renderCalc(card, b) {
   body.querySelectorAll('[data-m]').forEach(inp => {
     inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
       const k = inp.dataset.m;
-      m[k] = inp.type === 'checkbox' ? inp.checked : (parseFloat(inp.value) || 0);
+      m[k] = inp.type === 'checkbox' ? !!inp.checked : (parseFloat(inp.value) || 0);
       if (inp.type === 'checkbox' || k === 'households' || k === 'measureAnnual') rerender(); else apply();
     });
   });
@@ -253,7 +296,11 @@ function renderCalc(card, b) {
 
 function updateCalcFoot(card, m) {
   const foot = card.querySelector('#calcFoot');
-  const bs = foot.querySelectorAll('div b');
-  if (bs[0]) bs[0].textContent = fmtMoney(costServicesTotal(m));
-  if (bs[1]) bs[1].textContent = fmtMoney(costEnvelopeTotal(m));
+  if (!foot) return;
+  const ptActive = activePassThroughs(m);
+  foot.innerHTML = `
+    <div><small class="muted">Professional services</small><b>${fmtMoney(costServicesTotal(m))}</b></div>
+    ${ptActive.length ? `<div><small class="muted">Budget envelope</small><b>${fmtMoney(costEnvelopeTotal(m))}</b></div>` : ''}
+    <button class="btn primary" data-act="doneCalc">Done</button>`;
+  foot.querySelector('[data-act="doneCalc"]').addEventListener('click', closePopovers);
 }
