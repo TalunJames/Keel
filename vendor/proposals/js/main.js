@@ -485,7 +485,13 @@ function migrateCoverBoxes(doc) {
 
 async function openEditor(id) {
   const doc = await Sync.openDoc(id);
-  if (!doc) { toast('Could not open that proposal'); location.hash = ''; renderHome(); return; }
+  if (!doc) {
+    toast('Could not open that proposal');
+    location.hash = '';
+    renderHome();
+    if (window.KeelBridge) KeelBridge.notifyShell('home');
+    return;
+  }
   Store.normalize(doc);
   migrateCoverBoxes(doc);
   cleanOrphanCommentMarks(doc);
@@ -504,6 +510,7 @@ async function openEditor(id) {
   History.init(doc);
   Sync.connect(doc.id);   // join the live room before rendering — a render error must not cost us presence/sync
   renderEditor();
+  if (window.KeelBridge) KeelBridge.notifyShell('editor');
 }
 
 function renderEditor() {
@@ -679,6 +686,7 @@ function goHome() {
   location.hash = '';
   renderHome();
   Sync.connect('');            // rejoin the lobby for live index updates
+  if (window.KeelBridge) KeelBridge.notifyShell('home');
 }
 
 /* ---------- top bar ---------- */
@@ -1424,7 +1432,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   const m = location.hash.match(/^#doc\/(.+)$/);
   if (m && (Store.read(m[1]) || Sync.remote)) openEditor(m[1]);
   else if (location.hash === '#admin') openAdmin();
-  else renderHome();
+  else {
+    renderHome();
+    if (window.KeelBridge) KeelBridge.notifyShell('home');
+  }
 });
 
 function openAdmin() {
@@ -1432,10 +1443,12 @@ function openAdmin() {
     toast('Workspace settings are limited to selected users — ask the administrator for access');
     location.hash = '';
     renderHome();
+    if (window.KeelBridge) KeelBridge.notifyShell('home');
     return;
   }
   location.hash = 'admin';
   renderAdmin();
+  if (window.KeelBridge) KeelBridge.notifyShell('admin');
 }
 
 /* Browser back / forward */
@@ -1449,5 +1462,6 @@ window.addEventListener('hashchange', () => {
     goHome();
   } else if (App.view === 'admin') {
     renderHome();
+    if (window.KeelBridge) KeelBridge.notifyShell('home');
   }
 });

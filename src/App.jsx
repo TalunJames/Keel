@@ -75,9 +75,13 @@ export default function App() {
   const [section, setSection] = useSectionHistory("home");
   const [designInitialTab, setDesignInitialTab] = useState(null);
   const [proposalDeepLink, setProposalDeepLink] = useState(null);
+  const [proposalEditorOpen, setProposalEditorOpen] = useState(false);
 
   useEffect(() => {
-    if (section !== "proposals") setProposalDeepLink(null);
+    if (section !== "proposals") {
+      setProposalDeepLink(null);
+      setProposalEditorOpen(false);
+    }
   }, [section]);
 
   useEffect(() => {
@@ -255,6 +259,9 @@ export default function App() {
   if (badges.design) electionBadges.design = badges.design;
   if (badges.media) electionBadges.media = badges.media;
 
+  const hideTopBar = section === "election" || (section === "proposals" && proposalEditorOpen);
+  const immersiveMain = section === "election" || (section === "proposals" && proposalEditorOpen);
+
   return (
     <div className={"app" + (sidebarCollapsed ? " collapsed" : "")}>
       <Sidebar
@@ -270,8 +277,8 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      <main className={"main" + (section === "election" ? " election-immersive" : "")} data-screen-label={titles[section] || "Home"}>
-        {section !== "election" && (
+      <main className={"main" + (immersiveMain ? (section === "election" ? " election-immersive" : " proposals-immersive") : "")} data-screen-label={titles[section] || "Home"}>
+        {!hideTopBar && (
           <TopBar
             section={titles[section] || "Home"}
             role={user.role}
@@ -298,7 +305,11 @@ export default function App() {
             />
           ))}
           {section === "proposals" && guardModule("proposals", user.role === "client" ? <ClientLockOut /> : (
-            <ProposalsView {...viewProps} deepLinkId={proposalDeepLink} />
+            <ProposalsView
+              {...viewProps}
+              deepLinkId={proposalDeepLink}
+              onEditorModeChange={setProposalEditorOpen}
+            />
           ))}
           {section === "media" && guardModule("media", user.role === "client" ? <ClientLockOut /> : <MediaView {...viewProps} />)}
           {section === "election" && guardModule("election", <ElectionView {...viewProps} />)}
