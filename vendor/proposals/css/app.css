@@ -179,6 +179,8 @@ button { font-family: inherit; }
 .client-badge.ct-county { background: var(--fs-navy-100); color: var(--fs-navy); }
 .client-badge.ct-city { background: var(--fs-gold-100); color: var(--fs-gold-700); }
 .client-badge.ct-special { background: var(--fs-bone-100); color: var(--fs-ink-500); }
+.client-badge.ct-design { background: #F0ECF6; color: #6B5B95; }
+.client-badge.ct-state { background: #E6F2F6; color: #0E4D6B; }
 .prop-card-chips { display: flex; gap: 6px; align-items: center; }
 .cleatus-chip {
   display: inline-flex; align-items: center; gap: 4px; font: 700 10px var(--fs-font-sans);
@@ -253,7 +255,10 @@ button { font-family: inherit; }
 
 /* wizard */
 .wizard { max-height: 74vh; }
-.ct-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ct-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 720px) {
+  .ct-grid { grid-template-columns: repeat(2, 1fr); }
+}
 .ct-card {
   border: 1px solid rgba(26,58,92,.18); background: #fff; border-radius: 8px; padding: 10px 11px;
   text-align: left; cursor: pointer; transition: border-color .12s, background .12s;
@@ -263,7 +268,7 @@ button { font-family: inherit; }
 .ct-card b { display: block; font-size: 12.5px; color: var(--fs-navy); margin-bottom: 2px; }
 .ct-card small { font-size: 10.5px; color: var(--fs-ink-400); line-height: 1.3; display: block; }
 .wizard-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.tpl-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tpl-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .tpl-card {
   border: 1px solid rgba(26,58,92,.18); background: #fff; border-radius: 8px; padding: 10px 11px;
   text-align: left; cursor: pointer;

@@ -46,7 +46,7 @@ const Settings = {
       access: { admins: [] },            // user ids selected by the sysadmin
       colors: { text: null, highlight: null },  // null → built-in brand palettes
       fonts: [],                         // {id, name, family, format, dataUrl}
-      blockTitles: {},                   // type → {base, school, city, county, fire, special}
+      blockTitles: {},                   // type → {base, school, city, county, fire, special, design, state}
       blockContent: {},                  // type → {base, school, ...} default body HTML
       blockOverrides: {},                // type → {label, desc, curated, hidden}
       customBlocks: [],                  // {type, label, desc, cat, curated, content:{...}}

@@ -146,7 +146,7 @@ export const LIBRARY_SCHEMA = {
   properties: {
     title: { type: "string", description: "The proposal's title or subject." },
     agency: { type: "string", description: "The client/agency the proposal was written for (empty string if unclear)." },
-    clientType: { type: "string", description: "Best-guess client category, e.g. school district, city, county, special district (empty if unclear)." },
+    clientType: { type: "string", description: "Best-guess client category, e.g. school district, city, county, special district, design, state (empty if unclear)." },
     summary: { type: "string", description: "3-5 sentence summary of what was proposed and the overall pitch strategy." },
     sections: {
       type: "array",
