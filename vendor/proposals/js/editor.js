@@ -179,7 +179,7 @@ function updateProofBar() {
   bar.innerHTML = `
     <span class="proof-bar-txt">${icon('check', 14, 2.4)} Proofing as <b>${esc(ME.name)}</b> — <b>${mine}</b> of <b>${blocks.length}</b> sections initialed</span>
     <span class="proof-bar-track"><span style="width:${blocks.length ? Math.round(mine / blocks.length * 100) : 0}%"></span></span>
-    <button class="btn tiny" id="proofNext">Next unreviewed ↓</button>`;
+    <button class="btn tiny" id="proofNext" title="Jump to the next section that still needs your initials">Next unreviewed ↓</button>`;
   const next = bar.querySelector('#proofNext');
   next.addEventListener('click', () => {
     const target = blocks.find(b => !(so[b.id] || []).some(s => s.uid === ME.id));
@@ -1071,6 +1071,7 @@ function renderOutline() {
   let html = `<div class="lib-hint" style="margin-top:0">Drag to rearrange sections. Dividers move with everything under them until the next section.</div>
   <div class="outline-list">`;
   App.doc.blocks.forEach((b, i) => {
+<<<<<<< HEAD
     const label = outlineLabelFor(b);
     const lvl = FULLPAGE_TYPES.includes(b.type) || (b.type === 'toc' && b.pageBreak !== false) ? 'lvl0' : 'lvl1';
     const section = isSectionLead(b);
@@ -1083,6 +1084,16 @@ function renderOutline() {
         <button class="iconbtn" data-act="down" title="Move down" ${i === n - 1 ? 'disabled' : ''}>${icon('back', 11)}</button>
       </span>
     </div>`;
+=======
+    const wrap = blockEls.get(b.id);
+    let label = catalogItem(b.type).label;
+    if (wrap) {
+      const h = wrap.querySelector('h1,h2,h3');
+      if (h && h.textContent.trim()) label = h.textContent.trim();
+    }
+    const lvl = FULLPAGE_TYPES.includes(b.type) ? 'lvl0' : 'lvl1';
+    html += `<div class="outline-item ${lvl} ${App.selectedBlock === b.id ? 'on' : ''}" data-bid="${b.id}" title="Jump to “${esc(label.slice(0, 60))}”"><span>${esc(label.slice(0, 44))}</span></div>`;
+>>>>>>> 3f11ef4 (Add hover tooltips across the proposal builder chrome)
   });
   html += '</div>';
   host.innerHTML = html;

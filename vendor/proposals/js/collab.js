@@ -11,9 +11,15 @@ function setMode(mode) {
   $$('.ed, .ed-float', $('#canvas')).forEach(ed => { ed.contentEditable = (mode !== 'viewing'); });
   const badge = $('#modeBtn');
   if (badge) {
-    const map = { editing: ['Editing', 'mode-edit'], suggesting: ['Suggesting', 'mode-sugg'], proofing: ['Proofing', 'mode-proof'], viewing: ['Viewing', 'mode-view'] };
-    const [label, cls] = map[mode] || map.editing;
+    const map = {
+      editing: ['Editing', 'mode-edit', 'Editing mode — edit the document directly'],
+      suggesting: ['Suggesting', 'mode-sugg', 'Suggesting mode — edits become tracked changes others can review'],
+      proofing: ['Proofing', 'mode-proof', 'Proofing mode — initial each section; edits become suggestions'],
+      viewing: ['Viewing', 'mode-view', 'Viewing mode — read-only, no edits or formatting'],
+    };
+    const [label, cls, tip] = map[mode] || map.editing;
     badge.className = 'btn mode-btn ' + cls;
+    badge.title = tip;
     badge.innerHTML = `<span class="dot"></span>${label} <span class="caret">▾</span>`;
   }
   if (typeof updateProofBar === 'function') updateProofBar();
@@ -558,8 +564,8 @@ function renderCommentRail(host) {
       <div class="ccard-head">
         <span class="avatar" style="background:${c.color}">${c.initials}</span>
         <span class="ccard-who"><b>${esc(c.author)}</b><small>${timeAgo(c.ts)}</small></span>
-        <button class="iconbtn ok" data-act="resolve" title="${c.resolved ? 'Re-open' : 'Resolve'}">${icon('check', 13, 2.6)}</button>
-        <button class="iconbtn danger" data-act="del" title="Delete">${icon('trash', 13)}</button>
+        <button class="iconbtn ok" data-act="resolve" title="${c.resolved ? 'Re-open this comment thread' : 'Mark this comment as resolved'}">${icon('check', 13, 2.6)}</button>
+        <button class="iconbtn danger" data-act="del" title="Delete this comment">${icon('trash', 13)}</button>
       </div>
       ${c.quote ? `<div class="ccard-quote">“${esc(c.quote)}”</div>` : ''}
       <div class="ccard-text">${esc(c.text)}</div>
@@ -683,7 +689,7 @@ function renderSuggestionRail(host) {
     Edits made while suggesting appear here for review — accept or reject each one.
   </div>`;
   if (suggs.length > 1) {
-    html += `<div class="sugg-bulk"><button class="btn tiny" data-act="acceptAll">Accept all</button><button class="btn tiny" data-act="rejectAll">Reject all</button></div>`;
+    html += `<div class="sugg-bulk"><button class="btn tiny" data-act="acceptAll" title="Accept every open suggestion">Accept all</button><button class="btn tiny" data-act="rejectAll" title="Reject every open suggestion">Reject all</button></div>`;
   }
   if (!suggs.length) html += `<div class="rail-empty">No open suggestions. Switch the mode picker to <b>Suggesting</b> and start typing — insertions and deletions become reviewable suggestions.</div>`;
   suggs.forEach(s => {
@@ -694,8 +700,8 @@ function renderSuggestionRail(host) {
       </div>
       <div class="scard-text">${s.kind === 'ins' ? '' : '<s>'}${esc(s.text.slice(0, 160) || '(formatting)')}${s.kind === 'ins' ? '' : '</s>'}</div>
       <div class="scard-actions">
-        <button class="btn tiny ok" data-act="accept">${icon('check', 12, 2.6)} Accept</button>
-        <button class="btn tiny" data-act="reject">${icon('x', 12)} Reject</button>
+        <button class="btn tiny ok" data-act="accept" title="Keep this change in the document">${icon('check', 12, 2.6)} Accept</button>
+        <button class="btn tiny" data-act="reject" title="Discard this change">${icon('x', 12)} Reject</button>
       </div>
     </div>`;
   });

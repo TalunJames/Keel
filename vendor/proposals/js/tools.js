@@ -56,7 +56,7 @@ function selectMatch(m) {
 
 function openFindReplace() {
   const card = modal(`
-    <div class="pophead">${icon('search', 15)}<b>Find &amp; replace</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+    <div class="pophead">${icon('search', 15)}<b>Find &amp; replace</b><button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody">
       <div class="fr-grid">
         <input class="set-input" id="frFind" placeholder="Find…">
@@ -230,7 +230,7 @@ function openProofread() {
   const card = modal(`
     <div class="pophead">${icon('check', 15)}<b>Proofread</b>
       <span class="muted" style="font-size:12px;margin-left:2px">${issues.length ? issues.length + ' finding' + (issues.length > 1 ? 's' : '') : 'clean'}</span>
-      <button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+      <button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody" style="max-height:58vh">
       ${issues.length ? `<div class="proof-list">
         ${issues.map((it, i) => `<div class="proof-item" data-pi="${i}">
@@ -499,7 +499,7 @@ function openVersionDiff(vid) {
   const card = modal(`
     <div class="pophead">${icon('clock', 15)}<b>Changes since “${esc(v.label)}”</b>
       <span class="muted" style="font-size:11.5px">${fmtDate(v.ts)}</span>
-      <button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+      <button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody" style="max-height:60vh">
       ${entries.length ? `
         <div class="diff-legend"><del>removed since then</del> · <ins>added since then</ins></div>

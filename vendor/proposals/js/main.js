@@ -33,7 +33,7 @@ function renderHome() {
   const cardHtml = (m) => {
     const days = daysUntil(m.deadline);
     const tag = tagForTriage(m.triageState || 'building');
-    return `<div class="prop-card ${tag.key === 'archived' ? 'is-archived' : ''}" data-id="${m.id}">
+    return `<div class="prop-card ${tag.key === 'archived' ? 'is-archived' : ''}" data-id="${m.id}" title="Open this proposal">
       <div class="prop-card-top">
         <span class="prop-card-chips">
           <span class="client-badge ct-${m.clientType}">${esc((CLIENTS[m.clientType] || {}).label || m.clientType)}</span>
@@ -82,10 +82,10 @@ function renderHome() {
         <h1 class="home-title">Proposals</h1>
         <p class="home-sub">End-to-end workspace for formal RFP responses — draft, collaborate, price, and export.</p>
       </div>
-      <button class="btn primary lg" id="newProposal">${icon('plus', 16)} New Proposal</button>
+      <button class="btn primary lg" id="newProposal" title="Start a new proposal — pick a client type and template">${icon('plus', 16)} New Proposal</button>
     </div>
     ${list.length ? `<div class="home-filters">
-      ${STATUS_FILTERS.map(f => `<button class="ct-chip lg ${App.homeFilter === f.key ? 'on' : ''}" data-filter="${f.key}">${esc(f.label)}<span class="chip-count">${counts[f.key]}</span></button>`).join('')}
+      ${STATUS_FILTERS.map(f => `<button class="ct-chip lg ${App.homeFilter === f.key ? 'on' : ''}" data-filter="${f.key}" title="Show ${esc(f.label.toLowerCase())} proposals">${esc(f.label)}<span class="chip-count">${counts[f.key]}</span></button>`).join('')}
     </div>` : ''}
     ${body}
   </div>`;
@@ -215,7 +215,7 @@ function newProposalWizard() {
   const defaultCover = Settings.coverFields();
   const coverTpls = Settings.coverTemplates();
   const card = modal(`
-    <div class="pophead">${icon('plus', 16)}<b>New Proposal</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+    <div class="pophead">${icon('plus', 16)}<b>New Proposal</b><button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody wizard">
       <div class="set-label">Client / agency name</div>
       <input class="set-input" id="wAgency" placeholder="e.g. Beaufort County, South Carolina">
@@ -418,7 +418,7 @@ function pickCoverForDraft() {
     const defaultCover = Settings.coverFields();
     const coverTpls = Settings.coverTemplates();
     const card = modal(`
-      <div class="pophead">${icon('bolt', 16)}<b>Cover for this draft</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+      <div class="pophead">${icon('bolt', 16)}<b>Cover for this draft</b><button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
       <div class="popbody">
         <p class="set-hint" style="margin-top:0">Claude will use this cover when it builds the proposal. Change the workspace default anytime in Admin → Cover Templates.</p>
         <div class="tpl-row" style="grid-template-columns:1fr 1fr 1fr">
@@ -535,14 +535,14 @@ function renderEditor() {
       </div>
       <div class="flex1"></div>
       <div class="presence" id="presenceWrap"></div>
-      <button class="btn mode-btn mode-edit" id="modeBtn"><span class="dot"></span>Editing <span class="caret">▾</span></button>
+      <button class="btn mode-btn mode-edit" id="modeBtn" title="Editing mode — Editing, Suggesting, Proofing, or Viewing"><span class="dot"></span>Editing <span class="caret">▾</span></button>
       <button class="btn ghost" id="rfpBtn" title="RFP details & submission checklist">${icon('rfp', 15)} <span id="rfpBadge"></span></button>
       <button class="btn ghost sq" id="historyBtn" title="Version history">${icon('clock', 15)}</button>
       <button class="btn ghost" id="railToggle" title="Comments & suggestions">${icon('comment', 15)} <span id="commentCount">0</span></button>
       <button class="btn ghost" id="proofreadBtn" title="Proofread with Claude — flags issues as tracked changes">${icon('bolt', 15)} Proofread</button>
-      <button class="btn ghost" id="shareBtn" title="Share">${icon('users', 15)} Share</button>
+      <button class="btn ghost" id="shareBtn" title="Invite teammates and set access roles">${icon('users', 15)} Share</button>
       <button class="btn ghost" id="saveBtn" title="Save now">${icon('check', 15)} Save</button>
-      <button class="btn primary" id="exportBtn">Export <span class="caret">▾</span></button>
+      <button class="btn primary" id="exportBtn" title="Export as Word, Google Docs, or PDF">Export <span class="caret">▾</span></button>
     </div>
 
     <!-- ===== proofing progress bar ===== -->
@@ -554,9 +554,9 @@ function renderEditor() {
       <button class="tbtn" data-fmt="redo" title="Redo (⌘⇧Z)">${icon('redo', 15)}</button>
       <div class="vr"></div>
       <div class="fontsize-ctl" title="Font size for the selected text">
-        <button id="fontSizeDown" tabindex="-1">−</button>
-        <input type="number" id="fontSizeInput" value="12" min="7" max="96">
-        <button id="fontSizeUp" tabindex="-1">+</button>
+        <button id="fontSizeDown" tabindex="-1" title="Decrease font size">−</button>
+        <input type="number" id="fontSizeInput" value="12" min="7" max="96" title="Font size (px)">
+        <button id="fontSizeUp" tabindex="-1" title="Increase font size">+</button>
       </div>
       <select class="style-sel font-sel" id="fontSel" title="Font for the selected text">
         <option value="">Font</option>
@@ -590,9 +590,9 @@ function renderEditor() {
       <button class="tbtn wide-btn" id="toolsBtn" title="Find & replace, proofread, spell check">${icon('bolt', 15)} Tools</button>
       <div class="flex1"></div>
       <span class="page-meta" id="pageMeta"></span>
-      <button class="btn ghost" id="pageSizeBtn">${pageDims().label} <span class="caret">▾</span></button>
+      <button class="btn ghost" id="pageSizeBtn" title="Page size, margins, page numbers & letterhead">${pageDims().label} <span class="caret">▾</span></button>
       <div class="zoomer">
-        <button id="zoomOut">−</button><span id="zoomLabel">${Math.round(App.zoom * 100)}%</span><button id="zoomIn">+</button>
+        <button id="zoomOut" title="Zoom out">−</button><span id="zoomLabel" title="Current zoom">${Math.round(App.zoom * 100)}%</span><button id="zoomIn" title="Zoom in">+</button>
       </div>
     </div>
 
@@ -607,11 +607,11 @@ function renderEditor() {
         <div class="sidebar-full">
           <div class="sidebar-head">
             <div class="sidebar-tabs">
-              <button class="sbtab on" data-sbtab="blocks">${icon('blocks', 14)} Blocks</button>
-              <button class="sbtab" data-sbtab="outline">${icon('outline', 14)} Outline</button>
-              <button class="sbtab" data-sbtab="pages">${icon('doc', 14)} Pages</button>
+              <button class="sbtab on" data-sbtab="blocks" title="Block library — drag sections into the document">${icon('blocks', 14)} Blocks</button>
+              <button class="sbtab" data-sbtab="outline" title="Document outline — jump to or reorder sections">${icon('outline', 14)} Outline</button>
+              <button class="sbtab" data-sbtab="pages" title="Page management — rearrange, insert, or delete pages">${icon('doc', 14)} Pages</button>
             </div>
-            <button class="iconbtn" id="sidebarCollapse" title="Collapse">${icon('panelL', 16)}</button>
+            <button class="iconbtn" id="sidebarCollapse" title="Collapse sidebar">${icon('panelL', 16)}</button>
           </div>
           <div class="sidebar-body" id="sidebarBody"></div>
           <div class="sidebar-body" id="outlineBody" style="display:none"></div>
@@ -626,11 +626,11 @@ function renderEditor() {
       <div class="rail ${App.showRail ? '' : 'collapsed'}" id="rail">
         <div class="rail-head">
           <div class="rail-tabs" id="railTabs">
-            <button class="railtab ${App.railTab === 'comments' ? 'on' : ''}" data-tab="comments">Comments</button>
-            <button class="railtab ${App.railTab === 'suggestions' ? 'on' : ''}" data-tab="suggestions">Suggestions</button>
-            <button class="railtab ${App.railTab === 'ai' ? 'on' : ''}" data-tab="ai">Ask Claude</button>
+            <button class="railtab ${App.railTab === 'comments' ? 'on' : ''}" data-tab="comments" title="Review and reply to comments">Comments</button>
+            <button class="railtab ${App.railTab === 'suggestions' ? 'on' : ''}" data-tab="suggestions" title="Accept or reject tracked changes">Suggestions</button>
+            <button class="railtab ${App.railTab === 'ai' ? 'on' : ''}" data-tab="ai" title="Ask Claude about this proposal or RFP">Ask Claude</button>
           </div>
-          <button class="iconbtn" id="railCollapse" title="Collapse">${icon('panelR', 16)}</button>
+          <button class="iconbtn" id="railCollapse" title="Collapse comments panel">${icon('panelR', 16)}</button>
         </div>
         <div class="rail-body" id="railBody"></div>
       </div>
@@ -883,7 +883,7 @@ function openHistoryPanel(anchor) {
 
 function openShareModal() {
   const card = modal(`
-    <div class="pophead">${icon('users', 16)}<b>Share “${esc(App.doc.title.slice(0, 40))}”</b><button class="iconbtn close-pop">${icon('x', 15)}</button></div>
+    <div class="pophead">${icon('users', 16)}<b>Share “${esc(App.doc.title.slice(0, 40))}”</b><button class="iconbtn close-pop" title="Close">${icon('x', 15)}</button></div>
     <div class="popbody">
       <div class="share-row">
         <input class="set-input" placeholder="Add teammates by email…" id="shareEmail" style="margin-bottom:0">
@@ -1093,6 +1093,7 @@ function openPagesMenu(anchor) {
     App.doc.pageSize = r.dataset.ps;
     saveDoc(); closePopovers(); renderCanvas();
     $('#pageSizeBtn').innerHTML = `${pageDims().label} <span class="caret">▾</span>`;
+    $('#pageSizeBtn').title = 'Page size, margins, page numbers & letterhead';
   }));
   /* margins — re-render the canvas so page geometry updates everywhere */
   const setMargin = (px) => {
@@ -1252,11 +1253,11 @@ function renderLibrary() {
   catalog.forEach(g => g.items.forEach(it => { if (it.curated) curated.push(it); }));
 
   const libItem = (it, isCurated) => `
-    <div class="libitem" draggable="true" data-libtype="${it.type}">
+    <div class="libitem" draggable="true" data-libtype="${it.type}" title="${esc(it.desc || it.label)} — drag into the document or click to insert">
       <div class="libitem-head">
         <span class="lib-grip">${icon('drag', 13)}</span>
         <b>${esc(it.label)}</b>
-        ${isCurated ? `<span class="curated-tag">Curated</span>` : ''}
+        ${isCurated ? `<span class="curated-tag" title="Pre-written for this client type">Curated</span>` : ''}
       </div>
       <small>${esc(it.desc)}</small>
     </div>`;
@@ -1265,7 +1266,7 @@ function renderLibrary() {
   <div class="lib-curated-head">
     <span class="lib-kicker">Curated for</span>
     <div class="ct-chips">
-      ${CLIENT_KEYS.map(k => `<button class="ct-chip ${ct === k ? 'on' : ''}" data-ctchip="${k}" title="${CLIENTS[k].label}">${CLIENTS[k].short}</button>`).join('')}
+      ${CLIENT_KEYS.map(k => `<button class="ct-chip ${ct === k ? 'on' : ''}" data-ctchip="${k}" title="Curate library for ${CLIENTS[k].label} clients">${CLIENTS[k].short}</button>`).join('')}
     </div>
   </div>
   <div class="lib-hint">Drag a block into the document, or click to insert after the selected block. Curated blocks drop in pre-written for ${esc(CLIENTS[ct].label)} clients.</div>
@@ -1273,7 +1274,7 @@ function renderLibrary() {
     <div class="lib-group-h">Suggested for ${esc(CLIENTS[ct].label)} clients</div>
     ${curated.map(it => libItem(it, true)).join('')}
   </div>
-  <button class="lib-showall" id="showAllBlocks">${App.showAllBlocks ? '▾ Hide the full library' : '▸ Open the full library'}</button>`;
+  <button class="lib-showall" id="showAllBlocks" title="${App.showAllBlocks ? 'Hide the full block catalog' : 'Browse every available block type'}">${App.showAllBlocks ? '▾ Hide the full library' : '▸ Open the full library'}</button>`;
 
   if (App.showAllBlocks) {
     const cats = ['All', ...catalog.map(g => g.cat)];
