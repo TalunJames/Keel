@@ -1071,12 +1071,11 @@ function renderOutline() {
   let html = `<div class="lib-hint" style="margin-top:0">Drag to rearrange sections. Dividers move with everything under them until the next section.</div>
   <div class="outline-list">`;
   App.doc.blocks.forEach((b, i) => {
-<<<<<<< HEAD
     const label = outlineLabelFor(b);
     const lvl = FULLPAGE_TYPES.includes(b.type) || (b.type === 'toc' && b.pageBreak !== false) ? 'lvl0' : 'lvl1';
     const section = isSectionLead(b);
     html += `<div class="outline-item ${lvl} ${section ? 'section' : ''} ${App.selectedBlock === b.id ? 'on' : ''}"
-      data-bid="${b.id}" data-idx="${i}" draggable="true">
+      data-bid="${b.id}" data-idx="${i}" draggable="true" title="Jump to “${esc(label.slice(0, 60))}” — drag to rearrange">
       <span class="outline-grip" title="Drag to reorder">${icon('drag', 12)}</span>
       <span class="outline-label">${esc(label.slice(0, 44))}</span>
       <span class="outline-actions">
@@ -1084,16 +1083,6 @@ function renderOutline() {
         <button class="iconbtn" data-act="down" title="Move down" ${i === n - 1 ? 'disabled' : ''}>${icon('back', 11)}</button>
       </span>
     </div>`;
-=======
-    const wrap = blockEls.get(b.id);
-    let label = catalogItem(b.type).label;
-    if (wrap) {
-      const h = wrap.querySelector('h1,h2,h3');
-      if (h && h.textContent.trim()) label = h.textContent.trim();
-    }
-    const lvl = FULLPAGE_TYPES.includes(b.type) ? 'lvl0' : 'lvl1';
-    html += `<div class="outline-item ${lvl} ${App.selectedBlock === b.id ? 'on' : ''}" data-bid="${b.id}" title="Jump to “${esc(label.slice(0, 60))}”"><span>${esc(label.slice(0, 44))}</span></div>`;
->>>>>>> 3f11ef4 (Add hover tooltips across the proposal builder chrome)
   });
   html += '</div>';
   host.innerHTML = html;
