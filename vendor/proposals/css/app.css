@@ -766,11 +766,13 @@ body[data-mode="editing"] .ed del[data-sid], body[data-mode="viewing"] .ed del[d
   border-top: 1px solid rgba(26,58,92,.1); background: #fff; cursor: pointer;
 }
 
-/* comment cards */
+/* comment cards — `top` is set every scroll frame to track the text anchor,
+   so it must NOT be transitioned (a 180ms ease made cards lag and look like
+   they "stack" instead of scrolling with the document the way Word does). */
 .ccard {
   position: absolute; left: 12px; right: 12px; background: #fff; border: 1px solid rgba(26,58,92,.14);
   border-radius: 9px; padding: 11px; box-shadow: 0 1px 3px rgba(14,34,56,.07); cursor: pointer;
-  transition: top .18s cubic-bezier(.2,.6,.2,1), box-shadow .15s, border-color .15s;
+  transition: box-shadow .15s, border-color .15s;
 }
 .ccard.active { border-color: var(--fs-navy); box-shadow: 0 6px 18px rgba(14,34,56,.16); z-index: 5; }
 .ccard.resolved { opacity: .55; }
