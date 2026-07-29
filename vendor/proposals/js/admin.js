@@ -1144,29 +1144,42 @@ async function extractFileText(file) {
 
 function adminFirmSection(host) {
   host.innerHTML = `
-  ${adminHead('Firm Context for Claude', 'A profile of Fog Signal Strategies — who we are, what we do, our voice, differentiators, and boilerplate. Claude uses this whenever it drafts a proposal, answers questions, tailors a block, or proofreads. Paste text or load it from a file. This is shared across the workspace.')}
+  ${adminHead('Firm Context for Claude', 'A profile of Fog Signal Strategies — who we are, what we do, our voice, differentiators, and boilerplate. Claude uses the firm profile for drafts, chat, and rewrites. Cover letter guidance is trained separately so letters stay letter-shaped instead of turning into proposal essays.')}
   <div class="admin-card">
     <div class="set-label">Firm profile</div>
-    <textarea id="firmCtxText" class="set-input" style="min-height:340px;line-height:1.5;font-size:13px" placeholder="Example:&#10;Fog Signal Strategies is a public-affairs and campaign-services firm specializing in ballot-measure and bond campaigns for public agencies…&#10;&#10;Voice: confident, specific, plain-spoken.&#10;Differentiators: …&#10;Standard terms / boilerplate: …"></textarea>
-    <div class="pn-2col" style="grid-template-columns:auto auto 1fr auto;align-items:center;gap:10px;margin-top:10px">
+    <textarea id="firmCtxText" class="set-input" style="min-height:280px;line-height:1.5;font-size:13px" placeholder="Example:&#10;Fog Signal Strategies is a public-affairs and campaign-services firm specializing in ballot-measure and bond campaigns for public agencies…&#10;&#10;Voice: confident, specific, plain-spoken.&#10;Differentiators: …&#10;Standard terms / boilerplate: …"></textarea>
+    <div class="pn-2col" style="grid-template-columns:auto auto 1fr;align-items:center;gap:10px;margin-top:10px">
       <button class="btn" id="firmCtxLoad">${icon('upload', 14)} Load from file</button>
       <span class="set-hint" id="firmCtxMeta" style="margin:0"></span>
       <span></span>
-      <button class="btn primary" id="firmCtxSave">Save firm context</button>
     </div>
-    <p class="set-hint" id="firmCtxStatus" style="margin-top:8px"></p>
+  </div>
+  <div class="admin-card" style="margin-top:14px">
+    <div class="set-label">Cover letter guidance <span class="muted">— trains the dedicated cover-letter pass and letter rewrites only</span></div>
+    <textarea id="firmLetterText" class="set-input" style="min-height:220px;line-height:1.5;font-size:13px" placeholder="Teach Claude how Fog Signal writes cover letters. Examples:&#10;&#10;• Always: date, “Dear Members of the Selection Committee,” 3–4 short paragraphs, “Sincerely,” Carter James signature block.&#10;• Opening: thank them for the opportunity; name the RFP / service; one-sentence firm lead for this client type.&#10;• Middle: why this engagement matters; what Fog Signal uniquely brings — no fee tables, no stage plans.&#10;• Close: appreciation + look forward to partnering.&#10;• Never invent win rates, dollar totals, or staff who aren’t on the team.&#10;• Keep it one page; warm and specific, not brochure-y."></textarea>
+    <p class="set-hint" style="margin-top:6px">Also learned automatically from cover letters in Admin → AI Library uploads. Guidance here wins when you want to steer the letter without waiting for a playbook rebuild.</p>
+  </div>
+  <div class="pn-2col" style="grid-template-columns:1fr auto;align-items:center;gap:10px;margin-top:12px">
+    <p class="set-hint" id="firmCtxStatus" style="margin:0"></p>
+    <button class="btn primary" id="firmCtxSave">Save firm context</button>
   </div>`;
 
   const ta = host.querySelector('#firmCtxText');
+  const letter = host.querySelector('#firmLetterText');
   const meta = host.querySelector('#firmCtxMeta');
   const status = host.querySelector('#firmCtxStatus');
-  const setMeta = () => { meta.textContent = (ta.value.length ? ta.value.length.toLocaleString() + ' characters' : 'Empty'); };
+  const setMeta = () => {
+    const n = ta.value.length + letter.value.length;
+    meta.textContent = n ? n.toLocaleString() + ' characters total' : 'Empty';
+  };
 
   ta.addEventListener('input', setMeta);
+  letter.addEventListener('input', setMeta);
 
   if (typeof AI !== 'undefined') {
     AI.getFirmContext().then((fc) => {
       ta.value = (fc && fc.text) || '';
+      letter.value = (fc && fc.coverLetterGuidance) || '';
       setMeta();
       if (fc && fc.updatedAt) status.textContent = 'Last saved ' + timeAgo(fc.updatedAt);
     }).catch(() => { status.textContent = 'Could not load saved context.'; });
@@ -1180,7 +1193,7 @@ function adminFirmSection(host) {
       const text = await extractFileText(f);
       ta.value = ta.value ? (ta.value.trim() + '\n\n' + text) : text;
       setMeta();
-      status.textContent = 'Loaded ' + f.name + ' — review, then Save.';
+      status.textContent = 'Loaded ' + f.name + ' into the firm profile — review, then Save.';
     } catch (e) {
       status.textContent = e.message || 'Could not read that file.';
     }
@@ -1189,7 +1202,7 @@ function adminFirmSection(host) {
   host.querySelector('#firmCtxSave').addEventListener('click', async () => {
     status.textContent = 'Saving…';
     try {
-      const fc = await AI.setFirmContext(ta.value);
+      const fc = await AI.setFirmContext({ text: ta.value, coverLetterGuidance: letter.value });
       status.textContent = 'Saved.' + (fc && fc.updatedAt ? ' (' + timeAgo(fc.updatedAt) + ')' : '');
       toast('Firm context saved');
     } catch (e) {

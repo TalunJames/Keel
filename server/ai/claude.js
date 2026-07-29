@@ -156,19 +156,107 @@ export function buildLibraryContext(db, { clientType = null, exemplars = 0 } = {
   return parts.join("\n\n");
 }
 
+/**
+ * Cover-letter-only training context. Deliberately excludes the full narrative
+ * playbook / body exemplars so letter drafts don't pick up section-essay habits.
+ */
+export function buildCoverLetterContext(db, { clientType = null, exemplars = 2 } = {}) {
+  const parts = [];
+  const firm = readFirmContext(db);
+  if (firm.coverLetterGuidance) {
+    parts.push(
+      "=== COVER LETTER GUIDANCE (firm-trained) ===\n" +
+      String(firm.coverLetterGuidance).slice(0, 6000)
+    );
+  }
+  const pb = readPlaybook(db);
+  if (pb?.text) {
+    const letterSection = extractPlaybookSection(pb.text, "cover letter");
+    if (letterSection) {
+      parts.push("=== PLAYBOOK · COVER LETTERS ===\n" + letterSection.slice(0, 2500));
+    }
+  }
+  if (exemplars > 0) {
+    try {
+      const rows = db.prepare(
+        `SELECT title, agency, client_type, insights_json FROM proposal_library
+         WHERE status = 'ready' AND insights_json IS NOT NULL
+         ORDER BY (CASE WHEN client_type = ? THEN 0 ELSE 1 END), updated_at DESC
+         LIMIT ?`
+      ).all(clientType || "", Math.max(exemplars, 4));
+      let used = 0;
+      for (const r of rows) {
+        if (used >= exemplars) break;
+        let ins;
+        try { ins = JSON.parse(r.insights_json); } catch { continue; }
+        const notes = ins.coverLetterNotes;
+        if (!notes || typeof notes !== "object") continue;
+        const structure = String(notes.structure || "").trim();
+        const voice = String(notes.voice || "").trim();
+        const snippets = Array.isArray(notes.snippets) ? notes.snippets : [];
+        if (!structure && !voice && !snippets.length) continue;
+        const bits = [
+          `--- Letter exemplar: "${r.title}"${r.agency ? ` (for ${r.agency})` : ""} ---`,
+          structure ? `Structure: ${structure.slice(0, 500)}` : "",
+          voice ? `Voice: ${voice.slice(0, 400)}` : "",
+          snippets.length
+            ? "Letter snippets:\n" + snippets.slice(0, 3)
+                .map((s) => `- (${String(s.label || "").slice(0, 60)}) "${String(s.snippet || "").slice(0, 280)}"`).join("\n")
+            : "",
+        ].filter(Boolean);
+        parts.push(bits.join("\n"));
+        used += 1;
+      }
+    } catch {
+      /* library table may not exist yet */
+    }
+  }
+  return parts.join("\n\n");
+}
+
+/** Pull a markdown ## section whose heading mentions `needle` (case-insensitive). */
+function extractPlaybookSection(text, needle) {
+  const src = String(text || "");
+  if (!src.trim()) return "";
+  const re = /^##\s+(.+)$/gm;
+  const matches = [];
+  let m;
+  while ((m = re.exec(src))) {
+    matches.push({ title: m[1], start: m.index, headingEnd: m.index + m[0].length });
+  }
+  const want = String(needle || "").toLowerCase();
+  for (let i = 0; i < matches.length; i++) {
+    if (!matches[i].title.toLowerCase().includes(want)) continue;
+    const from = matches[i].headingEnd;
+    const to = i + 1 < matches.length ? matches[i + 1].start : src.length;
+    return src.slice(from, to).trim();
+  }
+  return "";
+}
+
 /* ---------- firm-context storage (app_settings key) ---------- */
 export function readFirmContext(db) {
   const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(FIRM_CONTEXT_KEY);
-  if (!row?.value) return { text: "", updatedAt: null };
+  if (!row?.value) return { text: "", coverLetterGuidance: "", updatedAt: null };
   try {
-    return JSON.parse(row.value);
+    const parsed = JSON.parse(row.value);
+    return {
+      text: typeof parsed.text === "string" ? parsed.text : "",
+      coverLetterGuidance: typeof parsed.coverLetterGuidance === "string" ? parsed.coverLetterGuidance : "",
+      updatedAt: parsed.updatedAt || null,
+    };
   } catch {
-    return { text: "", updatedAt: null };
+    return { text: "", coverLetterGuidance: "", updatedAt: null };
   }
 }
 
-export function writeFirmContext(db, text) {
-  const value = JSON.stringify({ text: String(text || ""), updatedAt: Date.now() });
+export function writeFirmContext(db, { text, coverLetterGuidance } = {}) {
+  const prev = readFirmContext(db);
+  const value = JSON.stringify({
+    text: text != null ? String(text) : prev.text,
+    coverLetterGuidance: coverLetterGuidance != null ? String(coverLetterGuidance) : prev.coverLetterGuidance,
+    updatedAt: Date.now(),
+  });
   db.prepare(
     `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`

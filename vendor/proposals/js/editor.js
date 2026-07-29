@@ -226,14 +226,19 @@ function blockAiEditable(b) {
 
 function openBlockAI(b, anchor) {
   selectBlock(b.id);
+  const isLetter = b.type === 'coverLetter';
   const card = popover(anchor, `
     <div class="menu-kicker">${icon('bolt', 13)} Ask Claude to tailor “${esc(catalogItem(b.type).label)}”</div>
-    <textarea class="set-input" id="blkAiInstr" rows="3" placeholder="e.g. Make this more tailored toward a bond-measure strategy; tighten it to two paragraphs."></textarea>
+    <textarea class="set-input" id="blkAiInstr" rows="3" placeholder="${isLetter
+      ? 'e.g. Keep the letter to four short paragraphs; emphasize rural outreach experience; don’t sound like a brochure.'
+      : 'e.g. Make this more tailored toward a bond-measure strategy; tighten it to two paragraphs.'}"></textarea>
     <div class="ai-blk-foot">
       <span class="set-hint" id="blkAiStatus" style="margin:0"></span>
       <button class="btn tiny primary" id="blkAiGo">Rewrite</button>
     </div>
-    <p class="set-hint" style="margin-top:6px">${App.mode === 'suggesting' ? 'Suggesting mode is on — the rewrite lands as a tracked change to accept or reject.' : 'The rewrite replaces the current text. Switch to Suggesting mode first to review it as a tracked change.'}</p>`, { width: 320 });
+    <p class="set-hint" style="margin-top:6px">${isLetter
+      ? 'Uses a dedicated letter prompt and your Cover letter guidance (Firm Context). ' + (App.mode === 'suggesting' ? 'Suggesting mode is on — lands as a tracked change.' : 'Switch to Suggesting mode first to review as a tracked change.')
+      : (App.mode === 'suggesting' ? 'Suggesting mode is on — the rewrite lands as a tracked change to accept or reject.' : 'The rewrite replaces the current text. Switch to Suggesting mode first to review it as a tracked change.')}</p>`, { width: 320 });
 
   const instr = card.querySelector('#blkAiInstr');
   const status = card.querySelector('#blkAiStatus');

@@ -49,12 +49,15 @@ const AI = {
   getFirmContext() {
     return fetch(this._url('firm-context'), { credentials: 'same-origin' }).then((r) => r.json());
   },
-  async setFirmContext(text) {
+  async setFirmContext({ text, coverLetterGuidance } = {}) {
+    const body = {};
+    if (typeof text === 'string') body.text = text;
+    if (typeof coverLetterGuidance === 'string') body.coverLetterGuidance = coverLetterGuidance;
     const r = await fetch(this._url('firm-context'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Save failed');

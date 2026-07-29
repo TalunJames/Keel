@@ -46,7 +46,9 @@ export const DRAFT_SCHEMA = {
       description:
         "The proposal as an ORDERED list of blocks, composed from the real block library to match the RFP's required response structure. " +
         "Lead with cover, coverLetter, toc. Use `divider` blocks to open each major section. Include `team`, `experience`, and `cost` where the RFP calls for them. " +
-        "Give rich multi-paragraph `html` for narrative/text/quote blocks. Leave `html` empty for structural blocks (cover, coverLetter, toc, team, experience, cost, signature) — the app fills those from firm defaults. For `divider` and `heading`, put the title in `label`.",
+        "Give rich multi-paragraph `html` for narrative/text/quote blocks. Leave `html` empty for structural blocks " +
+        "(cover, coverLetter, toc, team, experience, cost, signature) — the app fills those from firm defaults, and the cover letter is drafted in a dedicated follow-up pass. " +
+        "For `divider` and `heading`, put the title in `label`.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -83,6 +85,23 @@ export const BLOCK_SCHEMA = {
     html: {
       type: "string",
       description: "The rewritten block body as clean semantic HTML, preserving the block's role in the proposal.",
+    },
+  },
+};
+
+// Dedicated cover-letter draft / rewrite. Kept separate from narrative drafting
+// so letter voice/structure can be trained without contaminating body sections.
+export const COVER_LETTER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["html"],
+  properties: {
+    html: {
+      type: "string",
+      description:
+        "A formal business cover letter as clean HTML: optional date <p>, salutation <p>, " +
+        "3–5 short body <p> paragraphs, closing <p>, then a signature block with <br> and <b> for the name. " +
+        "No headings, lists, tables, or section-essay structure.",
     },
   },
 };
@@ -137,12 +156,12 @@ export const PROOFREAD_SCHEMA = {
 
 // Feature 6 — proposal library distillation. Claude reads a FINISHED proposal
 // and extracts the transferable knowledge: structure, voice, persuasion moves,
-// reusable language, pricing shape. Stored per-document; synthesized into the
-// firm playbook that future drafts learn from.
+// reusable language, pricing shape, and cover-letter-specific notes. Stored
+// per-document; synthesized into the firm playbook that future drafts learn from.
 export const LIBRARY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "agency", "clientType", "summary", "sections", "styleNotes", "winningMoves", "reusableLanguage", "pricingNotes"],
+  required: ["title", "agency", "clientType", "summary", "sections", "styleNotes", "winningMoves", "reusableLanguage", "pricingNotes", "coverLetterNotes"],
   properties: {
     title: { type: "string", description: "The proposal's title or subject." },
     agency: { type: "string", description: "The client/agency the proposal was written for (empty string if unclear)." },
@@ -163,7 +182,7 @@ export const LIBRARY_SCHEMA = {
     styleNotes: {
       type: "array",
       items: { type: "string" },
-      description: "Concrete observations about voice, tone, formatting, and sentence style.",
+      description: "Concrete observations about voice, tone, formatting, and sentence style in the proposal BODY (not the cover letter).",
     },
     winningMoves: {
       type: "array",
@@ -183,6 +202,35 @@ export const LIBRARY_SCHEMA = {
       },
     },
     pricingNotes: { type: "string", description: "How cost was structured and framed (categories, flat vs monthly, justification language). Empty if no pricing present." },
+    coverLetterNotes: {
+      type: "object",
+      additionalProperties: false,
+      required: ["structure", "voice", "snippets"],
+      description: "Cover-letter-only learnings. Keep separate from body style — letters and sections have different shapes.",
+      properties: {
+        structure: {
+          type: "string",
+          description: "How the cover letter is built: salutation, paragraph count and roles, closing/signature. Empty if no letter present.",
+        },
+        voice: {
+          type: "string",
+          description: "Tone, length, and formality rules specific to the letter (not the proposal body). Empty if no letter present.",
+        },
+        snippets: {
+          type: "array",
+          description: "Reusable letter openings, pivots, or closings (verbatim, short).",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "snippet"],
+            properties: {
+              label: { type: "string" },
+              snippet: { type: "string" },
+            },
+          },
+        },
+      },
+    },
   },
 };
 
@@ -194,7 +242,7 @@ export const PLAYBOOK_SCHEMA = {
   properties: {
     playbook: {
       type: "string",
-      description: "The firm proposal playbook in markdown, max ~1200 words.",
+      description: "The firm proposal playbook in markdown, max ~1200 words. Include a dedicated ## Cover letters section.",
     },
   },
 };
