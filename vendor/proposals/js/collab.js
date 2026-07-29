@@ -632,46 +632,23 @@ function renderCommentRail(host) {
   positionCommentCards();
 }
 
-/* Word/Google-Docs-style alignment: each card's top tracks its text anchor as
-   the document scrolls. Cards whose anchors leave the viewport leave with them
-   (negative / past-bottom tops + overflow:hidden) — they must NOT form a
-   sticky stack at the top of the rail. Visible cards are only nudged apart
-   from other still-relevant cards. */
+/* Word/Google-Docs-style alignment: each card's top is its text-anchor Y as
+   the document scrolls. No scroll-time de-overlap — any floor/nudge from a
+   card that has scrolled (or is straddling) the top edge pushes later cards
+   into a sticky visible stack. Overlap of nearby same-page threads is fine;
+   page-4 comments must leave the rail when you scroll to page 5. */
 function positionCommentCards() {
   const layer = $('#commentLayer');
   if (!layer) return;
   const cards = [...layer.querySelectorAll('.ccard')];
   if (!cards.length) return;
 
-  const GAP = 8;
-  const items = cards.map(card => {
+  cards.forEach(card => {
     const cid = card.dataset.cid || (App.pendingComment && App.pendingComment.cid);
     const c = card.dataset.cid ? App.doc.comments.find(x => x.id === card.dataset.cid) : App.pendingComment;
-    return {
-      card,
-      ideal: c ? anchorYFor(c.blockId, cid) : 14,
-      h: card.offsetHeight || 0,
-    };
-  }).sort((a, b) => a.ideal - b.ideal);
-
-  // Place every card on its anchor first. Off-screen anchors keep that ideal
-  // so the card scrolls away with the page; only in-rail cards participate in
-  // de-overlap (otherwise a tall card just above y=0 pushes everything into a
-  // stack that sticks while you keep scrolling).
-  let prevBottom = -Infinity;
-  items.forEach(it => {
-    if (it.ideal < 0) {
-      it.top = it.ideal;
-      // Still straddling the top edge? Reserve that visible strip so the next
-      // in-view card doesn't slide under it. Fully above → clear the floor.
-      prevBottom = (it.top + it.h > 0) ? (it.top + it.h) : -Infinity;
-      return;
-    }
-    it.top = Math.max(it.ideal, prevBottom + GAP);
-    prevBottom = it.top + it.h;
+    const top = c ? anchorYFor(c.blockId, cid) : 14;
+    card.style.top = top + 'px';
   });
-
-  items.forEach(it => { it.card.style.top = it.top + 'px'; });
 }
 
 function scrollToAnchor(blockId, cid) {
