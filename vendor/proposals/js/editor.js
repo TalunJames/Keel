@@ -436,24 +436,31 @@ function moveBlock(from, to) {
   selectBlock(m.id);
 }
 
-/* True when a block opens a major section (divider title pages, covers,
-   imported PDF pages). Claude drafts lean on dividers to structure the
-   response — dragging one of these in the outline moves the whole section. */
+/* True when a block opens a major Claude-style section. Only dividers
+   own a multi-block span — cover/toc/signature move alone so dragging the
+   TOC does not scoop up the whole document body. */
 function isSectionLead(b) {
-  return !!(b && (b.type === 'divider' || b.type === 'cover' || b.type === 'blankpage'
-    || b.type === 'pdfpage' || b.type === 'pagebreak'
-    || (b.type === 'toc' && b.pageBreak !== false)));
+  return !!(b && b.type === 'divider');
 }
 
-/* Inclusive-start / exclusive-end span for a block. Dividers (and other
-   section leads) own everything until the next section lead. */
+/* Blocks that end a divider-led section (exclusive). Signature / TOC / cover
+   sit outside divider groups so they are not carried along when a section
+   is reshuffled. */
+function isSectionBoundary(b) {
+  if (!b) return true;
+  if (isSectionLead(b)) return true;
+  return ['cover', 'toc', 'blankpage', 'pdfpage', 'pagebreak', 'signature'].includes(b.type);
+}
+
+/* Inclusive-start / exclusive-end span for a block. Dividers own everything
+   until the next divider or structural boundary; all other blocks move alone. */
 function blockMoveSpan(bid) {
   const blocks = App.doc.blocks;
   const from = blocks.findIndex(x => x.id === bid);
   if (from < 0) return null;
   if (!isSectionLead(blocks[from])) return { from, to: from + 1 };
   let to = from + 1;
-  while (to < blocks.length && !isSectionLead(blocks[to])) to++;
+  while (to < blocks.length && !isSectionBoundary(blocks[to])) to++;
   return { from, to };
 }
 
@@ -1159,9 +1166,11 @@ function nudgeOutlineItem(bid, dir) {
       moveBlock(span.from, span.from - 1);
       return;
     }
-    // Find the start of the previous section lead (or just previous block)
+    // Land just before the previous divider (or previous block if none)
     let dest = span.from - 1;
-    while (dest > 0 && !isSectionLead(blocks[dest])) dest--;
+    while (dest > 0 && !isSectionLead(blocks[dest]) && !isSectionBoundary(blocks[dest])) dest--;
+    // If we landed on a non-divider boundary (e.g. toc), insert after it
+    if (!isSectionLead(blocks[dest]) && isSectionBoundary(blocks[dest])) dest += 1;
     moveBlockRange(span.from, span.to, dest);
   } else {
     if (span.to >= blocks.length) return;
@@ -1169,9 +1178,14 @@ function nudgeOutlineItem(bid, dir) {
       moveBlock(span.from, span.from + 2);
       return;
     }
-    // Skip past the next section (lead + body)
-    let dest = span.to + 1;
-    while (dest < blocks.length && !isSectionLead(blocks[dest])) dest++;
+    // Skip past the next divider section (or single boundary block)
+    let dest = span.to;
+    if (isSectionLead(blocks[dest])) {
+      dest += 1;
+      while (dest < blocks.length && !isSectionBoundary(blocks[dest])) dest++;
+    } else {
+      dest += 1;
+    }
     moveBlockRange(span.from, span.to, dest);
   }
 }
