@@ -542,7 +542,12 @@ function mdish(s) {
 }
 
 function anchorYFor(blockId, cid) {
-  const wrapRect = $('#canvasScroll').getBoundingClientRect();
+  // Prefer the comment layer as the origin — cards are absolutely positioned
+  // inside it (below the rail tabs), so measuring against #canvasScroll made
+  // every card sit ~one tab-bar too low and look "stuck" while scrolling.
+  const origin = $('#commentLayer') || $('#canvasScroll');
+  if (!origin) return 14;
+  const wrapRect = origin.getBoundingClientRect();
   let el = cid ? $(`#canvas .cmk[data-cid="${cid}"]`) : null;
   if (!el) el = $(`#canvas .blockwrap[data-bid="${blockId}"]`);
   if (!el) return 14;
