@@ -542,7 +542,12 @@ function mdish(s) {
 }
 
 function anchorYFor(blockId, cid) {
-  const wrapRect = $('#canvasScroll').getBoundingClientRect();
+  // Prefer the comment layer as the origin — cards are absolutely positioned
+  // inside it (below the rail tabs), so measuring against #canvasScroll made
+  // every card sit ~one tab-bar too low and look "stuck" while scrolling.
+  const origin = $('#commentLayer') || $('#canvasScroll');
+  if (!origin) return 14;
+  const wrapRect = origin.getBoundingClientRect();
   let el = cid ? $(`#canvas .cmk[data-cid="${cid}"]`) : null;
   if (!el) el = $(`#canvas .blockwrap[data-bid="${blockId}"]`);
   if (!el) return 14;
@@ -627,47 +632,23 @@ function renderCommentRail(host) {
   positionCommentCards();
 }
 
-/* Word/Google-Docs-style alignment: each card tracks its text anchor as the
-   document scrolls. Cards that would overlap are nudged apart; cards whose
-   anchors have scrolled off the top leave the rail (negative top + overflow
-   hidden) instead of piling up at y=0. */
+/* Word/Google-Docs-style alignment: each card's top is its text-anchor Y as
+   the document scrolls. No scroll-time de-overlap — any floor/nudge from a
+   card that has scrolled (or is straddling) the top edge pushes later cards
+   into a sticky visible stack. Overlap of nearby same-page threads is fine;
+   page-4 comments must leave the rail when you scroll to page 5. */
 function positionCommentCards() {
   const layer = $('#commentLayer');
   if (!layer) return;
   const cards = [...layer.querySelectorAll('.ccard')];
   if (!cards.length) return;
 
-  const GAP = 8;
-  const items = cards.map(card => {
+  cards.forEach(card => {
     const cid = card.dataset.cid || (App.pendingComment && App.pendingComment.cid);
     const c = card.dataset.cid ? App.doc.comments.find(x => x.id === card.dataset.cid) : App.pendingComment;
-    return {
-      card,
-      ideal: c ? anchorYFor(c.blockId, cid) : 14,
-      h: card.offsetHeight || 0,
-    };
-  }).sort((a, b) => a.ideal - b.ideal);
-
-  // Forward pass — push down to avoid overlap. Start at -Infinity so a card
-  // whose anchor is above the viewport can keep a negative top and scroll
-  // off with the document (the old `prevBottom = 6` pinned every past card
-  // into a stack at the top of the rail).
-  let prevBottom = -Infinity;
-  items.forEach(it => {
-    it.top = Math.max(it.ideal, prevBottom + GAP);
-    prevBottom = it.top + it.h;
+    const top = c ? anchorYFor(c.blockId, cid) : 14;
+    card.style.top = top + 'px';
   });
-
-  // Backward pass — pull cards back up toward their anchors when a later
-  // card left slack, so a dense cluster doesn't drift permanently downward.
-  let nextTop = Infinity;
-  for (let i = items.length - 1; i >= 0; i--) {
-    const it = items[i];
-    it.top = Math.min(it.top, nextTop - it.h - GAP);
-    nextTop = it.top;
-  }
-
-  items.forEach(it => { it.card.style.top = it.top + 'px'; });
 }
 
 function scrollToAnchor(blockId, cid) {
