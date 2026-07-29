@@ -627,10 +627,11 @@ function renderCommentRail(host) {
   positionCommentCards();
 }
 
-/* Word/Google-Docs-style alignment: each card tracks its text anchor as the
-   document scrolls. Cards that would overlap are nudged apart; cards whose
-   anchors have scrolled off the top leave the rail (negative top + overflow
-   hidden) instead of piling up at y=0. */
+/* Word/Google-Docs-style alignment: each card's top tracks its text anchor as
+   the document scrolls. Cards whose anchors leave the viewport leave with them
+   (negative / past-bottom tops + overflow:hidden) — they must NOT form a
+   sticky stack at the top of the rail. Visible cards are only nudged apart
+   from other still-relevant cards. */
 function positionCommentCards() {
   const layer = $('#commentLayer');
   if (!layer) return;
@@ -648,24 +649,22 @@ function positionCommentCards() {
     };
   }).sort((a, b) => a.ideal - b.ideal);
 
-  // Forward pass — push down to avoid overlap. Start at -Infinity so a card
-  // whose anchor is above the viewport can keep a negative top and scroll
-  // off with the document (the old `prevBottom = 6` pinned every past card
-  // into a stack at the top of the rail).
+  // Place every card on its anchor first. Off-screen anchors keep that ideal
+  // so the card scrolls away with the page; only in-rail cards participate in
+  // de-overlap (otherwise a tall card just above y=0 pushes everything into a
+  // stack that sticks while you keep scrolling).
   let prevBottom = -Infinity;
   items.forEach(it => {
+    if (it.ideal < 0) {
+      it.top = it.ideal;
+      // Still straddling the top edge? Reserve that visible strip so the next
+      // in-view card doesn't slide under it. Fully above → clear the floor.
+      prevBottom = (it.top + it.h > 0) ? (it.top + it.h) : -Infinity;
+      return;
+    }
     it.top = Math.max(it.ideal, prevBottom + GAP);
     prevBottom = it.top + it.h;
   });
-
-  // Backward pass — pull cards back up toward their anchors when a later
-  // card left slack, so a dense cluster doesn't drift permanently downward.
-  let nextTop = Infinity;
-  for (let i = items.length - 1; i >= 0; i--) {
-    const it = items[i];
-    it.top = Math.min(it.top, nextTop - it.h - GAP);
-    nextTop = it.top;
-  }
 
   items.forEach(it => { it.card.style.top = it.top + 'px'; });
 }
