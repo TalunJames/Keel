@@ -145,9 +145,9 @@ export function AdminAiLibraryTab({ onFlash }) {
     <div className="col" style={{ gap: 16, maxWidth: 860 }}>
       <p className="mut" style={{ fontSize: 13, margin: 0 }}>
         Upload finished proposals and Claude studies them in the background — structure, voice,
-        winning language, pricing framing. Everything it learns is distilled into a firm playbook
-        that automatically guides every future AI draft, chat answer, and rewrite. The more you add,
-        the better the drafts get. Processing counts toward the monthly AI budget.
+        winning language, pricing framing, and cover-letter craft. Body learnings feed the firm
+        playbook; cover-letter notes train a separate letter pass so drafts stop turning letters
+        into proposal essays. Processing counts toward the monthly AI budget.
       </p>
 
       {/* Upload */}
@@ -202,8 +202,9 @@ export function AdminAiLibraryTab({ onFlash }) {
         {playbook ? (
           <>
             <p className="mut" style={{ fontSize: 12.5, margin: 0 }}>
-              Last updated {new Date(playbook.updatedAt).toLocaleString()}. This playbook is injected
-              into every AI draft, chat, and rewrite automatically.
+              Last updated {new Date(playbook.updatedAt).toLocaleString()}. Body guidance is injected
+              into AI drafts automatically; cover-letter notes also train the dedicated letter pass.
+              Fine-tune letter rules anytime in Proposals → Workspace Settings → Firm Context.
             </p>
             <details>
               <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--fs-navy)" }}>View the playbook</summary>

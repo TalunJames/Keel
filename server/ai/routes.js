@@ -7,6 +7,7 @@ import {
   aiConfigured,
   buildContext,
   buildLibraryContext,
+  buildCoverLetterContext,
   readFirmContext,
   writeFirmContext,
   recordUsage,
@@ -15,7 +16,10 @@ import {
 } from "./claude.js";
 import { registerAiLibraryRoutes } from "./library.js";
 import { randomUUID } from "crypto";
-import { DRAFT_SCHEMA, BLOCK_SCHEMA, COST_SCHEMA, PROOFREAD_SCHEMA, DRAFT_BLOCK_TYPES, HTML_BLOCK_TYPES } from "./schemas.js";
+import {
+  DRAFT_SCHEMA, BLOCK_SCHEMA, COST_SCHEMA, PROOFREAD_SCHEMA, COVER_LETTER_SCHEMA,
+  DRAFT_BLOCK_TYPES, HTML_BLOCK_TYPES,
+} from "./schemas.js";
 import { checkAiBudget } from "./spend-limit.js";
 
 const DRAFT_TYPE_SET = new Set(DRAFT_BLOCK_TYPES);
@@ -104,6 +108,64 @@ function buildBlocksFromOutline(outline, ct, coverFields = { layout: "letterhead
   return { blocks, content };
 }
 
+/**
+ * Dedicated cover-letter pass — separate from narrative drafting so letter
+ * structure/voice can be trained without section-essay habits leaking in.
+ */
+async function draftCoverLetterHtml({ db, ct, meta, userId }) {
+  const letterCtx = buildCoverLetterContext(db, { clientType: ct, exemplars: 2 });
+  const firm = readFirmContext(db);
+  const system =
+    "You write ONLY the cover letter for a Fog Signal Strategies proposal. " +
+    "This is a formal business letter — not a proposal section. Rules:\n" +
+    "- Output clean semantic HTML only: <p>, <br>, <b>, <i>. No headings, lists, tables, or dividers.\n" +
+    "- Shape: optional date line, salutation (Dear …), 3–5 short body paragraphs, closing, then a signature block for Carter James / Managing Partner / Fog Signal Strategies.\n" +
+    "- Keep it concise (roughly one page). Warm, confident, specific — not marketing-brochure copy.\n" +
+    "- Ground claims in the firm context and letter guidance. Do NOT invent staff names, dollar figures, win rates, or references.\n" +
+    "- Personalize to THIS agency / service / RFP number. Adapt trained snippets; do not paste them verbatim.\n" +
+    "- Ignore proposal-body playbook habits (stage plans, fee tables, long section essays).\n" +
+    (firm.text ? "\n\n=== FIRM CONTEXT ===\n" + firm.text.slice(0, 4000) : "") +
+    (letterCtx ? "\n\n" + letterCtx : "");
+
+  const user =
+    `Write the cover letter for this proposal:\n` +
+    `- Agency: ${meta.agency || "(from RFP)"}\n` +
+    `- Service title: ${meta.serviceTitle || "Public Education & Community Outreach Services"}\n` +
+    `- RFP number: ${meta.rfpNumber || "(none)"}\n` +
+    `- Proposal title: ${meta.title || ""}\n` +
+    `- Client type: ${ct || "county"}\n` +
+    `Return only the letter HTML.`;
+
+  const { data, usage, stopReason } = await runJSON({
+    system,
+    messages: [{ role: "user", content: user }],
+    schema: COVER_LETTER_SCHEMA,
+    model: MODELS.reason,
+    maxTokens: 4000,
+    effort: "medium",
+  });
+  recordUsage(db, { route: "cover-letter", model: MODELS.reason, userId, usage });
+  if (stopReason === "refusal") return "";
+  return sanitizeHtml(data.html || "");
+}
+
+/** Ensure a coverLetter block exists and fill it with the dedicated letter draft. */
+async function applyCoverLetterPass({ db, blocks, content, ct, meta, userId }) {
+  let letter = blocks.find((b) => b.type === "coverLetter");
+  if (!letter) {
+    const coverIdx = blocks.findIndex((b) => b.type === "cover");
+    letter = { id: bid(), type: "coverLetter" };
+    blocks.splice(coverIdx >= 0 ? coverIdx + 1 : 0, 0, letter);
+  }
+  try {
+    const html = await draftCoverLetterHtml({ db, ct, meta, userId });
+    if (html && html.replace(/<[^>]+>/g, "").trim()) content[letter.id] = html;
+  } catch (e) {
+    console.warn("[ai] cover letter pass failed:", e?.message || e);
+  }
+  return { blocks, content };
+}
+
 /** Conservative HTML sanitizer for model-generated block bodies. */
 function sanitizeHtml(html) {
   return String(html || "")
@@ -148,8 +210,14 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
   });
 
   api.put("/ai/firm-context", requireStaff, (req, res) => {
-    if (typeof req.body?.text !== "string") return res.status(400).json({ error: "text required" });
-    writeFirmContext(db, req.body.text);
+    const body = req.body || {};
+    if (typeof body.text !== "string" && typeof body.coverLetterGuidance !== "string") {
+      return res.status(400).json({ error: "text or coverLetterGuidance required" });
+    }
+    writeFirmContext(db, {
+      text: typeof body.text === "string" ? body.text : undefined,
+      coverLetterGuidance: typeof body.coverLetterGuidance === "string" ? body.coverLetterGuidance : undefined,
+    });
     res.json({ ok: true, ...readFirmContext(db) });
   });
 
@@ -183,8 +251,8 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
       "order, and add `divider` blocks to open each major section, so the structure mirrors what the RFP asks for. " +
       "Lead with cover, coverLetter, toc. Include team, experience, and a cost block where the RFP calls for them. " +
       "Write substantive multi-paragraph HTML for the narrative/text blocks; leave structural blocks' html empty " +
-      "(the app fills team bios, case studies, and the cost tables from firm defaults). Write in a confident, specific, " +
-      "professional voice grounded in the firm context. Do NOT invent staff names, dollar figures, dates, or references " +
+      "(cover, coverLetter, toc, team, experience, cost, signature — the app fills those; the cover letter is written in a dedicated follow-up pass). " +
+      "Write in a confident, specific, professional voice grounded in the firm context. Do NOT invent staff names, dollar figures, dates, or references " +
       "not supported by the RFP or firm context — leave those for the human to fill." +
       (firm.text ? "\n\n=== FIRM CONTEXT ===\n" + firm.text : "") +
       (learned ? "\n\n" + learned +
@@ -219,7 +287,11 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
       const meta = data.meta || {};
       // Build real editor blocks from Claude's ordered plan.
       const coverFields = resolveCoverFields(db, cover);
-      const { blocks, content } = buildBlocksFromOutline(data.blocks, ct, coverFields);
+      let { blocks, content } = buildBlocksFromOutline(data.blocks, ct, coverFields);
+      // Dedicated cover-letter pass — trained separately from body drafting.
+      ({ blocks, content } = await applyCoverLetterPass({
+        db, blocks, content, ct, meta, userId: req.user.id,
+      }));
 
       if (targetRow) {
         // Replace the placeholder body of the existing proposal with the
@@ -331,12 +403,41 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
     const { blockType, html, instruction, clientId, docId } = req.body || {};
     if (!instruction || typeof instruction !== "string") return res.status(400).json({ error: "instruction required" });
 
-    const context = buildContext(db, { docId, clientId });
-    const system =
-      "You are editing one section of a Fog Signal Strategies proposal. Rewrite the section body per the user's " +
-      "instruction, keeping it professional and consistent with the rest of the proposal and firm voice. " +
-      "Return clean semantic HTML for the body only.\n\n" +
-      context;
+    const isLetter = blockType === "coverLetter";
+    let system;
+    if (isLetter) {
+      const row = docId ? db.prepare("SELECT payload_json FROM proposals WHERE id = ?").get(docId) : null;
+      let ct = null;
+      let meta = {};
+      try {
+        const doc = row?.payload_json ? JSON.parse(row.payload_json) : null;
+        ct = doc?.clientType || null;
+        meta = {
+          agency: doc?.agency || "",
+          serviceTitle: doc?.serviceTitle || "",
+          rfpNumber: doc?.rfpNumber || "",
+          title: doc?.title || "",
+        };
+      } catch { /* ignore */ }
+      const letterCtx = buildCoverLetterContext(db, { clientType: ct, exemplars: 2 });
+      const firm = readFirmContext(db);
+      system =
+        "You are rewriting ONLY the cover letter of a Fog Signal Strategies proposal. " +
+        "Keep it a formal business letter (date, salutation, short paragraphs, closing, signature). " +
+        "No headings, bullet lists, tables, or section-essay structure. Follow the user's instruction while " +
+        "honoring the firm-trained cover letter guidance and letter exemplars below. " +
+        "Return clean semantic HTML for the letter body only.\n" +
+        (firm.text ? "\n\n=== FIRM CONTEXT ===\n" + firm.text.slice(0, 3000) : "") +
+        (letterCtx ? "\n\n" + letterCtx : "") +
+        `\n\n=== LETTER META ===\nAgency: ${meta.agency || ""}\nService: ${meta.serviceTitle || ""}\nRFP #: ${meta.rfpNumber || ""}\nTitle: ${meta.title || ""}`;
+    } else {
+      const context = buildContext(db, { docId, clientId });
+      system =
+        "You are editing one section of a Fog Signal Strategies proposal. Rewrite the section body per the user's " +
+        "instruction, keeping it professional and consistent with the rest of the proposal and firm voice. " +
+        "Return clean semantic HTML for the body only.\n\n" +
+        context;
+    }
 
     const user =
       `Section type: ${blockType || "text"}\n\n` +
@@ -347,11 +448,11 @@ export function registerAiRoutes(api, db, { requireStaff, createEditorProposal, 
       const { data, usage } = await runJSON({
         system,
         messages: [{ role: "user", content: user }],
-        schema: BLOCK_SCHEMA,
-        maxTokens: 6000,
+        schema: isLetter ? COVER_LETTER_SCHEMA : BLOCK_SCHEMA,
+        maxTokens: isLetter ? 4000 : 6000,
         effort: "medium",
       });
-      recordUsage(db, { route: "block", model: MODELS.reason, userId: req.user.id, usage });
+      recordUsage(db, { route: isLetter ? "cover-letter-block" : "block", model: MODELS.reason, userId: req.user.id, usage });
       res.json({ html: sanitizeHtml(data.html || "") });
     } catch (e) {
       res.status(500).json({ error: jsonErr(e) });

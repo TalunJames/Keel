@@ -78,9 +78,12 @@ function humanizeAiError(e) {
 const DISTILL_SYSTEM =
   "You are analyzing a FINISHED, successful proposal from Fog Signal Strategies (a public-affairs and " +
   "campaign-services firm) so future proposals can learn from it. Extract only what is transferable: how the " +
-  "document is structured, the voice and style, the persuasive moves that make it effective, short verbatim " +
-  "passages worth reusing, and how pricing is framed. Be concrete and specific — vague observations " +
-  "(\"professional tone\") are useless. Do not invent content that is not in the document.";
+  "document is structured, the voice and style of the BODY sections, the persuasive moves that make it effective, " +
+  "short verbatim passages worth reusing, how pricing is framed, AND — separately — how the COVER LETTER is built " +
+  "(structure, voice, reusable openings/closings). Keep cover-letter notes distinct from body style notes; letters " +
+  "and sections have different shapes. Be concrete and specific — vague observations (\"professional tone\") are " +
+  "useless. Do not invent content that is not in the document. If there is no cover letter, leave coverLetterNotes " +
+  "fields empty.";
 
 async function processEntry(db, id) {
   const row = db.prepare("SELECT * FROM proposal_library WHERE id = ?").get(id);
@@ -180,10 +183,11 @@ export async function regeneratePlaybook(db) {
       system:
         "You maintain Fog Signal Strategies' proposal playbook. You are given structured insights distilled from " +
         "the firm's finished proposals. Synthesize them into ONE practical playbook (markdown, max ~1200 words) a " +
-        "proposal writer — human or AI — should follow: recurring document structure, voice and style rules, the " +
-        "persuasive moves that recur across winners, pricing framing guidance, and the strongest reusable language " +
-        "(quote it). Prefer patterns seen in MULTIPLE proposals over one-offs. Ground every point in the provided " +
-        "insights; do not invent.",
+        "proposal writer — human or AI — should follow. Include these sections: recurring document structure, voice " +
+        "and style rules for the proposal BODY, the persuasive moves that recur across winners, pricing framing " +
+        "guidance, the strongest reusable language (quote it), and a dedicated ## Cover letters section that covers " +
+        "letter structure/voice only (do not mix letter rules into body sections). Prefer patterns seen in MULTIPLE " +
+        "proposals over one-offs. Ground every point in the provided insights; do not invent.",
       messages: [{ role: "user", content: corpus }],
       schema: PLAYBOOK_SCHEMA,
       maxTokens: 6000,
