@@ -322,7 +322,9 @@ function newProposalWizard() {
       keelClientId: keelCtx.clientId,
       rfpNumber: card.querySelector('#wRfp').value.trim(),
       deadline: card.querySelector('#wDeadline').value,
-      serviceTitle: card.querySelector('#wService').value.trim() || 'Public Education & Community Outreach Services',
+      serviceTitle: card.querySelector('#wService').value.trim()
+        || SERVICE_DEFAULTS[ct]
+        || 'Public Education & Community Outreach Services',
       template: tpl,
       cover: coverPref,
     });
