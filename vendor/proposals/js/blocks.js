@@ -55,7 +55,7 @@ function caseHTML(cs) {
   return `<div class="case-entry">
 <h4>${esc(cs.title)}</h4>
 <p class="case-sub"><i>${esc(cs.sub)}</i></p>
-<p><b>Measure Type:</b> ${esc(cs.type)}</p>
+<p><b>Engagement:</b> ${esc(cs.type)}</p>
 <p><b>Demographics:</b> ${esc(cs.demo)}</p>
 <p><b>Scope of Work:</b> ${esc(cs.scope)}</p>
 <p><b>Outcome:</b> ${esc(cs.outcome)}</p>
@@ -109,11 +109,26 @@ const BlockRender = {
     </div>`;
   },
   about(b)    { return edTitle(b, 'About Fog Signal Strategies') + edRegion(b.id, libBody('about', COPY.about(App.doc.clientType))); },
-  approach(b) { return edTitle(b, 'Our Approach') + edRegion(b.id, libBody('approach', COPY.approach())); },
-  why(b)      { return edTitle(b, 'Why Measures Fail — and How We Fix It') + edRegion(b.id, libBody('why', COPY.why())); },
+  approach(b) { return edTitle(b, 'Our Approach') + edRegion(b.id, libBody('approach', COPY.approach(App.doc.clientType))); },
+  why(b)      {
+    const title = App.doc.clientType === 'design'
+      ? 'Why Clear Creative Wins'
+      : 'Why Measures Fail — and How We Fix It';
+    return edTitle(b, title) + edRegion(b.id, libBody('why', COPY.why(App.doc.clientType)));
+  },
   understanding(b) { return edTitle(b, 'Project Understanding') + edRegion(b.id, libBody('understanding', COPY.understanding(App.doc))); },
-  workplan(b) { return edTitle(b, 'Technical Approach &amp; Work Plan') + edRegion(b.id, libBody('workplan', COPY.workplan())); },
-  schedule(b) { return edTitle(b, 'Preliminary Project Schedule') + edRegion(b.id, libBody('schedule', `<p>The preliminary schedule below provides a framework for the engagement. Specific dates for kickoff, deliverable reviews, and reporting cadence will be confirmed at the Stage 1 kickoff meeting.</p>` + COPY.schedule())); },
+  workplan(b) {
+    const title = App.doc.clientType === 'design'
+      ? 'Creative Approach & Work Plan'
+      : 'Technical Approach &amp; Work Plan';
+    return edTitle(b, title) + edRegion(b.id, libBody('workplan', COPY.workplan(App.doc.clientType)));
+  },
+  schedule(b) {
+    const intro = App.doc.clientType === 'design'
+      ? `<p>The preliminary schedule below provides a framework for the engagement. Specific dates for kickoff, review rounds, and final delivery will be confirmed at the Stage 1 kickoff meeting.</p>`
+      : `<p>The preliminary schedule below provides a framework for the engagement. Specific dates for kickoff, deliverable reviews, and reporting cadence will be confirmed at the Stage 1 kickoff meeting.</p>`;
+    return edTitle(b, 'Preliminary Project Schedule') + edRegion(b.id, libBody('schedule', intro + COPY.schedule(App.doc.clientType)));
+  },
   terms(b)    { return edTitle(b, 'Additional Terms') + edRegion(b.id, libBody('terms', COPY.terms())); },
   exceptions(b) { return edTitle(b, 'Exceptions, Qualifications, or Exclusions') + edRegion(b.id, libBody('exceptions', `<p>Fog Signal Strategies takes no exceptions, qualifications, or exclusions to the requirements of ${esc(App.doc.rfpNumber || 'this RFP')}. We have reviewed the scope of work, contractual standard clauses, insurance requirements, submission instructions, and evaluation criteria, and we are prepared to comply fully with all stated requirements.</p>`)); },
   conclusion(b) { return edTitle(b, 'Conclusion') + edRegion(b.id, libBody('conclusion', COPY.conclusion(App.doc))); },
@@ -128,7 +143,9 @@ const BlockRender = {
 
   experience(b) {
     const list = (b.cases && b.cases.length ? b.cases.map(id => CASES.find(c => c.id === id)).filter(Boolean) : casesFor(App.doc.clientType));
-    const intro = `<p>Provided below are recent examples of our ballot measure work for ${esc((CLIENTS[App.doc.clientType] || {}).label || 'public agencies').toLowerCase()} clients. We are happy to provide additional references and contact information upon request.</p>`;
+    const label = ((CLIENTS[App.doc.clientType] || {}).label || 'public agencies').toLowerCase();
+    const kind = App.doc.clientType === 'design' ? 'creative and design' : 'ballot measure';
+    const intro = `<p>Provided below are recent examples of our ${kind} work for ${esc(label)} clients. We are happy to provide additional references and contact information upon request.</p>`;
     return edTitle(b, 'Relevant Experience') + edRegion(b.id, intro + list.map(caseHTML).join(''));
   },
 
@@ -276,7 +293,10 @@ function openBlockSettings(b, anchorEl) {
 }
 
 function teamSettingsHTML(b) {
-  const variants = { school: 'School District', city: 'City / Municipal', county: 'County', fire: 'Fire / Public Safety', special: 'Special District', base: 'Standard (no tailoring)' };
+  const variants = Object.fromEntries([
+    ...CLIENT_KEYS.map(k => [k, CLIENTS[k].label]),
+    ['base', 'Standard (no tailoring)'],
+  ]);
   const sel = b.staff || [];
   return `
   <div class="set-label">Tailor bios to</div>

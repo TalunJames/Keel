@@ -22,6 +22,8 @@ const CLIENT_TYPE_MAP = {
   "Crisis Communications": "city",
   "Public Affairs": "county",
   "Financial Strategy": "county",
+  Design: "design",
+  State: "state",
   Custom: "county",
 };
 

@@ -255,8 +255,29 @@ function newProposalWizard() {
 
   let ct = null, tpl = 'full';
   let coverPref = { ...defaultCover };
+  const serviceInput = card.querySelector('#wService');
+  const SERVICE_DEFAULTS = {
+    design: 'Graphic Design & Creative Services',
+    state: 'Statewide Public Education & Community Outreach Services',
+  };
+  const applyClientTypeDefaults = (next) => {
+    const prevDefault = SERVICE_DEFAULTS[ct] || 'Public Education & Community Outreach Services';
+    const nextDefault = SERVICE_DEFAULTS[next] || 'Public Education & Community Outreach Services';
+    if (!serviceInput.value.trim() || serviceInput.value.trim() === prevDefault) {
+      serviceInput.value = nextDefault;
+    }
+    /* Prefer the Design Contract template when starting a design engagement. */
+    if (next === 'design' && (tpl === 'full' || tpl === 'design')) {
+      tpl = 'design';
+      card.querySelectorAll('.tpl-card[data-tpl]').forEach(x => x.classList.toggle('on', x.dataset.tpl === 'design'));
+    } else if (ct === 'design' && next !== 'design' && tpl === 'design') {
+      tpl = 'full';
+      card.querySelectorAll('.tpl-card[data-tpl]').forEach(x => x.classList.toggle('on', x.dataset.tpl === 'full'));
+    }
+  };
   card.querySelector('.close-pop').onclick = closePopovers;
   card.querySelectorAll('.ct-card').forEach(b => b.addEventListener('click', () => {
+    applyClientTypeDefaults(b.dataset.ct);
     ct = b.dataset.ct;
     card.querySelectorAll('.ct-card').forEach(x => x.classList.toggle('on', x === b));
   }));

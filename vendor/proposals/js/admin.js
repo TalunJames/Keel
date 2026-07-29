@@ -237,7 +237,7 @@ function adminFontsSection(host) {
 const ADMIN_CT_TABS = [['base', 'All types'], ...CLIENT_KEYS.map(k => [k, CLIENTS[k].short])];
 /* One color per client type — the same dot marks a tailored version
    everywhere (block list, chips, team bios). */
-const CT_DOT = { school: '#B8932A', city: '#3F6A99', county: '#1A3A5C', fire: '#A8341E', special: '#2F6B4F' };
+const CT_DOT = { school: '#B8932A', city: '#3F6A99', county: '#1A3A5C', fire: '#A8341E', special: '#2F6B4F', design: '#6B5B95', state: '#0E4D6B' };
 
 const ctDotsHTML = (keys) =>
   keys.map(k => `<i class="vdot" style="background:${CT_DOT[k]}" title="Has a ${CLIENTS[k].label} version"></i>`).join('');
@@ -248,11 +248,11 @@ function builtinBodyDefault(type, ct) {
   const tokenDoc = { agency: '{{agency}}', rfpNumber: '{{rfpNumber}}', serviceTitle: '{{serviceTitle}}', clientType: c };
   switch (type) {
     case 'about': return COPY.about(ct === 'base' ? '' : ct);
-    case 'approach': return COPY.approach();
-    case 'why': return COPY.why();
+    case 'approach': return COPY.approach(ct === 'base' ? '' : ct);
+    case 'why': return COPY.why(ct === 'base' ? '' : ct);
     case 'understanding': return COPY.understanding(tokenDoc);
-    case 'workplan': return COPY.workplan();
-    case 'schedule': return COPY.schedule();
+    case 'workplan': return COPY.workplan(ct === 'base' ? '' : ct);
+    case 'schedule': return COPY.schedule(ct === 'base' ? '' : ct);
     case 'terms': return COPY.terms();
     case 'conclusion': return COPY.conclusion(tokenDoc);
     case 'coverLetter': return `<p>{{date}}</p>` + COPY.coverLetter(tokenDoc);
@@ -289,7 +289,7 @@ function adminBlocksSection(host) {
     </button>`;
 
   host.innerHTML = `
-  ${adminHead('Blocks & Titles', 'Every block has one “All types” version that serves all five client types. Where the pitch should differ — a school district vs. a fire district — give the block a tailored version for just that type; the dots mark where one exists. Documents already written keep their text; new blocks drop in with yours.')}
+  ${adminHead('Blocks & Titles', 'Every block has one “All types” version that serves all client types. Where the pitch should differ — a school district vs. a fire district, or a design contract vs. a statewide campaign — give the block a tailored version for just that type; the dots mark where one exists. Documents already written keep their text; new blocks drop in with yours.')}
   <div class="admin-split">
     <div class="admin-split-list">
       <div class="admin-bsearch">${icon('search', 13)}<input id="blockFilter" placeholder="Find a block…" value="${esc(App.adminBlockFilter || '')}"></div>
@@ -978,7 +978,7 @@ function adminPricingSection(host) {
       <span class="flex1"></span>
       <button class="btn tiny primary" id="customizePricing">Customize for ${esc(CLIENTS[ct].short)}</button>
     </div>
-    <p class="set-hint" style="margin:6px 2px">Built-in defaults scale by engagement size (county/city run larger). Customize to set your own categories, fees, and suggested prices for ${esc(CLIENTS[ct].label)} proposals.</p>
+    <p class="set-hint" style="margin:6px 2px">Built-in defaults scale by engagement size (county/city/state run larger; design uses a creative-package model). Customize to set your own categories, fees, and suggested prices for ${esc(CLIENTS[ct].label)} proposals.</p>
   </div>` : `
   <div class="admin-card">
     <div class="admin-card-h"><b>Service categories</b><small>“Suggested” powers the ⚡ chips inside the calculator</small>
