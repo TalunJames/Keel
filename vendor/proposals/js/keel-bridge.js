@@ -111,6 +111,18 @@ const KeelBridge = {
     if (byName) return { clientId: byName.id, clientType: byName.editorClientType || selectedClientType };
     return { clientId: null, clientType: selectedClientType };
   },
+
+  /* Tell the Keel shell whether the iframe is on the proposal list, an open
+     document, or workspace admin — so the parent can hide its top bar. */
+  notifyShell(view) {
+    if (!window.__KEEL_EMBED__ || window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        { source: 'keel-proposals', type: 'view', view: view || 'home' },
+        window.location.origin
+      );
+    } catch (e) { /* ignore */ }
+  },
 };
 
 window.KeelBridge = KeelBridge;
